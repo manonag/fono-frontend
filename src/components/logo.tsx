@@ -41,7 +41,6 @@ export function FonoLogo({
   }, [size]);
 
   if (!dims) {
-    // Fallback while font loads
     return (
       <span
         className={className}
@@ -50,6 +49,7 @@ export function FonoLogo({
           fontWeight: 800,
           fontSize: size,
           color: textColor,
+          letterSpacing: '-0.02em',
         }}
       >
         fono
@@ -71,10 +71,10 @@ export function FonoLogo({
     <>
       {animated && (
         <style>{`
-          #${id} .ring { animation: ${id}_ring 2.2s ease-in-out infinite; }
-          #${id} .p1 { animation: ${id}_p1 2.2s ease-out infinite; }
-          #${id} .p2 { animation: ${id}_p2 2.2s ease-out infinite 0.7s; }
-          #${id} .p3 { animation: ${id}_p3 2.2s ease-out infinite 1.4s; }
+          #${id} .fono-ring { animation: ${id}_ring 2.2s ease-in-out infinite; }
+          #${id} .fono-p1 { animation: ${id}_p1 2.2s ease-out infinite; }
+          #${id} .fono-p2 { animation: ${id}_p2 2.2s ease-out infinite 0.7s; }
+          #${id} .fono-p3 { animation: ${id}_p3 2.2s ease-out infinite 1.4s; }
           @keyframes ${id}_ring { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.3; } }
           @keyframes ${id}_p1 { 0% { r: ${dotR}; opacity: 0.55; } 100% { r: ${circleR}; opacity: 0; } }
           @keyframes ${id}_p2 { 0% { r: ${dotR}; opacity: 0.4; } 100% { r: ${circleR}; opacity: 0; } }
@@ -99,7 +99,7 @@ export function FonoLogo({
           fon
         </text>
         <circle
-          className="ring"
+          className="fono-ring"
           cx={circleCx}
           cy={circleCy}
           r={circleR}
@@ -107,9 +107,9 @@ export function FonoLogo({
           stroke={circleColor}
           strokeWidth={strokeW}
         />
-        <circle className="p1" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
-        <circle className="p2" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
-        <circle className="p3" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
+        <circle className="fono-p1" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
+        <circle className="fono-p2" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
+        <circle className="fono-p3" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
       </svg>
     </>
   );
