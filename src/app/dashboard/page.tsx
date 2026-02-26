@@ -1,104 +1,316 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { fetchSummary, DashboardSummary } from '@/lib/api'
+import { useState, useEffect, useCallback } from 'react'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { DateFilterBar } from '@/components/date-filter'
+import { Tabs } from '@/components/tabs'
+import { Badge } from '@/components/badge'
+import { AudioPlayer } from '@/components/audio-player'
+import { BarChart } from '@/components/bar-chart'
+import { Button } from '@/components/button'
+import { useCallEvents } from '@/hooks/use-call-events'
+import { fetchDashboardSummary, fetchCallLog, fetchChartData } from '@/lib/api'
 import { config } from '@/lib/config'
-import { formatDurationLong } from '@/lib/utils'
-import { useCallEvents } from '@/hooks/useCallEvents'
-import SummaryCard from '@/components/SummaryCard'
-import CallList from '@/components/CallList'
-import LiveBanner from '@/components/LiveBanner'
+import { cn, formatPhoneNumber, formatDuration, timeAgo } from '@/lib/utils'
+import type { DashboardSummary, CallRecord, ChartDataPoint, DateFilter, CallLogFilters } from '@/types'
+
+type CallStatusFilter = 'all' | 'completed' | 'missed' | 'recovered'
 
 export default function DashboardPage() {
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today')
+  const [statusFilter, setStatusFilter] = useState<CallStatusFilter>('all')
+  const [page, setPage] = useState(1)
+  const perPage = 20
+
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [calls, setCalls] = useState<CallRecord[]>([])
+  const [totalCalls, setTotalCalls] = useState(0)
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const { latestEvent, connected } = useCallEvents(config.defaultTenantId)
+  const [chartLoading, setChartLoading] = useState(true)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const tenantId = config.tenantId
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [summaryData, callData] = await Promise.all([
+        fetchDashboardSummary(tenantId),
+        fetchCallLog(tenantId, {
+          status: statusFilter === 'all' ? 'all' : statusFilter,
+          page,
+          perPage,
+        } as CallLogFilters),
+      ])
+      setSummary(summaryData)
+      setCalls(callData.calls)
+      setTotalCalls(callData.total)
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [tenantId, statusFilter, page])
+
+  const loadChart = useCallback(async () => {
+    setChartLoading(true)
+    try {
+      const data = await fetchChartData(tenantId, dateFilter)
+      setChartData(data)
+    } catch (err) {
+      console.error('Failed to load chart data:', err)
+    } finally {
+      setChartLoading(false)
+    }
+  }, [tenantId, dateFilter])
 
   useEffect(() => {
-    fetchSummary(config.defaultTenantId)
-      .then(setSummary)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load summary'))
-      .finally(() => setLoading(false))
-  }, [])
+    loadData()
+  }, [loadData])
 
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  useEffect(() => {
+    loadChart()
+  }, [loadChart])
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter])
+
+  // SSE for real-time updates
+  const { connected } = useCallEvents({
+    onEvent: (event) => {
+      setToast(`New call from ${formatPhoneNumber(event.call.caller_number)}`)
+      setTimeout(() => setToast(null), 5000)
+      // Refresh data
+      loadData()
+      loadChart()
+    },
   })
 
+  const statusTabs = [
+    { id: 'all', label: 'All', count: totalCalls },
+    { id: 'missed', label: 'Missed' },
+    { id: 'completed', label: 'Answered' },
+    { id: 'recovered', label: 'Recovered' },
+  ]
+
+  const totalPages = Math.ceil(totalCalls / perPage)
+  const showFrom = totalCalls === 0 ? 0 : (page - 1) * perPage + 1
+  const showTo = Math.min(page * perPage, totalCalls)
+
+  function mapStatusToBadge(status: CallRecord['status']): 'answered' | 'missed' | 'recovered' | 'ignored' | 'completed' | 'no-answer' {
+    switch (status) {
+      case 'completed': return 'completed'
+      case 'missed': return 'missed'
+      case 'recovered': return 'recovered'
+      case 'ignored': return 'ignored'
+      case 'no-answer': return 'no-answer'
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-cream">
-      {/* Top bar */}
-      <header className="bg-terra-dark text-white px-4 sm:px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">Fono</h1>
-            <span className="text-white/60 hidden sm:inline">|</span>
-            <span className="text-white/80 text-sm hidden sm:inline">Spice Garden</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-white/60 text-sm hidden sm:inline">{today}</span>
-            <div className="flex items-center gap-1.5" title={connected ? 'Live connected' : 'Connecting...'}>
-              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
-              <span className="text-xs text-white/60">{connected ? 'Live' : '...'}</span>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-cream flex flex-col">
+      <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Live banner */}
-        <LiveBanner latestEvent={latestEvent} />
-
-        {/* Mobile restaurant name */}
-        <div className="sm:hidden">
-          <h2 className="text-lg font-bold text-ink">Spice Garden</h2>
-          <p className="text-sm text-brown-light">{today}</p>
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-ink text-cream px-4 py-3 rounded-xl shadow-lg animate-slide-in-top text-sm font-medium">
+          {toast}
         </div>
+      )}
+
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+        {/* Date filter */}
+        <DateFilterBar value={dateFilter} onChange={setDateFilter} />
 
         {/* Summary cards */}
-        {error && (
-          <div className="bg-orange-50 border border-orange-200 text-terra rounded-xl p-4 text-sm">{error}</div>
-        )}
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-24 bg-white rounded-xl border border-warm-border animate-pulse" />
-            ))}
-          </div>
-        ) : summary ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            <SummaryCard title="Total Calls" value={summary.total_calls} subtitle="Last 30 days" delay={0} />
-            <SummaryCard
-              title="Missed Calls"
-              value={summary.missed_calls}
-              subtitle="Last 30 days"
-              accent={summary.missed_calls > 0 ? 'red' : 'default'}
-              delay={50}
-            />
-            <SummaryCard
-              title="Answered"
-              value={summary.answered_calls}
-              subtitle="Last 30 days"
-              accent="green"
-              delay={100}
-            />
-            <SummaryCard
-              title="Total Duration"
-              value={formatDurationLong(summary.total_duration_seconds)}
-              subtitle="Last 30 days"
-              delay={150}
-            />
-            <SummaryCard title="Recordings" value={summary.total_recordings} subtitle="Last 30 days" delay={200} />
-          </div>
-        ) : null}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <SummaryCard
+            label="Total Calls"
+            value={summary?.total_calls}
+            loading={loading}
+            accent="terra"
+          />
+          <SummaryCard
+            label="Missed Calls"
+            value={summary?.missed_calls}
+            loading={loading}
+            accent={summary && summary.missed_calls > 0 ? 'danger' : 'success'}
+          />
+          <SummaryCard
+            label="Recovered"
+            value={summary?.recovered_calls}
+            loading={loading}
+            accent="success"
+            subtitle={
+              summary && summary.total_calls > 0
+                ? `${Math.round((summary.recovered_calls / summary.total_calls) * 100)}% recovery rate`
+                : undefined
+            }
+          />
+          <SummaryCard
+            label="Avg Response"
+            value={summary ? `${Math.round(summary.avg_response_time / 60)}m` : undefined}
+            loading={loading}
+            accent="terra"
+          />
+        </div>
+
+        {/* Chart */}
+        <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-ink mb-4">Call Volume</h2>
+          {chartLoading ? (
+            <div className="h-[300px] flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-terra border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <BarChart data={chartData} />
+          )}
+        </div>
 
         {/* Call log */}
-        <CallList />
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-6 pb-0">
+            <h2 className="text-lg font-semibold text-ink mb-4">Call Log</h2>
+            <Tabs
+              tabs={statusTabs}
+              activeTab={statusFilter}
+              onChange={(id) => setStatusFilter(id as CallStatusFilter)}
+            />
+          </div>
+
+          {loading ? (
+            <div className="p-4 sm:p-6 space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="animate-pulse flex items-center gap-4">
+                  <div className="w-10 h-10 bg-gray-200 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-200 rounded w-1/3" />
+                    <div className="h-3 bg-gray-100 rounded w-1/4" />
+                  </div>
+                  <div className="h-6 bg-gray-200 rounded-full w-20" />
+                </div>
+              ))}
+            </div>
+          ) : calls.length === 0 ? (
+            <div className="p-8 text-center text-brown">
+              No calls found for this filter.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {calls.map((call) => (
+                <div
+                  key={call.id}
+                  className="px-4 sm:px-6 py-4 flex items-center gap-3 hover:bg-cream/50 transition-colors"
+                >
+                  {/* Phone icon */}
+                  <div className="w-10 h-10 rounded-full bg-terra/10 flex items-center justify-center flex-shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E0602A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                    </svg>
+                  </div>
+
+                  {/* Call info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-ink text-sm">
+                        {formatPhoneNumber(call.caller_number)}
+                      </span>
+                      <Badge status={mapStatusToBadge(call.status)} />
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-brown">{timeAgo(call.created_at)}</span>
+                      {call.duration && (
+                        <>
+                          <span className="text-brown/40">·</span>
+                          <span className="text-xs text-brown">{formatDuration(call.duration)}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Audio player */}
+                  {call.recording_url && (
+                    <div className="hidden sm:block w-48">
+                      <AudioPlayer url={call.recording_url} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalCalls > 0 && (
+            <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+              <span className="text-sm text-brown">
+                Showing {showFrom}–{showTo} of {totalCalls}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
+
+      <Footer />
+    </div>
+  )
+}
+
+function SummaryCard({
+  label,
+  value,
+  loading,
+  accent,
+  subtitle,
+}: {
+  label: string
+  value: number | string | undefined | null
+  loading: boolean
+  accent: 'terra' | 'success' | 'danger'
+  subtitle?: string
+}) {
+  const accentColor = {
+    terra: 'text-terra',
+    success: 'text-green-500',
+    danger: 'text-red-500',
+  }[accent]
+
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <p className="text-sm text-brown font-medium">{label}</p>
+      {loading ? (
+        <div className="mt-2 h-8 w-16 bg-gray-200 rounded animate-pulse" />
+      ) : (
+        <>
+          <p className={cn('text-3xl font-bold mt-1', accentColor)}>
+            {value ?? '—'}
+          </p>
+          {subtitle && (
+            <p className="text-xs text-brown mt-1">{subtitle}</p>
+          )}
+        </>
+      )}
     </div>
   )
 }

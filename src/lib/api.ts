@@ -1,88 +1,112 @@
 import { config } from './config'
+import type { CallRecord, DashboardSummary, CallLogFilters, ChartDataPoint, DateFilter } from '@/types'
 
-export interface DashboardSummary {
-  total_calls: number
-  missed_calls: number
-  answered_calls: number
-  total_duration_seconds: number
-  total_recordings: number
-  period: string
-}
+const baseUrl = config.apiUrl
 
-export interface Call {
-  id: string
-  caller_number: string
-  callee_number: string
-  status: 'answered' | 'missed' | 'in-progress' | 'ringing'
-  duration: number
-  recording_url: string | null
-  created_at: string
-  tenant_id: string
-}
+export async function fetchDashboardSummary(
+  tenantId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<DashboardSummary> {
+  const params = new URLSearchParams()
+  if (startDate) params.set('start_date', startDate)
+  if (endDate) params.set('end_date', endDate)
 
-export interface PaginatedCalls {
-  calls: Call[]
-  total: number
-  page: number
-  per_page: number
-  total_pages: number
-}
-
-export interface BridgeRequest {
-  phone_number?: string
-  tenant_id: string
-  call_id?: string
-}
-
-export interface BridgeResponse {
-  call_id: string
-}
-
-class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}
-
-async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${config.apiUrl}${endpoint}`
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error')
-    throw new ApiError(res.status, `API error ${res.status}: ${text}`)
-  }
-
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/summary${qs}`)
+  if (!res.ok) throw new Error(`Failed to fetch summary: ${res.status}`)
   return res.json()
 }
 
-export async function fetchSummary(tenantId: string, days?: number): Promise<DashboardSummary> {
-  const params = days ? `?days=${days}` : ''
-  return apiFetch<DashboardSummary>(`/api/v1/dashboard/${tenantId}/summary${params}`)
-}
-
-export async function fetchCalls(
+export async function fetchCallLog(
   tenantId: string,
-  params: { page?: number; per_page?: number; status?: string }
-): Promise<PaginatedCalls> {
-  const searchParams = new URLSearchParams()
-  if (params.page) searchParams.set('page', String(params.page))
-  if (params.per_page) searchParams.set('per_page', String(params.per_page))
-  if (params.status) searchParams.set('status', params.status)
-  const qs = searchParams.toString()
-  return apiFetch<PaginatedCalls>(`/api/v1/dashboard/${tenantId}/calls${qs ? `?${qs}` : ''}`)
+  filters: CallLogFilters
+): Promise<{ calls: CallRecord[]; total: number; page: number }> {
+  const params = new URLSearchParams({
+    page: filters.page.toString(),
+    per_page: filters.perPage.toString(),
+  })
+  if (filters.status !== 'all') {
+    params.set('status', filters.status)
+  }
+
+  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/calls?${params.toString()}`)
+  if (!res.ok) throw new Error(`Failed to fetch calls: ${res.status}`)
+  const data = await res.json()
+
+  return {
+    calls: data.calls || data.items || data,
+    total: data.total || data.count || (Array.isArray(data) ? data.length : 0),
+    page: data.page || filters.page,
+  }
 }
 
-export async function bridgeCall(tenantId: string, phoneNumber: string): Promise<BridgeResponse> {
-  return apiFetch<BridgeResponse>('/api/v1/calls/bridge', {
-    method: 'POST',
-    body: JSON.stringify({ tenant_id: tenantId, phone_number: phoneNumber }),
+function getDateRange(period: DateFilter): { start: Date; end: Date } {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = new Date(today.getTime() + 86400000 - 1)
+
+  switch (period) {
+    case 'yesterday': {
+      const yesterday = new Date(today.getTime() - 86400000)
+      return { start: yesterday, end: new Date(today.getTime() - 1) }
+    }
+    case 'week': {
+      const weekAgo = new Date(today.getTime() - 7 * 86400000)
+      return { start: weekAgo, end }
+    }
+    case 'month': {
+      const monthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate())
+      return { start: monthAgo, end }
+    }
+    case 'today':
+    default:
+      return { start: today, end }
+  }
+}
+
+export async function fetchChartData(
+  tenantId: string,
+  period: DateFilter
+): Promise<ChartDataPoint[]> {
+  // Mock: fetch call log and aggregate by hour
+  const allCalls: CallRecord[] = []
+  let page = 1
+  const perPage = 100
+  let hasMore = true
+
+  while (hasMore) {
+    const result = await fetchCallLog(tenantId, { status: 'all', page, perPage })
+    allCalls.push(...result.calls)
+    hasMore = result.calls.length === perPage && page < 5 // safety limit
+    page++
+  }
+
+  const { start, end } = getDateRange(period)
+
+  // Filter calls to the selected period
+  const filtered = allCalls.filter((call) => {
+    const callDate = new Date(call.created_at)
+    return callDate >= start && callDate <= end
   })
+
+  // Group by hour
+  const hourMap = new Map<number, ChartDataPoint>()
+  for (let h = 0; h < 24; h++) {
+    const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`
+    hourMap.set(h, { hour: h, label: ampm, answered: 0, missed: 0, recovered: 0 })
+  }
+
+  for (const call of filtered) {
+    const hour = new Date(call.created_at).getHours()
+    const point = hourMap.get(hour)!
+    if (call.status === 'completed') point.answered++
+    else if (call.status === 'missed' || call.status === 'no-answer') point.missed++
+    else if (call.status === 'recovered') point.recovered++
+  }
+
+  // Only return hours that have data or are within business hours (6 AM - 11 PM)
+  return Array.from(hourMap.values()).filter(
+    (p) => p.hour >= 6 && p.hour <= 23
+  )
 }

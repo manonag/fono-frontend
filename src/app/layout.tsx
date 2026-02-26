@@ -1,28 +1,29 @@
-import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next'
+import { Plus_Jakarta_Sans } from 'next/font/google'
+import './globals.css'
 
 const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
-  variable: "--font-jakarta",
-});
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-jakarta',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "Fono Dashboard",
-  description: "Restaurant call intelligence",
-};
+  title: 'Fono — Never Miss a Call',
+  description: 'AI voice assistant for restaurant phone calls. Never miss a reservation again.',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="en">
-      <body className={`${jakarta.variable} font-sans antialiased`}>
+    <html lang="en" className={jakarta.variable}>
+      <body className="font-sans bg-cream text-ink antialiased">
         {children}
       </body>
     </html>
-  );
+  )
 }
