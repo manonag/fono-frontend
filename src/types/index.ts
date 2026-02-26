@@ -2,7 +2,7 @@ export interface CallRecord {
   id: string
   tenant_id: string
   caller_number: string
-  status: 'completed' | 'missed' | 'recovered' | 'ignored' | 'no-answer'
+  status: 'completed' | 'missed' | 'recovered' | 'ignored' | 'no-answer' | 'in_progress'
   duration: number | null
   recording_url: string | null
   created_at: string

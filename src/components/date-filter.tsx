@@ -22,23 +22,25 @@ export function DateFilterBar({ value, onChange }: DateFilterProps) {
   const [customEnd, setCustomEnd] = useState('')
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {filters.map((f) => (
-        <button
-          key={f.id}
-          onClick={() => onChange(f.id)}
-          className={cn(
-            'px-3 py-1.5 text-sm rounded-full font-medium transition-colors',
-            value === f.id
-              ? 'bg-terra text-white'
-              : 'bg-white text-brown hover:bg-cream border border-gray-200'
-          )}
-        >
-          {f.label}
-        </button>
-      ))}
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => onChange(f.id)}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0',
+              value === f.id
+                ? 'bg-terra text-white'
+                : 'bg-white text-brown hover:bg-cream border border-gray-200'
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
       {value === 'custom' && (
-        <div className="flex items-center gap-2 ml-2">
+        <div className="flex items-center gap-2">
           <input
             type="date"
             value={customStart}
