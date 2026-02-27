@@ -4,9 +4,10 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 
 interface AudioPlayerProps {
   url: string
+  compact?: boolean
 }
 
-export function AudioPlayer({ url }: AudioPlayerProps) {
+export function AudioPlayer({ url, compact = false }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -55,12 +56,15 @@ export function AudioPlayer({ url }: AudioPlayerProps) {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
+  const size = compact ? 28 : 32
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" style={{ maxWidth: compact ? undefined : 160 }}>
       <audio ref={audioRef} src={url} preload="metadata" />
       <button
         onClick={togglePlay}
-        className="w-7 h-7 flex items-center justify-center rounded-full bg-terra text-white hover:bg-terra-dark transition-colors flex-shrink-0"
+        className="flex items-center justify-center rounded-full bg-terra text-white hover:bg-terra-dark transition-colors flex-shrink-0"
+        style={{ width: size, height: size, minWidth: size }}
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {playing ? (
@@ -74,8 +78,8 @@ export function AudioPlayer({ url }: AudioPlayerProps) {
           </svg>
         )}
       </button>
-      <div className="flex-1 min-w-[60px]">
-        <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+      <div className="flex-1" style={{ minWidth: compact ? 60 : 80 }}>
+        <div className="bg-gray-200 rounded-full overflow-hidden" style={{ height: 3 }}>
           <div
             className="h-full bg-terra rounded-full transition-[width] duration-200"
             style={{ width: `${progress}%` }}
@@ -83,7 +87,7 @@ export function AudioPlayer({ url }: AudioPlayerProps) {
         </div>
       </div>
       {duration > 0 && (
-        <span className="text-xs text-brown tabular-nums">{formatTime(duration)}</span>
+        <span className="text-brown tabular-nums flex-shrink-0" style={{ fontSize: 11 }}>{formatTime(duration)}</span>
       )}
     </div>
   )

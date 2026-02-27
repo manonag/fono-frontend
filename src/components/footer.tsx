@@ -1,6 +1,6 @@
 export function Footer() {
   return (
-    <footer className="py-6 px-4 text-center text-sm text-brown">
+    <footer style={{ fontSize: 13, marginTop: 48, marginBottom: 32 }} className="px-4 text-center text-brown">
       <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-0">
         <span>&copy; 2026 Fono Inc.</span>
         <span className="hidden sm:inline">&nbsp;&middot;&nbsp;</span>

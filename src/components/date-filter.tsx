@@ -23,17 +23,22 @@ export function DateFilterBar({ value, onChange }: DateFilterProps) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <div className="flex items-center overflow-x-auto pb-1 scrollbar-none" style={{ gap: 8 }}>
         {filters.map((f) => (
           <button
             key={f.id}
             onClick={() => onChange(f.id)}
             className={cn(
-              'px-3 py-1.5 text-sm rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0',
+              'px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap flex-shrink-0',
               value === f.id
                 ? 'bg-terra text-white'
-                : 'bg-white text-brown hover:bg-cream border border-gray-200'
+                : 'bg-white text-brown hover:bg-cream'
             )}
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              border: value === f.id ? 'none' : '1px solid rgba(0,0,0,0.08)',
+            }}
           >
             {f.label}
           </button>
@@ -45,14 +50,16 @@ export function DateFilterBar({ value, onChange }: DateFilterProps) {
             type="date"
             value={customStart}
             onChange={(e) => setCustomStart(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:border-terra focus:outline-none"
+            className="text-sm border rounded-lg px-2 py-1 focus:border-terra focus:outline-none"
+            style={{ borderColor: 'rgba(0,0,0,0.08)' }}
           />
           <span className="text-brown text-sm">to</span>
           <input
             type="date"
             value={customEnd}
             onChange={(e) => setCustomEnd(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:border-terra focus:outline-none"
+            className="text-sm border rounded-lg px-2 py-1 focus:border-terra focus:outline-none"
+            style={{ borderColor: 'rgba(0,0,0,0.08)' }}
           />
         </div>
       )}

@@ -17,14 +17,14 @@ interface BarChartProps {
 
 const tooltipStyle = {
   contentStyle: {
-    backgroundColor: '#1E0E00',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#FDF0E8',
+    backgroundColor: '#fff',
+    border: '1px solid rgba(0,0,0,0.08)',
+    borderRadius: '10px',
     fontSize: '13px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
   },
-  labelStyle: { color: '#FDF0E8', fontWeight: 600 },
-  cursor: { fill: 'rgba(224, 96, 42, 0.05)' },
+  labelStyle: { color: '#1E0E00', fontWeight: 600, fontSize: 13 },
+  cursor: { fill: 'rgba(224, 96, 42, 0.04)' },
 }
 
 export function BarChart({ data }: BarChartProps) {
@@ -32,29 +32,27 @@ export function BarChart({ data }: BarChartProps) {
 
   if (data.length === 0 || !hasData) {
     return (
-      <div className="flex items-center justify-center h-[160px] md:h-[200px] text-brown text-sm">
-        No calls today
+      <div className="flex flex-col items-center justify-center" style={{ height: 180 }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+        </svg>
+        <p className="text-brown mt-2" style={{ fontSize: 14 }}>No calls yet today</p>
+        <p className="text-brown" style={{ fontSize: 12, opacity: 0.6 }}>Call volume will appear here</p>
       </div>
     )
   }
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={180}>
       <RechartsBarChart data={data} barGap={0} barCategoryGap="20%">
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0e0d0" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
         <XAxis
           dataKey="label"
           tick={{ fontSize: 11, fill: '#8B7355' }}
           tickLine={false}
-          axisLine={{ stroke: '#f0e0d0' }}
+          axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
         />
-        <YAxis
-          tick={{ fontSize: 11, fill: '#8B7355' }}
-          tickLine={false}
-          axisLine={false}
-          allowDecimals={false}
-          width={28}
-        />
+        <YAxis hide allowDecimals={false} />
         <Tooltip {...tooltipStyle} />
         <Bar dataKey="answered" name="Answered" fill="#22C55E" stackId="calls" radius={[0, 0, 0, 0]} />
         <Bar dataKey="recovered" name="Recovered" fill="#E0602A" stackId="calls" radius={[0, 0, 0, 0]} />
@@ -69,8 +67,8 @@ export function HorizontalBarChart({ data }: BarChartProps) {
 
   if (withData.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[200px] text-brown text-sm">
-        No calls today
+      <div className="flex flex-col items-center justify-center" style={{ height: 200 }}>
+        <p className="text-brown" style={{ fontSize: 14 }}>No calls yet today</p>
       </div>
     )
   }
@@ -80,7 +78,7 @@ export function HorizontalBarChart({ data }: BarChartProps) {
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RechartsBarChart data={withData} layout="vertical" barGap={0} barCategoryGap="20%">
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0e0d0" horizontal={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" horizontal={false} />
         <YAxis
           dataKey="label"
           type="category"
@@ -93,7 +91,7 @@ export function HorizontalBarChart({ data }: BarChartProps) {
           type="number"
           tick={{ fontSize: 11, fill: '#8B7355' }}
           tickLine={false}
-          axisLine={{ stroke: '#f0e0d0' }}
+          axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
           allowDecimals={false}
         />
         <Tooltip {...tooltipStyle} />

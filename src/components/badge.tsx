@@ -1,29 +1,36 @@
-import { cn } from '@/lib/utils'
-
 interface BadgeProps {
   status: string
 }
 
-const statusConfig: Record<string, { label: string; classes: string }> = {
-  answered: { label: 'Answered', classes: 'bg-green-100 text-green-700' },
-  completed: { label: 'Completed', classes: 'bg-green-100 text-green-700' },
-  missed: { label: 'Missed', classes: 'bg-red-100 text-red-700' },
-  recovered: { label: 'Recovered', classes: 'bg-blue-100 text-blue-700' },
-  ignored: { label: 'Ignored', classes: 'bg-gray-100 text-gray-500' },
-  'no-answer': { label: 'No Answer', classes: 'bg-red-100 text-red-700' },
-  in_progress: { label: 'In Progress', classes: 'bg-amber-100 text-amber-700' },
+const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
+  answered:    { label: 'Answered',    bg: '#DCFCE7', text: '#16A34A' },
+  completed:   { label: 'Completed',   bg: '#DCFCE7', text: '#16A34A' },
+  missed:      { label: 'Missed',      bg: '#FEE2E2', text: '#DC2626' },
+  recovered:   { label: 'Recovered',   bg: '#DBEAFE', text: '#2563EB' },
+  ignored:     { label: 'Ignored',     bg: '#F3F4F6', text: '#6B7280' },
+  'no-answer': { label: 'No Answer',   bg: '#FEE2E2', text: '#DC2626' },
+  in_progress: { label: 'In Progress', bg: '#FEF3C7', text: '#D97706' },
 }
 
-const fallback = { label: 'Unknown', classes: 'bg-gray-100 text-gray-500' }
+const fallback = { label: 'Unknown', bg: '#F3F4F6', text: '#6B7280' }
 
 export function Badge({ status }: BadgeProps) {
   const config = statusConfig[status] || fallback
   return (
     <span
-      className={cn(
-        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-        config.classes
-      )}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 8px',
+        borderRadius: 9999,
+        fontSize: 11,
+        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: '0.03em',
+        backgroundColor: config.bg,
+        color: config.text,
+        lineHeight: '18px',
+      }}
     >
       {config.label}
     </span>
