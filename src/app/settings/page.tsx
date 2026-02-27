@@ -1,0 +1,607 @@
+'use client'
+
+import { useState } from 'react'
+import { Header } from '@/components/header'
+import { Sidebar } from '@/components/sidebar'
+import { MobileNav } from '@/components/mobile-nav'
+import { useMediaQuery } from '@/hooks/use-media-query'
+import { cn } from '@/lib/utils'
+import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
+import type { Plan } from '@/lib/mock-data'
+
+type SettingsTab = 'restaurant' | 'notifications' | 'plan'
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'restaurant', label: 'Restaurant' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'plan', label: 'Plan' },
+]
+
+export default function SettingsPage() {
+  const isMobile = useMediaQuery('(max-width: 767px)')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('restaurant')
+
+  const content = (
+    <div style={{ maxWidth: 720, padding: isMobile ? '20px 16px 80px' : '36px 40px' }}>
+      <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00', marginBottom: 20 }}>
+        Settings
+      </h1>
+
+      {/* Tab Bar */}
+      <div className="flex" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', marginBottom: 24, gap: 0 }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className="transition-colors"
+            style={{
+              padding: '12px 20px',
+              fontSize: 14,
+              fontWeight: activeTab === tab.id ? 700 : 500,
+              color: activeTab === tab.id ? '#E0602A' : '#8B7355',
+              borderBottom: activeTab === tab.id ? '2px solid #E0602A' : '2px solid transparent',
+              cursor: 'pointer',
+              background: 'none',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'restaurant' && <RestaurantTab />}
+      {activeTab === 'notifications' && <NotificationsTab />}
+      {activeTab === 'plan' && <PlanTab isMobile={isMobile} />}
+    </div>
+  )
+
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-cream flex flex-col">
+        <Header variant="dashboard" restaurantName="Spice Garden" connected={false} isMobile />
+        <main className="flex-1">{content}</main>
+        <MobileNav />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-cream flex flex-col">
+      <Header variant="dashboard" restaurantName="Spice Garden" connected={false} />
+      <div className="flex flex-1">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto">{content}</main>
+      </div>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 1: Restaurant
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function RestaurantTab() {
+  const [recordingOn, setRecordingOn] = useState(true)
+  const [showWarning, setShowWarning] = useState(false)
+  const [ownerName, setOwnerName] = useState('Mano')
+  const [ownerEmail, setOwnerEmail] = useState('mano@fono.services')
+
+  return (
+    <div className="space-y-6">
+      {/* Restaurant Info */}
+      <SettingsCard title="Restaurant Info" badge="Synced from Google Places">
+        <div className="space-y-3">
+          <ReadOnlyField label="Name" value="Spice Garden" />
+          <ReadOnlyField label="Address" value="2900 Glendale Ave, Tracy, CA 95377" />
+          <ReadOnlyField label="Phone" value="(209) 834-9800" />
+          <ReadOnlyField label="Cuisine" value="Indian" />
+        </div>
+        <p style={{ fontSize: 12, color: '#B0A090', marginTop: 12 }}>
+          Info synced from your Google Business listing
+        </p>
+      </SettingsCard>
+
+      {/* Operating Hours */}
+      <SettingsCard title="Operating Hours" badge="Synced from Google Places">
+        <div className="space-y-0">
+          {[
+            { day: 'Monday', open: '11:00 AM', close: '10:00 PM' },
+            { day: 'Tuesday', open: '11:00 AM', close: '10:00 PM' },
+            { day: 'Wednesday', open: '11:00 AM', close: '10:00 PM' },
+            { day: 'Thursday', open: '11:00 AM', close: '10:00 PM' },
+            { day: 'Friday', open: '11:00 AM', close: '11:00 PM' },
+            { day: 'Saturday', open: '11:00 AM', close: '11:00 PM' },
+            { day: 'Sunday', open: '', close: '' },
+          ].map(h => (
+            <div key={h.day} className="flex items-center justify-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#1E0E00', width: 100 }}>{h.day}</span>
+              {h.open ? (
+                <span style={{ fontSize: 13, color: '#5C3D22' }}>{h.open} — {h.close}</span>
+              ) : (
+                <span style={{ fontSize: 13, color: '#EF4444', fontWeight: 600 }}>Closed</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </SettingsCard>
+
+      {/* Call Recording */}
+      <SettingsCard title="Call Recording">
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Record all incoming calls</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Recordings are encrypted and stored securely</p>
+          </div>
+          <ToggleSwitch
+            on={recordingOn}
+            onChange={(val) => {
+              if (!val) {
+                setShowWarning(true)
+              } else {
+                setRecordingOn(true)
+                setShowWarning(false)
+              }
+            }}
+          />
+        </div>
+
+        {showWarning && (
+          <div style={{ marginTop: 16, padding: 16, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.1)' }}>
+            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#EF4444' }}>Turning off recording will disable:</span>
+            </div>
+            <ul style={{ fontSize: 13, color: '#5C3D22', paddingLeft: 24, lineHeight: 1.8 }}>
+              <li>Call playback in dashboard</li>
+              <li>Automatic transcription</li>
+              <li>AI-powered call insights</li>
+              <li>Call search & filtering</li>
+              <li>Weekly performance reports</li>
+            </ul>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 12 }}>
+              Recordings are encrypted (AES-256) and auto-deleted after 90 days.
+            </p>
+            <div className="flex items-center gap-4" style={{ marginTop: 16 }}>
+              <button
+                onClick={() => { setShowWarning(false); setRecordingOn(true) }}
+                className="bg-terra text-white transition-colors hover:bg-terra-dark"
+                style={{ padding: '10px 20px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Keep Recording On
+              </button>
+              <button
+                onClick={() => { setShowWarning(false); setRecordingOn(false) }}
+                style={{ fontSize: 13, color: '#B0A090', cursor: 'pointer', background: 'none', border: 'none' }}
+              >
+                Turn off anyway
+              </button>
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* Owner Account */}
+      <SettingsCard title="Owner Account">
+        <div className="space-y-4">
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Name</label>
+            <input
+              type="text"
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              className="w-full bg-white focus:outline-none"
+              style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Email</label>
+            <input
+              type="email"
+              value={ownerEmail}
+              onChange={(e) => setOwnerEmail(e.target.value)}
+              className="w-full bg-white focus:outline-none"
+              style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
+          </div>
+          <button
+            className="text-terra font-semibold hover:underline"
+            style={{ fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            Change Password
+          </button>
+        </div>
+        <button
+          className="bg-terra text-white transition-colors hover:bg-terra-dark mt-4"
+          style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Save
+        </button>
+      </SettingsCard>
+
+      {/* Danger Zone */}
+      <div
+        style={{
+          borderRadius: 20,
+          border: '1px solid rgba(239,68,68,0.2)',
+          padding: '24px 28px',
+        }}
+      >
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#EF4444', marginBottom: 16 }}>Danger Zone</h3>
+        <div className="space-y-4">
+          <DangerAction label="Pause Fono" description="Temporarily stop answering calls" />
+          <DangerAction label="Delete Recordings" description="Permanently delete all recordings" />
+          <DangerAction label="Delete Restaurant" description="Remove this restaurant from Fono" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 2: Notifications
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function NotificationsTab() {
+  const [whatsapp, setWhatsapp] = useState(true)
+  const [dailyEmail, setDailyEmail] = useState(true)
+  const [weeklyReport, setWeeklyReport] = useState(true)
+  const [longCallAlert, setLongCallAlert] = useState(false)
+  const [phone, setPhone] = useState('+1 (209) 555-0123')
+
+  return (
+    <div className="space-y-4">
+      <SettingsCard>
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>WhatsApp missed call alerts</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified instantly when you miss a call</p>
+          </div>
+          <ToggleSwitch on={whatsapp} onChange={setWhatsapp} />
+        </div>
+        {whatsapp && (
+          <div style={{ marginTop: 12 }}>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full bg-white focus:outline-none"
+              style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 13 }}
+              placeholder="WhatsApp number"
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
+          </div>
+        )}
+      </SettingsCard>
+
+      <SettingsCard>
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Daily email summary</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Receive a daily recap of all calls</p>
+          </div>
+          <ToggleSwitch on={dailyEmail} onChange={setDailyEmail} />
+        </div>
+      </SettingsCard>
+
+      <SettingsCard>
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Weekly performance report</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Trends and insights every Monday</p>
+          </div>
+          <ToggleSwitch on={weeklyReport} onChange={setWeeklyReport} />
+        </div>
+      </SettingsCard>
+
+      <SettingsCard>
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Alert for calls over 5 minutes</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified when calls exceed 5 min</p>
+          </div>
+          <ToggleSwitch on={longCallAlert} onChange={setLongCallAlert} />
+        </div>
+      </SettingsCard>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 3: Plan (Billing)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function PlanTab({ isMobile }: { isMobile: boolean }) {
+  const plans = MOCK_PLANS
+  const usage = MOCK_USAGE
+  const invoices = MOCK_INVOICES
+
+  return (
+    <div className="space-y-6">
+      {/* Founding member notice */}
+      <div
+        style={{
+          borderRadius: 14,
+          padding: '16px 20px',
+          backgroundColor: 'rgba(224,96,42,0.06)',
+          border: '1px solid rgba(224,96,42,0.15)',
+        }}
+      >
+        <p style={{ fontSize: 14, fontWeight: 600, color: '#E0602A' }}>
+          You&apos;re a founding member!
+        </p>
+        <p style={{ fontSize: 13, color: '#5C3D22', marginTop: 4 }}>
+          When we launch pricing, you&apos;ll get exclusive founding member rates — locked for life.
+        </p>
+      </div>
+
+      {/* Current Plan */}
+      <SettingsCard>
+        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              color: '#E0602A',
+              padding: '4px 10px',
+              borderRadius: 6,
+              backgroundColor: 'rgba(224,96,42,0.08)',
+            }}
+          >
+            Founding Member
+          </span>
+          <div className="flex items-center gap-1.5">
+            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22C55E' }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#22C55E' }}>Active</span>
+          </div>
+        </div>
+        <p style={{ fontSize: 18, fontWeight: 700, color: '#1E0E00', marginTop: 8 }}>Early Access</p>
+        <p style={{ fontSize: 13, color: '#8B7355', marginTop: 4 }}>No charge during early access</p>
+      </SettingsCard>
+
+      {/* Usage */}
+      <SettingsCard title="Usage">
+        <div className="space-y-4">
+          <UsageBar label="Calls this month" value={usage.calls_this_period} max={usage.call_limit} unit="calls" />
+          <UsageBar label="Recording storage" value={usage.storage_used_mb} max={usage.storage_limit_mb} unit="MB" />
+          <div className="flex items-center justify-between" style={{ paddingTop: 4 }}>
+            <span style={{ fontSize: 13, color: '#8B7355' }}>Member since</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E0E00' }}>February 2026</span>
+          </div>
+        </div>
+      </SettingsCard>
+
+      {/* Plan Cards */}
+      <div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00', marginBottom: 16 }}>Available Plans</h3>
+        <div className={isMobile ? 'space-y-4' : 'grid grid-cols-3 gap-4'}>
+          {plans.map(plan => (
+            <PlanCard key={plan.slug} plan={plan} />
+          ))}
+        </div>
+      </div>
+
+      {/* Features */}
+      <SettingsCard title="Included in all plans">
+        <ul className="space-y-2">
+          {plans[0].features.map(f => (
+            <li key={f} className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span style={{ fontSize: 13, color: '#1E0E00' }}>{FEATURE_NAMES[f]}</span>
+            </li>
+          ))}
+        </ul>
+      </SettingsCard>
+
+      <SettingsCard title="Coming Soon">
+        <ul className="space-y-2">
+          {plans[0].upcoming_features.map(f => (
+            <li key={f} className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B0A090" strokeWidth="1.8">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+              <span style={{ fontSize: 13, color: '#8B7355' }}>{FEATURE_NAMES[f]}</span>
+            </li>
+          ))}
+          <p style={{ fontSize: 12, color: '#B0A090', marginTop: 8 }}>Founding members get first access</p>
+        </ul>
+      </SettingsCard>
+
+      {/* Invoices */}
+      {invoices.length > 0 && (
+        <SettingsCard title="Invoices">
+          <div className="space-y-0">
+            {invoices.map(inv => (
+              <div key={inv.id} className="flex items-center justify-between" style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: '#1E0E00' }}>{inv.plan_name}</p>
+                  <p style={{ fontSize: 12, color: '#8B7355' }}>{new Date(inv.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1E0E00' }}>${inv.amount.toFixed(2)}</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      backgroundColor: inv.status === 'paid' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                      color: inv.status === 'paid' ? '#22C55E' : '#F59E0B',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {inv.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
+      )}
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Shared Components
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function SettingsCard({ title, badge, children }: { title?: string; badge?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white" style={{ borderRadius: 20, padding: '24px 28px', border: '1px solid rgba(0,0,0,0.04)' }}>
+      {(title || badge) && (
+        <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
+          {title && <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>{title}</h3>}
+          {badge && (
+            <span style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#22C55E',
+              padding: '3px 10px',
+              borderRadius: 6,
+              backgroundColor: 'rgba(34,197,94,0.08)',
+            }}>
+              ✓ {badge}
+            </span>
+          )}
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 4 }}>{label}</label>
+      <div
+        className="bg-cream"
+        style={{ padding: '10px 14px', borderRadius: 10, fontSize: 14, color: '#5C3D22' }}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function ToggleSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      className={cn('relative transition-colors flex-shrink-0', on ? 'bg-green-500' : 'bg-gray-300')}
+      style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', border: 'none' }}
+    >
+      <div
+        className="absolute bg-white rounded-full transition-transform shadow-sm"
+        style={{
+          width: 20,
+          height: 20,
+          top: 2,
+          left: on ? 22 : 2,
+        }}
+      />
+    </button>
+  )
+}
+
+function DangerAction({ label, description }: { label: string; description: string }) {
+  return (
+    <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+      <div>
+        <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>{label}</p>
+        <p style={{ fontSize: 12, color: '#8B7355' }}>{description}</p>
+      </div>
+      <button
+        className="transition-colors"
+        style={{
+          padding: '8px 16px',
+          borderRadius: 10,
+          fontSize: 13,
+          fontWeight: 600,
+          color: '#EF4444',
+          border: '1px solid rgba(239,68,68,0.2)',
+          backgroundColor: 'transparent',
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+      </button>
+    </div>
+  )
+}
+
+function PlanCard({ plan }: { plan: Plan }) {
+  return (
+    <div
+      className={cn('bg-white relative', plan.is_popular && 'ring-2 ring-terra')}
+      style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(0,0,0,0.04)' }}
+    >
+      {plan.is_popular && (
+        <span
+          className="absolute"
+          style={{
+            top: -10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: '#fff',
+            backgroundColor: '#E0602A',
+            padding: '3px 12px',
+            borderRadius: 6,
+          }}
+        >
+          Recommended
+        </span>
+      )}
+      <h4 style={{ fontSize: 18, fontWeight: 700, color: '#1E0E00', marginTop: plan.is_popular ? 8 : 0 }}>{plan.name}</h4>
+      <div style={{ marginTop: 8 }}>
+        <span style={{ fontSize: 32, fontWeight: 800, color: '#1E0E00' }}>${plan.price_monthly}</span>
+        <span style={{ fontSize: 14, color: '#8B7355' }}>/mo</span>
+      </div>
+      <p style={{ fontSize: 13, color: '#8B7355', marginTop: 4 }}>
+        {plan.call_limit ? `${plan.call_limit} calls/mo` : 'Unlimited calls'}
+      </p>
+      <p style={{ fontSize: 12, color: '#E0602A', fontWeight: 600, marginTop: 4 }}>
+        ${plan.founding_price_monthly}/mo founding rate
+      </p>
+    </div>
+  )
+}
+
+function UsageBar({ label, value, max, unit }: { label: string; value: number; max: number; unit: string }) {
+  const pct = Math.min((value / max) * 100, 100)
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <span style={{ fontSize: 13, color: '#8B7355' }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#1E0E00' }}>{value} / {max} {unit}</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.04)' }}>
+        <div
+          style={{
+            height: '100%',
+            borderRadius: 4,
+            width: `${pct}%`,
+            backgroundColor: pct > 80 ? '#F59E0B' : '#E0602A',
+            transition: 'width 300ms ease',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
