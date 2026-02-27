@@ -1,47 +1,7 @@
 'use client'
 
-/*
- * ──────────────────────────────────────────────────
- * WIREFRAME — Desktop (≥ 768px)
- * ──────────────────────────────────────────────────
- * ┌─ #C84E20 header ─────────────────────────────────┐
- * │ fono○ | Spice Garden Tracy,CA  Feb 26 [Live] (av)│
- * ├──────────┬────────────────────────────────────────┤
- * │ MENU     │ Good afternoon, Mano                   │
- * │ ▪ Dash   │ Here's how Spice Garden is doing today │
- * │ ▪ Analy  │                                        │
- * │ ▪ Calls  │ [Today] [Yesterday] [This Week] [Month]│
- * │ ▪ Setti  │                                        │
- * │ ───────  │ ┌─────────┐ ┌─────────┐ ┌─────────┐  │
- * │ RESTAU   │ │📊 ↑12%  │ │📞 ↑ 0  │ │✅ ↑ 5% │  │
- * │ [SG] ✓   │ │  30     │ │  3      │ │  2      │  │
- * │ [BC]     │ │ Total   │ │ Missed  │ │ Recov.  │  │
- * │          │ │ ▁▂▃▅▇▅▃ │ │ ▁▂▃▅▇▅▃ │ │ ▁▂▃▅▇▅▃ │  │
- * │ (spacer) │ └─────────┘ └─────────┘ └─────────┘  │
- * │ ───────  │                                        │
- * │ ? Help   │ Recent Activity          View all →   │
- * │ → Logout │ 📞 +1 (209)..  [Badge]  2m 34s  ▶   │
- * └──────────┴────────────────────────────────────────┘
- *
- * ──────────────────────────────────────────────────
- * WIREFRAME — Mobile (< 768px)
- * ──────────────────────────────────────────────────
- * ┌─────────────────────────────────┐
- * │ (○) Spice Garden    ● Live     │  52px sticky
- * │     Tracy, CA  powered by fono │
- * ├─────────────────────────────────┤
- * │ Good afternoon                  │  20px w700
- * │ Here's today's overview         │  13px brown
- * ├─────────────────────────────────┤
- * │ [📊] 30 Total Calls   ▁▃▅▇ → │  Card
- * │ [📞] 3 Missed         ▁▃▅▇ → │  Card (red border)
- * │ [✅] 2 Recovered      ▁▃▅▇ → │  Card
- * ├─────────────────────────────────┤
- * │ 📊Home  📞Calls  ⚙Set  🔔3  │  64px bottom nav
- * └─────────────────────────────────┘
- */
-
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
@@ -59,13 +19,6 @@ function safeNum(n: unknown): number {
   return isNaN(num) ? 0 : num
 }
 
-function getGreeting(): string {
-  const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  return 'Good evening'
-}
-
 type DatePill = { id: DateFilter; label: string }
 const DATE_PILLS: DatePill[] = [
   { id: 'today', label: 'Today' },
@@ -80,6 +33,7 @@ export default function DashboardPage() {
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [calls, setCalls] = useState<CallRecord[]>([])
+  const [allCalls, setAllCalls] = useState<CallRecord[]>([])
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(true)
@@ -89,14 +43,16 @@ export default function DashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [summaryData, callData] = await Promise.all([
+      const [summaryData, callData, allCallData] = await Promise.all([
         fetchDashboardSummary(tenantId),
         fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5 }),
+        fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100 }),
       ])
       setSummary(summaryData)
       setCalls(callData.calls)
-    } catch (err) {
-      console.error('Failed to load dashboard data:', err)
+      setAllCalls(allCallData.calls)
+    } catch {
+      // silently fail
     } finally {
       setLoading(false)
     }
@@ -107,8 +63,8 @@ export default function DashboardPage() {
     try {
       const data = await fetchChartData(tenantId, dateFilter)
       setChartData(data)
-    } catch (err) {
-      console.error('Failed to load chart data:', err)
+    } catch {
+      // silently fail
     } finally {
       setChartLoading(false)
     }
@@ -128,7 +84,7 @@ export default function DashboardPage() {
   const totalCallsNum = safeNum(summary?.total_calls)
   const recoveredCalls = safeNum(summary?.recovered_calls)
 
-  // Build mini chart bar data per card from chartData
+  // Build mini chart bar data per card
   const miniChartBars = useMemo(() => {
     if (chartData.length === 0) return { total: [], missed: [], recovered: [] }
     const maxTotal = Math.max(...chartData.map(d => d.answered + d.missed + d.recovered), 1)
@@ -141,8 +97,34 @@ export default function DashboardPage() {
     }
   }, [chartData])
 
+  // Compute insight box data
+  const insights = useMemo(() => {
+    const peakHour = chartData.reduce<ChartDataPoint | null>((best, d) => {
+      const total = d.answered + d.missed + d.recovered
+      if (!best) return d
+      return total > (best.answered + best.missed + best.recovered) ? d : best
+    }, null)
+    const peakLabel = peakHour ? peakHour.label : '—'
+    const peakCount = peakHour ? peakHour.answered + peakHour.missed + peakHour.recovered : 0
+
+    const recoveryRate = totalCallsNum > 0 && missedCalls > 0
+      ? Math.round((recoveredCalls / missedCalls) * 100)
+      : totalCallsNum > 0 ? 100 : 0
+
+    const avgDuration = safeNum(summary?.total_duration_seconds)
+    const answeredCalls = safeNum(summary?.answered_calls)
+    const avgCallSecs = answeredCalls > 0 ? Math.round(avgDuration / answeredCalls) : 0
+
+    // Repeat callers
+    const callerCounts = new Map<string, number>()
+    allCalls.forEach(c => callerCounts.set(c.caller_number, (callerCounts.get(c.caller_number) || 0) + 1))
+    const repeatCallers = Array.from(callerCounts.values()).filter(c => c > 1).length
+
+    return { peakLabel, peakCount, recoveryRate, avgCallSecs, repeatCallers }
+  }, [chartData, summary, totalCallsNum, missedCalls, recoveredCalls, allCalls])
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // MOBILE LAYOUT (< 768px)
+  // MOBILE LAYOUT
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (isMobile) {
     return (
@@ -150,12 +132,6 @@ export default function DashboardPage() {
         <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} isMobile />
 
         <main className="flex-1 px-4 pt-5 pb-4">
-          {/* Greeting */}
-          <div className="mb-5">
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1E0E00' }}>{getGreeting()}</h1>
-            <p style={{ fontSize: 13, color: '#8B7355', marginTop: 2 }}>Here&apos;s today&apos;s overview</p>
-          </div>
-
           {/* Stacked Cards */}
           <div className="flex flex-col gap-3">
             {loading ? (
@@ -199,35 +175,55 @@ export default function DashboardPage() {
               </>
             )}
           </div>
+
+          {/* Insight Boxes — mobile: 2 per row */}
+          {!loading && (
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <InsightBox
+                icon={<ClockIcon />}
+                label="Peak Hour"
+                value={insights.peakLabel}
+                sub={`${insights.peakCount} calls`}
+              />
+              <InsightBox
+                icon={<PercentIcon />}
+                label="Recovery Rate"
+                value={`${insights.recoveryRate}%`}
+                sub="of missed"
+              />
+              <InsightBox
+                icon={<TimerIcon />}
+                label="Avg Call"
+                value={formatDuration(insights.avgCallSecs)}
+                sub="duration"
+              />
+              <InsightBox
+                icon={<RepeatIcon />}
+                label="Repeat Callers"
+                value={String(insights.repeatCallers)}
+                sub="this period"
+              />
+            </div>
+          )}
         </main>
 
-        <MobileNav activeItem="dashboard" missedCount={missedCalls} />
+        <MobileNav missedCount={missedCalls} />
       </div>
     )
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // DESKTOP LAYOUT (≥ 768px)
+  // DESKTOP LAYOUT
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   return (
     <div className="min-h-screen bg-cream flex flex-col">
       <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} />
 
       <div className="flex flex-1">
-        <Sidebar activeItem="dashboard" missedCount={missedCalls} />
+        <Sidebar missedCount={missedCalls} />
 
         <main className="flex-1 overflow-y-auto" style={{ padding: '36px 40px' }}>
           <div style={{ maxWidth: 960 }}>
-            {/* Greeting */}
-            <div style={{ marginBottom: 32 }}>
-              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00' }}>
-                {getGreeting()}, Mano
-              </h1>
-              <p style={{ fontSize: 14, color: '#8B7355', marginTop: 4 }}>
-                Here&apos;s how Spice Garden is doing today
-              </p>
-            </div>
-
             {/* Date Filter Pills */}
             <div className="flex items-center gap-1.5" style={{ marginBottom: 28 }}>
               {DATE_PILLS.map((pill) => (
@@ -299,6 +295,36 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* Insight Boxes — 4 per row desktop */}
+            {!loading && (
+              <div className="grid grid-cols-4 gap-4" style={{ marginBottom: 28 }}>
+                <InsightBox
+                  icon={<ClockIcon />}
+                  label="Peak Hour"
+                  value={insights.peakLabel}
+                  sub={`${insights.peakCount} calls`}
+                />
+                <InsightBox
+                  icon={<PercentIcon />}
+                  label="Recovery Rate"
+                  value={`${insights.recoveryRate}%`}
+                  sub="of missed"
+                />
+                <InsightBox
+                  icon={<TimerIcon />}
+                  label="Avg Call Duration"
+                  value={formatDuration(insights.avgCallSecs)}
+                  sub="per answered call"
+                />
+                <InsightBox
+                  icon={<RepeatIcon />}
+                  label="Repeat Callers"
+                  value={String(insights.repeatCallers)}
+                  sub="this period"
+                />
+              </div>
+            )}
+
             {/* Recent Activity */}
             <div
               className="bg-white"
@@ -310,7 +336,8 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
                 <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Recent Activity</h2>
-                <button
+                <Link
+                  href="/calls"
                   className="flex items-center gap-1 transition-colors hover:opacity-80"
                   style={{ fontSize: 13, fontWeight: 600, color: '#E0602A' }}
                 >
@@ -318,7 +345,7 @@ export default function DashboardPage() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M5 12h14" /><path d="M12 5l7 7-7 7" />
                   </svg>
-                </button>
+                </Link>
               </div>
 
               {loading ? (
@@ -359,6 +386,32 @@ export default function DashboardPage() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Insight Box
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function InsightBox({ icon, label, value, sub }: {
+  icon: React.ReactNode; label: string; value: string; sub: string
+}) {
+  return (
+    <div
+      className="bg-white"
+      style={{
+        borderRadius: 16,
+        padding: 16,
+        border: '1px solid rgba(0,0,0,0.04)',
+      }}
+    >
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+        <span style={{ color: '#8B7355' }}>{icon}</span>
+        <span style={{ fontSize: 12, color: '#8B7355', fontWeight: 400 }}>{label}</span>
+      </div>
+      <p style={{ fontSize: 24, fontWeight: 800, color: '#1E0E00', lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: 12, color: '#B0A090', marginTop: 4 }}>{sub}</p>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Desktop Metric Card
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -379,7 +432,6 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
       onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.06)' }}
       onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none' }}
     >
-      {/* Top row: icon + change pill */}
       <div className="flex items-start justify-between" style={{ marginBottom: 16 }}>
         <div
           className="flex items-center justify-center"
@@ -401,7 +453,6 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
         </span>
       </div>
 
-      {/* Number + Label */}
       <p style={{
         fontSize: 44,
         fontWeight: 800,
@@ -413,7 +464,6 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
       </p>
       <p style={{ fontSize: 14, fontWeight: 500, color: '#8B7355', marginTop: 4 }}>{label}</p>
 
-      {/* Mini chart + arrow */}
       <div className="flex items-end justify-between" style={{ marginTop: 16 }}>
         <MiniChart bars={bars} color={barColor} height={48} loading={chartLoading} />
         <div
@@ -458,15 +508,12 @@ function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, b
         borderLeft: highlight ? '4px solid #EF4444' : undefined,
       }}
     >
-      {/* Icon */}
       <div
         className="flex items-center justify-center flex-shrink-0"
         style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: iconBg }}
       >
         {icon}
       </div>
-
-      {/* Label + Number */}
       <div className="flex-1 min-w-0">
         <p style={{ fontSize: 13, color: '#8B7355' }}>{label}</p>
         <p style={{
@@ -480,8 +527,6 @@ function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, b
           {value}
         </p>
       </div>
-
-      {/* Mini chart + chevron */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <MiniChart bars={bars} color={barColor} height={28} width={56} loading={chartLoading} />
         <div
@@ -498,7 +543,7 @@ function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, b
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Mini Chart (bar sparkline)
+// Mini Chart
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function MiniChart({ bars, color, height = 48, width, loading }: {
@@ -507,9 +552,7 @@ function MiniChart({ bars, color, height = 48, width, loading }: {
   if (loading) {
     return <div className="skeleton" style={{ width: width || 100, height, borderRadius: 4 }} />
   }
-
   const displayBars = bars.length > 0 ? bars : Array(12).fill(0.05)
-
   return (
     <div className="flex items-end" style={{ height, width, gap: 3 }}>
       {displayBars.map((v, i) => (
@@ -529,7 +572,7 @@ function MiniChart({ bars, color, height = 48, width, loading }: {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Activity Row (desktop recent calls)
+// Activity Row
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
@@ -553,7 +596,6 @@ function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
         padding: '0 4px',
       }}
     >
-      {/* Status icon */}
       <div
         className="flex items-center justify-center flex-shrink-0"
         style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: statusIconBg }}
@@ -570,7 +612,6 @@ function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
         )}
       </div>
 
-      {/* Phone + meta */}
       <div className="flex-1 min-w-0">
         <p className="truncate" style={{ fontSize: 14, fontWeight: 600, color: '#1E0E00' }}>
           {formatPhoneNumber(call.caller_number)}
@@ -581,15 +622,12 @@ function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
         </p>
       </div>
 
-      {/* Badge */}
       <Badge status={call.status} />
 
-      {/* Time */}
       <span style={{ fontSize: 12, color: '#B0A090', minWidth: 50, textAlign: 'right' }}>
         {timeAgo(call.created_at)}
       </span>
 
-      {/* Play button */}
       {call.recording_url ? (
         <PlayButton url={call.recording_url} />
       ) : (
@@ -634,7 +672,7 @@ function PlayButton({ url }: { url: string }) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Skeleton Cards
+// Skeletons
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function DesktopCardSkeleton() {
@@ -662,7 +700,7 @@ function MobileCardSkeleton() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SVG Icons for cards
+// SVG Icons
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function TotalIcon() {
@@ -689,6 +727,48 @@ function RecoveredIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.8">
       <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.12.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.34 1.85.58 2.81.7A2 2 0 0122 16.92z" />
       <polyline points="20 6 9 17 4 12" stroke="#22C55E" strokeWidth="2" />
+    </svg>
+  )
+}
+
+function ClockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}
+
+function PercentIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <line x1="19" y1="5" x2="5" y2="19" />
+      <circle cx="6.5" cy="6.5" r="2.5" />
+      <circle cx="17.5" cy="17.5" r="2.5" />
+    </svg>
+  )
+}
+
+function TimerIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2 2" />
+      <path d="M5 3l2 2" />
+      <path d="M19 3l-2 2" />
+      <path d="M12 3v2" />
+    </svg>
+  )
+}
+
+function RepeatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <polyline points="17 1 21 5 17 9" />
+      <path d="M3 11V9a4 4 0 014-4h14" />
+      <polyline points="7 23 3 19 7 15" />
+      <path d="M21 13v2a4 4 0 01-4 4H3" />
     </svg>
   )
 }
