@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import type { DateFilter } from '@/types'
 
 interface DateRange {
@@ -62,102 +62,101 @@ export function getDateRangeForFilter(filter: DateFilter, customRange?: DateRang
 
 export function DateFilterBar({ value, onChange, customRange, onCustomRange }: DateFilterBarProps) {
   const [showPicker, setShowPicker] = useState(false)
-  const pickerRef = useRef<HTMLDivElement>(null)
   const [localFrom, setLocalFrom] = useState(customRange?.from || '')
   const [localTo, setLocalTo] = useState(customRange?.to || '')
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowPicker(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
 
   const customLabel = customRange
     ? `${new Date(customRange.from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(customRange.to).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : 'Custom'
 
   return (
-    <div className="flex items-center gap-1.5 relative flex-wrap">
-      {PILLS.map((pill) => (
-        <button
-          key={pill.id}
-          onClick={() => {
-            if (pill.id === 'custom') {
-              setShowPicker(prev => !prev)
-              onChange('custom')
-            } else {
-              setShowPicker(false)
-              onChange(pill.id)
-            }
-          }}
-          className="transition-all flex-shrink-0"
-          style={{
-            padding: '8px 18px',
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 500,
-            backgroundColor: value === pill.id ? '#E0602A' : '#fff',
-            color: value === pill.id ? '#fff' : '#5C3D22',
-            border: value === pill.id ? 'none' : '1px solid rgba(0,0,0,0.06)',
-            boxShadow: value === pill.id ? '0 2px 8px rgba(224,96,42,0.25)' : 'none',
-            cursor: 'pointer',
-          }}
-        >
-          {pill.id === 'custom' && value === 'custom' && customRange ? customLabel : pill.label}
-        </button>
-      ))}
+    <div>
+      {/* Pills row */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {PILLS.map((pill) => (
+          <button
+            key={pill.id}
+            onClick={() => {
+              if (pill.id === 'custom') {
+                setShowPicker(prev => !prev)
+                onChange('custom')
+              } else {
+                setShowPicker(false)
+                onChange(pill.id)
+              }
+            }}
+            className="transition-all flex-shrink-0"
+            style={{
+              padding: '8px 18px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 500,
+              backgroundColor: value === pill.id ? '#E0602A' : '#fff',
+              color: value === pill.id ? '#fff' : '#5C3D22',
+              border: value === pill.id ? 'none' : '1px solid rgba(0,0,0,0.06)',
+              boxShadow: value === pill.id ? '0 2px 8px rgba(224,96,42,0.25)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {pill.id === 'custom' && value === 'custom' && customRange ? customLabel : pill.label}
+          </button>
+        ))}
+      </div>
 
-      {showPicker && (
+      {/* Inline slide-down date picker */}
+      <div
+        style={{
+          maxHeight: showPicker ? 52 : 0,
+          overflow: 'hidden',
+          transition: 'max-height 0.2s ease',
+        }}
+      >
         <div
-          ref={pickerRef}
-          className="absolute bg-white z-20"
+          className="flex items-center gap-3 flex-wrap"
           style={{
-            top: '100%',
-            right: 0,
-            marginTop: 8,
-            padding: 16,
-            borderRadius: 14,
-            border: '1px solid rgba(0,0,0,0.08)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-            minWidth: 280,
+            paddingTop: 10,
+            paddingBottom: 4,
+            borderBottom: '1px solid rgba(0,0,0,0.04)',
           }}
         >
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', marginBottom: 10 }}>Select date range</p>
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <label style={{ fontSize: 11, color: '#B0A090', display: 'block', marginBottom: 4 }}>From</label>
-              <input
-                type="date"
-                value={localFrom}
-                onChange={(e) => setLocalFrom(e.target.value)}
-                className="w-full focus:outline-none"
-                style={{
-                  padding: '8px 10px', borderRadius: 8,
-                  border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 13,
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-              />
-            </div>
-            <div className="flex-1">
-              <label style={{ fontSize: 11, color: '#B0A090', display: 'block', marginBottom: 4 }}>To</label>
-              <input
-                type="date"
-                value={localTo}
-                onChange={(e) => setLocalTo(e.target.value)}
-                className="w-full focus:outline-none"
-                style={{
-                  padding: '8px 10px', borderRadius: 8,
-                  border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 13,
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 12, color: '#8B7355', fontWeight: 500 }}>From</label>
+            <input
+              type="date"
+              value={localFrom}
+              onChange={(e) => setLocalFrom(e.target.value)}
+              className="focus:outline-none"
+              style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid rgba(0,0,0,0.08)',
+                fontSize: 13,
+                height: 32,
+                color: '#5C3D22',
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
+          </div>
+          <span style={{ fontSize: 13, color: '#B0A090' }}>—</span>
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 12, color: '#8B7355', fontWeight: 500 }}>To</label>
+            <input
+              type="date"
+              value={localTo}
+              onChange={(e) => setLocalTo(e.target.value)}
+              className="focus:outline-none"
+              style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid rgba(0,0,0,0.08)',
+                fontSize: 13,
+                height: 32,
+                color: '#5C3D22',
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
           </div>
           <button
             onClick={() => {
@@ -167,13 +166,21 @@ export function DateFilterBar({ value, onChange, customRange, onCustomRange }: D
               }
             }}
             disabled={!localFrom || !localTo}
-            className="w-full mt-3 bg-terra text-white font-semibold transition-colors hover:bg-terra-dark disabled:opacity-40"
-            style={{ padding: '8px 0', borderRadius: 10, fontSize: 13, cursor: 'pointer' }}
+            className="bg-terra text-white transition-colors hover:bg-terra-dark disabled:opacity-40"
+            style={{
+              padding: '6px 16px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              height: 32,
+              cursor: 'pointer',
+              border: 'none',
+            }}
           >
             Apply
           </button>
         </div>
-      )}
+      </div>
     </div>
   )
 }

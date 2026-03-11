@@ -88,6 +88,8 @@ function RestaurantTab() {
   const [showWarning, setShowWarning] = useState(false)
   const [ownerName, setOwnerName] = useState('Mano')
   const [ownerEmail, setOwnerEmail] = useState('mano@fono.services')
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const [dangerOpen, setDangerOpen] = useState(false)
 
   return (
     <div className="space-y-6">
@@ -186,80 +188,105 @@ function RestaurantTab() {
         )}
       </SettingsCard>
 
-      {/* Owner Account */}
-      <SettingsCard title="Owner Account">
-        <div className="space-y-4">
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Name</label>
-            <input
-              type="text"
-              value={ownerName}
-              onChange={(e) => setOwnerName(e.target.value)}
-              className="w-full bg-white focus:outline-none"
-              style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Email</label>
-            <input
-              type="email"
-              value={ownerEmail}
-              onChange={(e) => setOwnerEmail(e.target.value)}
-              className="w-full bg-white focus:outline-none"
-              style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-            />
-          </div>
-          <button
-            className="text-terra font-semibold hover:underline"
-            style={{ fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            Change Password
-          </button>
-        </div>
+      {/* Owner Account — collapsible */}
+      <div className="bg-white" style={{ borderRadius: 20, border: '1px solid rgba(0,0,0,0.04)' }}>
         <button
-          className="bg-terra text-white transition-colors hover:bg-terra-dark mt-4"
-          style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          onClick={() => setOwnerOpen(prev => !prev)}
+          className="flex items-center justify-between w-full text-left transition-colors hover:bg-[#f5efe8]"
+          style={{ padding: '20px 28px', borderRadius: 20, cursor: 'pointer', background: 'none', border: 'none' }}
         >
-          Save
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Owner Account</h3>
+          <svg
+            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
+            style={{ transition: 'transform 0.2s ease', transform: ownerOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
         </button>
-      </SettingsCard>
+        <div style={{ maxHeight: ownerOpen ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+          <div style={{ padding: '0 28px 24px' }}>
+            <div className="space-y-4">
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Name</label>
+                <input
+                  type="text"
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                  className="w-full bg-white focus:outline-none"
+                  style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Email</label>
+                <input
+                  type="email"
+                  value={ownerEmail}
+                  onChange={(e) => setOwnerEmail(e.target.value)}
+                  className="w-full bg-white focus:outline-none"
+                  style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+                />
+              </div>
+              <button
+                className="text-terra font-semibold hover:underline"
+                style={{ fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Change Password
+              </button>
+            </div>
+            <button
+              className="bg-terra text-white transition-colors hover:bg-terra-dark mt-4"
+              style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
 
-      {/* Danger Zone */}
-      <div
-        style={{
-          borderRadius: 20,
-          border: '1px solid rgba(239,68,68,0.2)',
-          padding: '24px 28px',
-        }}
-      >
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#EF4444', marginBottom: 16 }}>Danger Zone</h3>
-        <div className="space-y-4">
-          <DangerAction
-            label="Pause Fono"
-            description="Temporarily stop answering calls"
-            confirmTitle="Pause Fono?"
-            confirmDescription="Fono will stop answering calls for this restaurant. You can resume at any time from this settings page."
-            confirmLabel="Pause"
-            variant="warning"
-          />
-          <DangerAction
-            label="Delete Recordings"
-            description="Permanently delete all recordings"
-            confirmTitle="Delete all recordings?"
-            confirmDescription="This will permanently delete all call recordings for this restaurant. This action cannot be undone."
-            confirmLabel="Delete All Recordings"
-          />
-          <DangerAction
-            label="Delete Restaurant"
-            description="Remove this restaurant from Fono"
-            confirmTitle="Delete this restaurant?"
-            confirmDescription="This will permanently remove this restaurant and all its data from Fono, including call history, recordings, and settings. This action cannot be undone."
-            confirmLabel="Delete Restaurant"
-          />
+      {/* Danger Zone — collapsible */}
+      <div style={{ borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)' }}>
+        <button
+          onClick={() => setDangerOpen(prev => !prev)}
+          className="flex items-center justify-between w-full text-left transition-colors hover:bg-[#fef2f2]"
+          style={{ padding: '20px 28px', borderRadius: 20, cursor: 'pointer', background: 'none', border: 'none' }}
+        >
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#EF4444' }}>Danger Zone</h3>
+          <svg
+            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"
+            style={{ transition: 'transform 0.2s ease', transform: dangerOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
+        <div style={{ maxHeight: dangerOpen ? 300 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+          <div className="space-y-4" style={{ padding: '0 28px 24px' }}>
+            <DangerAction
+              label="Pause Fono"
+              description="Temporarily stop answering calls"
+              confirmTitle="Pause Fono?"
+              confirmDescription="Fono will stop answering calls for this restaurant. You can resume at any time from this settings page."
+              confirmLabel="Pause"
+              variant="warning"
+            />
+            <DangerAction
+              label="Delete Recordings"
+              description="Permanently delete all recordings"
+              confirmTitle="Delete all recordings?"
+              confirmDescription="This will permanently delete all call recordings for this restaurant. This action cannot be undone."
+              confirmLabel="Delete All Recordings"
+            />
+            <DangerAction
+              label="Delete Restaurant"
+              description="Remove this restaurant from Fono"
+              confirmTitle="Delete this restaurant?"
+              confirmDescription="This will permanently remove this restaurant and all its data from Fono, including call history, recordings, and settings. This action cannot be undone."
+              confirmLabel="Delete Restaurant"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -635,13 +662,13 @@ function PlanCard({ plan }: { plan: Plan }) {
       )}
       <h4 style={{ fontSize: 18, fontWeight: 700, color: '#1E0E00', marginTop: plan.is_popular ? 8 : 0 }}>{plan.name}</h4>
       <div style={{ marginTop: 8 }}>
-        <span style={{ fontSize: 32, fontWeight: 800, color: '#1E0E00' }}>${plan.price_monthly}</span>
-        <span style={{ fontSize: 14, color: '#8B7355' }}>/mo</span>
+        <span style={{ fontSize: 32, fontWeight: 800, color: '#B0A090', textDecoration: 'line-through' }}>${plan.price_monthly}</span>
+        <span style={{ fontSize: 14, color: '#B0A090', textDecoration: 'line-through' }}>/mo</span>
       </div>
       <p style={{ fontSize: 13, color: '#8B7355', marginTop: 4 }}>
         {plan.call_limit ? `${plan.call_limit} calls/mo` : 'Unlimited calls'}
       </p>
-      <p style={{ fontSize: 12, color: '#E0602A', fontWeight: 600, marginTop: 4 }}>
+      <p style={{ fontSize: 12, color: '#B0A090', fontWeight: 600, marginTop: 4, textDecoration: 'line-through' }}>
         ${plan.founding_price_monthly}/mo founding rate
       </p>
       <button
