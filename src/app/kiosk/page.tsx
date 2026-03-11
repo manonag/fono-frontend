@@ -1,5 +1,5 @@
 import { Header } from '@/components/header'
-import { FonoLogo } from '@/components/logo'
+import FonoLogo from '@/components/logo'
 
 export default function KioskPage() {
   return (
@@ -7,7 +7,7 @@ export default function KioskPage() {
       <Header variant="kiosk" restaurantName="Spice Garden" />
       <main className="flex-1 flex items-center justify-center">
         <div className="text-center space-y-4">
-          <FonoLogo size={48} textColor="#FDF0E8" circleColor="#E0602A" pulseColor="#E0602A" />
+          <FonoLogo size={48} textColor="#FDF0E8" mode="light" />
           <p className="text-cream/60 text-lg">Kiosk mode coming in Sprint 2</p>
         </div>
       </main>

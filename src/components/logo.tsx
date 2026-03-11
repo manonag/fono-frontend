@@ -1,116 +1,91 @@
-'use client';
+'use client'
+import { useState, useEffect } from 'react'
 
-import { useEffect, useRef, useState } from 'react';
+const ORANGE = '#D4652C'
+const MID_ORANGE = '#D97B4A'
+const LIGHT_ORANGE = '#E09568'
+const PALE_ORANGE = '#E8B08A'
 
 interface FonoLogoProps {
-  size?: number;
-  textColor?: string;
-  circleColor?: string;
-  pulseColor?: string;
-  animated?: boolean;
-  className?: string;
+  size?: number
+  textColor?: string
+  mode?: 'light' | 'dark' | 'orange'
+  className?: string
 }
 
-export function FonoLogo({
-  size = 48,
-  textColor = '#E0602A',
-  circleColor = '#E0602A',
-  pulseColor = '#E0602A',
-  animated = true,
-  className = '',
-}: FonoLogoProps) {
-  const [dims, setDims] = useState<{
-    fonWidth: number;
-    oWidth: number;
-    fonoWidth: number;
-  } | null>(null);
-  const idRef = useRef(`logo-${Math.random().toString(36).slice(2, 8)}`);
-  const id = idRef.current;
+export default function FonoLogo({ size = 30, textColor = '#2C1810', mode = 'light', className }: FonoLogoProps) {
+  const [metrics, setMetrics] = useState<{
+    fWidth: number; oWidth: number; noWidth: number;
+    baseline: number; oCenterY: number;
+    coreRadius: number; dotCx: number;
+  } | null>(null)
+
+  const weight = 800
+  const isOrange = mode === 'orange'
+  const coreColor = isOrange ? '#fff' : ORANGE
+  const ringColor = isOrange ? 'rgba(255,255,255,0.6)' : ORANGE
+  const ring1Fill = isOrange ? 'rgba(255,255,255,0.38)' : MID_ORANGE
+  const ring2Fill = isOrange ? 'rgba(255,255,255,0.22)' : LIGHT_ORANGE
+  const ring3Fill = isOrange ? 'rgba(255,255,255,0.12)' : PALE_ORANGE
 
   useEffect(() => {
-    document.fonts.ready.then(() => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.font = `800 ${size}px 'Plus Jakarta Sans'`;
-      const fonWidth = ctx.measureText('fon').width;
-      const oWidth = ctx.measureText('o').width;
-      const fonoWidth = ctx.measureText('fono').width;
-      setDims({ fonWidth, oWidth, fonoWidth });
-    });
-  }, [size]);
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.font = `${weight} ${size}px Nunito, sans-serif`
 
-  if (!dims) {
-    return (
-      <span
-        className={className}
-        style={{
-          fontFamily: "'Plus Jakarta Sans', sans-serif",
-          fontWeight: 800,
-          fontSize: size,
-          color: textColor,
-          letterSpacing: '-0.02em',
-        }}
-      >
-        fono
-      </span>
-    );
-  }
+    const fWidth = ctx.measureText('f').width
+    const oWidth = ctx.measureText('o').width
+    const noWidth = ctx.measureText('no').width
+    const xHeight = size * 0.52
+    const baseline = size * 0.78
+    const oCenterY = baseline - (xHeight / 2)
+    const coreRadius = (xHeight / 2) * 0.72
+    const dotCx = fWidth + oWidth / 2
 
-  const naturalGap = dims.fonoWidth - dims.fonWidth - dims.oWidth;
-  const circleR = dims.oWidth * 0.48;
-  const circleCx = dims.fonWidth + Math.max(naturalGap, size * 0.02) + circleR;
-  const circleCy = size * 0.52;
-  const totalW = circleCx + circleR + 2;
-  const totalH = size * 1.05;
-  const baseline = size * 0.82;
-  const strokeW = Math.max(size * 0.055, 2);
-  const dotR = Math.max(size * 0.055, 2);
+    setMetrics({ fWidth, oWidth, noWidth, baseline, oCenterY, coreRadius, dotCx })
+  }, [size])
+
+  if (!metrics) return <div style={{ width: size * 2.2, height: size }} />
+
+  const noX = metrics.fWidth + metrics.oWidth
+  const maxPulseRadius = metrics.coreRadius * 2.0
+  const svgWidth = noX + metrics.noWidth + 4
+  const svgHeight = size * 1.1
 
   return (
-    <>
-      {animated && (
-        <style>{`
-          #${id} .fono-ring { animation: ${id}_ring 2.2s ease-in-out infinite; }
-          #${id} .fono-p1 { animation: ${id}_p1 2.2s ease-out infinite; }
-          #${id} .fono-p2 { animation: ${id}_p2 2.2s ease-out infinite 0.7s; }
-          #${id} .fono-p3 { animation: ${id}_p3 2.2s ease-out infinite 1.4s; }
-          @keyframes ${id}_ring { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.3; } }
-          @keyframes ${id}_p1 { 0% { r: ${dotR}; opacity: 0.55; } 100% { r: ${circleR}; opacity: 0; } }
-          @keyframes ${id}_p2 { 0% { r: ${dotR}; opacity: 0.4; } 100% { r: ${circleR}; opacity: 0; } }
-          @keyframes ${id}_p3 { 0% { r: ${dotR}; opacity: 0.25; } 100% { r: ${circleR}; opacity: 0; } }
-        `}</style>
-      )}
-      <svg
-        id={id}
-        className={className}
-        width={totalW}
-        height={totalH}
-        viewBox={`0 0 ${totalW} ${totalH}`}
-      >
-        <text
-          x="0"
-          y={baseline}
-          fontFamily="'Plus Jakarta Sans', sans-serif"
-          fontWeight="800"
-          fontSize={size}
-          fill={textColor}
-        >
-          fon
-        </text>
-        <circle
-          className="fono-ring"
-          cx={circleCx}
-          cy={circleCy}
-          r={circleR}
-          fill="none"
-          stroke={circleColor}
-          strokeWidth={strokeW}
-        />
-        <circle className="fono-p1" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
-        <circle className="fono-p2" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
-        <circle className="fono-p3" cx={circleCx} cy={circleCy} r={dotR} fill={pulseColor} />
-      </svg>
-    </>
-  );
+    <svg
+      width={svgWidth}
+      height={svgHeight}
+      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+      style={{ overflow: 'visible', display: 'block' }}
+      className={className}
+    >
+      {/* "f" */}
+      <text x={0} y={metrics.baseline} fontFamily="var(--font-nunito), Nunito, sans-serif" fontWeight={weight} fontSize={size} fill={textColor}>f</text>
+
+      <g>
+        {/* Static concentric rings */}
+        <circle cx={metrics.dotCx} cy={metrics.oCenterY} r={metrics.coreRadius * 1.85} fill={ring3Fill} />
+        <circle cx={metrics.dotCx} cy={metrics.oCenterY} r={metrics.coreRadius * 1.55} fill={ring2Fill} />
+        <circle cx={metrics.dotCx} cy={metrics.oCenterY} r={metrics.coreRadius * 1.28} fill={ring1Fill} />
+
+        {/* Animated pulse rings */}
+        {[0, 0.7, 1.4].map((delay, i) => (
+          <circle key={i} cx={metrics.dotCx} cy={metrics.oCenterY} r={metrics.coreRadius}
+            fill="none" stroke={ringColor} strokeWidth={size * 0.02 + 1} opacity={0}>
+            <animate attributeName="r" from={metrics.coreRadius} to={maxPulseRadius} dur="2.4s" begin={`${delay}s`} repeatCount="indefinite" />
+            <animate attributeName="opacity" from={0.6 - i * 0.15} to="0" dur="2.4s" begin={`${delay}s`} repeatCount="indefinite" />
+          </circle>
+        ))}
+
+        {/* Core — big solid circle with heartbeat */}
+        <circle cx={metrics.dotCx} cy={metrics.oCenterY} r={metrics.coreRadius} fill={coreColor}
+          style={{ transformOrigin: `${metrics.dotCx}px ${metrics.oCenterY}px`, animation: 'core-beat 2.4s ease-in-out infinite' }} />
+      </g>
+
+      {/* "no" */}
+      <text x={noX} y={metrics.baseline} fontFamily="var(--font-nunito), Nunito, sans-serif" fontWeight={weight} fontSize={size} fill={textColor}>no</text>
+    </svg>
+  )
 }

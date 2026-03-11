@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useId } from 'react';
 
 interface PulsingCircleProps {
   size?: number;
@@ -17,8 +17,8 @@ export function PulsingCircle({
 }: PulsingCircleProps) {
   const r = size / 2 - strokeWidth;
   const dotR = size * 0.09;
-  const idRef = useRef(`pc-${Math.random().toString(36).slice(2, 8)}`);
-  const id = idRef.current;
+  const reactId = useId();
+  const id = `pc-${reactId.replace(/:/g, '')}`;
 
   return (
     <>

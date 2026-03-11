@@ -9,66 +9,75 @@ import { Badge } from '@/components/badge'
 import { AudioPlayer } from '@/components/audio-player'
 import { useCallEvents } from '@/hooks/use-call-events'
 import { useMediaQuery } from '@/hooks/use-media-query'
-import { fetchDashboardSummary, fetchCallLog, fetchChartData } from '@/lib/api'
-import { config } from '@/lib/config'
+import { fetchDashboardSummary, fetchCallLog, fetchChartData, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
+import { useRestaurant } from '@/lib/restaurant-context'
 import { formatPhoneNumber, formatDuration, timeAgo } from '@/lib/utils'
-import type { DashboardSummary, CallRecord, ChartDataPoint, DateFilter } from '@/types'
+import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
+import type { CallRecord, ChartDataPoint, DateFilter } from '@/types'
 
 function safeNum(n: unknown): number {
   const num = Number(n)
   return isNaN(num) ? 0 : num
 }
 
-type DatePill = { id: DateFilter; label: string }
-const DATE_PILLS: DatePill[] = [
-  { id: 'today', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'week', label: 'This Week' },
-  { id: 'month', label: 'This Month' },
-]
+interface CustomDateRange { from: string; to: string }
 
 export default function DashboardPage() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [dateFilter, setDateFilter] = useState<DateFilter>('today')
+  const [customRange, setCustomRange] = useState<CustomDateRange | undefined>()
 
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [summary, setSummary] = useState<{ total_calls: number; missed_calls: number; answered_calls: number; total_duration_seconds: number; total_recordings: number; period: string } | null>(null)
   const [calls, setCalls] = useState<CallRecord[]>([])
   const [allCalls, setAllCalls] = useState<CallRecord[]>([])
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(true)
 
-  const tenantId = config.tenantId
+  const { tenantId, isAll, allTenantIds, current } = useRestaurant()
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [summaryData, callData, allCallData] = await Promise.all([
-        fetchDashboardSummary(tenantId),
-        fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5 }),
-        fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100 }),
-      ])
-      setSummary(summaryData)
-      setCalls(callData.calls)
-      setAllCalls(allCallData.calls)
+      const { dateFrom, dateTo, days } = getDateRangeForFilter(dateFilter, customRange)
+      if (isAll) {
+        const [summaryData, callData, allCallData] = await Promise.all([
+          fetchCombinedSummary(allTenantIds, days),
+          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }),
+          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }),
+        ])
+        setSummary(summaryData)
+        setCalls(callData.calls)
+        setAllCalls(allCallData.calls)
+      } else {
+        const [summaryData, callData, allCallData] = await Promise.all([
+          fetchDashboardSummary(tenantId, days),
+          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }),
+          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }),
+        ])
+        setSummary(summaryData)
+        setCalls(callData.calls)
+        setAllCalls(allCallData.calls)
+      }
     } catch {
       // silently fail
     } finally {
       setLoading(false)
     }
-  }, [tenantId])
+  }, [tenantId, isAll, allTenantIds, dateFilter, customRange])
 
   const loadChart = useCallback(async () => {
     setChartLoading(true)
     try {
-      const data = await fetchChartData(tenantId, dateFilter)
+      const tid = isAll ? allTenantIds[0] : tenantId
+      const data = await fetchChartData(tid, dateFilter)
       setChartData(data)
     } catch {
       // silently fail
     } finally {
       setChartLoading(false)
     }
-  }, [tenantId, dateFilter])
+  }, [tenantId, dateFilter, isAll, allTenantIds])
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => { loadChart() }, [loadChart])
@@ -82,7 +91,7 @@ export default function DashboardPage() {
 
   const missedCalls = safeNum(summary?.missed_calls)
   const totalCallsNum = safeNum(summary?.total_calls)
-  const recoveredCalls = safeNum(summary?.recovered_calls)
+  const recoveredCalls = allCalls.filter(c => c.status === 'recovered').length
 
   // Build mini chart bar data per card
   const miniChartBars = useMemo(() => {
@@ -129,7 +138,7 @@ export default function DashboardPage() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col" style={{ paddingBottom: 64 }}>
-        <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} isMobile />
+        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
 
         <main className="flex-1 px-4 pt-5 pb-4">
           {/* Stacked Cards */}
@@ -150,6 +159,7 @@ export default function DashboardPage() {
                   bars={miniChartBars.total}
                   barColor="rgba(224,96,42,0.15)"
                   chartLoading={chartLoading}
+                  href="/calls"
                 />
                 <MobileMetricCard
                   icon={<MissedIcon />}
@@ -161,6 +171,7 @@ export default function DashboardPage() {
                   bars={miniChartBars.missed}
                   barColor="rgba(239,68,68,0.15)"
                   chartLoading={chartLoading}
+                  href="/calls?status=missed"
                 />
                 <MobileMetricCard
                   icon={<RecoveredIcon />}
@@ -171,6 +182,7 @@ export default function DashboardPage() {
                   bars={miniChartBars.recovered}
                   barColor="rgba(34,197,94,0.15)"
                   chartLoading={chartLoading}
+                  href="/calls?status=recovered"
                 />
               </>
             )}
@@ -217,7 +229,7 @@ export default function DashboardPage() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} />
+      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} />
 
       <div className="flex flex-1">
         <Sidebar missedCount={missedCalls} />
@@ -225,27 +237,13 @@ export default function DashboardPage() {
         <main className="flex-1 overflow-y-auto" style={{ padding: '36px 40px' }}>
           <div style={{ maxWidth: 960 }}>
             {/* Date Filter Pills */}
-            <div className="flex items-center gap-1.5" style={{ marginBottom: 28 }}>
-              {DATE_PILLS.map((pill) => (
-                <button
-                  key={pill.id}
-                  onClick={() => setDateFilter(pill.id)}
-                  className="transition-all"
-                  style={{
-                    padding: '8px 18px',
-                    borderRadius: 10,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    backgroundColor: dateFilter === pill.id ? '#E0602A' : '#fff',
-                    color: dateFilter === pill.id ? '#fff' : '#5C3D22',
-                    border: dateFilter === pill.id ? 'none' : '1px solid rgba(0,0,0,0.06)',
-                    boxShadow: dateFilter === pill.id ? '0 2px 8px rgba(224,96,42,0.25)' : 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {pill.label}
-                </button>
-              ))}
+            <div style={{ marginBottom: 28 }}>
+              <DateFilterBar
+                value={dateFilter}
+                onChange={setDateFilter}
+                customRange={customRange}
+                onCustomRange={setCustomRange}
+              />
             </div>
 
             {/* 3 Metric Cards */}
@@ -267,6 +265,7 @@ export default function DashboardPage() {
                     bars={miniChartBars.total}
                     barColor="rgba(224,96,42,0.15)"
                     chartLoading={chartLoading}
+                    href="/calls"
                   />
                   <DesktopMetricCard
                     icon={<MissedIcon />}
@@ -279,6 +278,7 @@ export default function DashboardPage() {
                     bars={miniChartBars.missed}
                     barColor="rgba(239,68,68,0.15)"
                     chartLoading={chartLoading}
+                    href="/calls?status=missed"
                   />
                   <DesktopMetricCard
                     icon={<RecoveredIcon />}
@@ -290,6 +290,7 @@ export default function DashboardPage() {
                     bars={miniChartBars.recovered}
                     barColor="rgba(34,197,94,0.15)"
                     chartLoading={chartLoading}
+                    href="/calls?status=recovered"
                   />
                 </>
               )}
@@ -415,19 +416,21 @@ function InsightBox({ icon, label, value, sub }: {
 // Desktop Metric Card
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, highlight, bars, barColor, chartLoading }: {
+function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, highlight, bars, barColor, chartLoading, href }: {
   icon: React.ReactNode; iconBg: string; iconColor: string; label: string
   value: number; valueColor?: string; highlight?: boolean
-  bars: number[]; barColor: string; chartLoading: boolean
+  bars: number[]; barColor: string; chartLoading: boolean; href?: string
 }) {
   return (
-    <div
-      className="bg-white cursor-pointer transition-all duration-150 hover:-translate-y-[3px]"
+    <Link
+      href={href || '/calls'}
+      className="bg-white cursor-pointer transition-all duration-150 hover:-translate-y-[3px] block"
       style={{
         borderRadius: 20,
         padding: 28,
         border: '1px solid rgba(0,0,0,0.04)',
         borderLeft: highlight ? '4px solid #EF4444' : '1px solid rgba(0,0,0,0.04)',
+        textDecoration: 'none',
       }}
       onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.06)' }}
       onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none' }}
@@ -439,18 +442,6 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
         >
           <span style={{ color: iconColor }}>{icon}</span>
         </div>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            padding: '4px 10px',
-            borderRadius: 8,
-            backgroundColor: 'rgba(0,0,0,0.04)',
-            color: '#8B7355',
-          }}
-        >
-          —
-        </span>
       </div>
 
       <p style={{
@@ -474,19 +465,13 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
             borderRadius: 10,
             backgroundColor: 'rgba(0,0,0,0.03)',
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(224,96,42,0.1)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.03)'
-          }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2">
             <path d="M5 12h14" /><path d="M12 5l7 7-7 7" />
           </svg>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 
@@ -494,18 +479,20 @@ function DesktopMetricCard({ icon, iconBg, iconColor, label, value, valueColor, 
 // Mobile Metric Card
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, bars, barColor, chartLoading }: {
+function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, bars, barColor, chartLoading, href }: {
   icon: React.ReactNode; iconBg: string; label: string
   value: number; valueColor?: string; highlight?: boolean
-  bars: number[]; barColor: string; chartLoading: boolean
+  bars: number[]; barColor: string; chartLoading: boolean; href?: string
 }) {
   return (
-    <div
+    <Link
+      href={href || '/calls'}
       className="bg-white flex items-center gap-4"
       style={{
         borderRadius: 18,
         padding: 20,
         borderLeft: highlight ? '4px solid #EF4444' : undefined,
+        textDecoration: 'none',
       }}
     >
       <div
@@ -538,7 +525,7 @@ function MobileMetricCard({ icon, iconBg, label, value, valueColor, highlight, b
           </svg>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 
@@ -617,7 +604,7 @@ function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
           {formatPhoneNumber(call.caller_number)}
         </p>
         <p style={{ fontSize: 12, color: '#8B7355' }}>
-          {call.duration != null && call.duration > 0 ? formatDuration(call.duration) : 'Inbound'}
+          {call.duration_seconds != null && call.duration_seconds > 0 ? formatDuration(call.duration_seconds) : 'Inbound'}
           {' '}&middot; Inbound
         </p>
       </div>

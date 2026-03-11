@@ -8,11 +8,11 @@ import { Badge } from '@/components/badge'
 import { AudioPlayer } from '@/components/audio-player'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useCallEvents } from '@/hooks/use-call-events'
-import { fetchCallLog, fetchDashboardSummary } from '@/lib/api'
-import { config } from '@/lib/config'
+import { fetchCallLog, fetchDashboardSummary, fetchCombinedCallLog, fetchCombinedSummary } from '@/lib/api'
+import { useRestaurant } from '@/lib/restaurant-context'
 import { formatPhoneNumber, formatDuration } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import type { CallRecord, DashboardSummary } from '@/types'
+import type { CallRecord } from '@/types'
 
 type StatusFilter = 'all' | 'completed' | 'missed' | 'recovered'
 const STATUS_PILLS: { id: StatusFilter; label: string }[] = [
@@ -30,7 +30,7 @@ function safeNum(n: unknown): number {
 export default function CallsPage() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [calls, setCalls] = useState<CallRecord[]>([])
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [summary, setSummary] = useState<{ missed_calls: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [page, setPage] = useState(1)
@@ -39,7 +39,7 @@ export default function CallsPage() {
   const [search, setSearch] = useState('')
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null)
 
-  const tenantId = config.tenantId
+  const { tenantId, isAll, allTenantIds, current } = useRestaurant()
 
   const loadCalls = useCallback(async (reset = false) => {
     const p = reset ? 1 : page
@@ -47,9 +47,10 @@ export default function CallsPage() {
     else setLoadingMore(true)
 
     try {
+      const filters = { status: statusFilter === 'all' ? 'all' as const : statusFilter, page: p, perPage: 20, caller: search.trim() || undefined }
       const [result, summaryData] = await Promise.all([
-        fetchCallLog(tenantId, { status: statusFilter === 'all' ? 'all' : statusFilter, page: p, perPage: 20 }),
-        reset ? fetchDashboardSummary(tenantId) : Promise.resolve(summary),
+        isAll ? fetchCombinedCallLog(allTenantIds, filters) : fetchCallLog(tenantId, filters),
+        reset ? (isAll ? fetchCombinedSummary(allTenantIds) : fetchDashboardSummary(tenantId)) : Promise.resolve(summary),
       ])
       if (reset) {
         setCalls(result.calls)
@@ -66,20 +67,16 @@ export default function CallsPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [tenantId, statusFilter, page, summary])
+  }, [tenantId, statusFilter, page, summary, search])
 
-  useEffect(() => { loadCalls(true) }, [tenantId, statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadCalls(true) }, [tenantId, statusFilter, search]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { connected } = useCallEvents({ onEvent: () => loadCalls(true) })
 
   const missedCalls = safeNum(summary?.missed_calls)
 
-  // Filter by search
-  const filteredCalls = useMemo(() => {
-    if (!search.trim()) return calls
-    const q = search.replace(/\D/g, '')
-    return calls.filter(c => c.caller_number.replace(/\D/g, '').includes(q))
-  }, [calls, search])
+  // Server-side filtering is done via API params — calls are already filtered
+  const filteredCalls = calls
 
   // Count callers for "history"
   const callerHistory = useMemo(() => {
@@ -220,7 +217,7 @@ export default function CallsPage() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col" style={{ paddingBottom: 64 }}>
-        <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} isMobile />
+        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
         <main className="flex-1 px-4 pt-5 pb-4">
           <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00', marginBottom: 16 }}>
             All Calls
@@ -234,7 +231,7 @@ export default function CallsPage() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} />
+      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} />
       <div className="flex flex-1">
         <Sidebar missedCount={missedCalls} />
         <main className="flex-1 overflow-y-auto flex" style={{ padding: '36px 40px' }}>
@@ -314,7 +311,7 @@ function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean;
           {formatPhoneNumber(call.caller_number)}
         </p>
         <p style={{ fontSize: 12, color: '#8B7355' }}>
-          {call.duration && call.duration > 0 ? formatDuration(call.duration) : 'No answer'}
+          {call.duration_seconds && call.duration_seconds > 0 ? formatDuration(call.duration_seconds) : 'No answer'}
           {' '}&middot; Inbound
         </p>
       </div>
@@ -370,8 +367,8 @@ function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCoun
           {!isMissed && (
             <TimelineItem label="Answered" time="Connected" active />
           )}
-          {call.duration && call.duration > 0 && (
-            <TimelineItem label="Duration" time={formatDuration(call.duration)} active />
+          {call.duration_seconds && call.duration_seconds > 0 && (
+            <TimelineItem label="Duration" time={formatDuration(call.duration_seconds)} active />
           )}
           <TimelineItem
             label={isMissed ? 'Missed' : 'Ended'}
@@ -401,7 +398,7 @@ function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCoun
           <MetaRow label="Date" value={time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} />
           <MetaRow label="Time" value={time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} />
           <MetaRow label="Direction" value="Inbound" />
-          <MetaRow label="Duration" value={call.duration && call.duration > 0 ? formatDuration(call.duration) : '—'} />
+          <MetaRow label="Duration" value={call.duration_seconds != null && call.duration_seconds > 0 ? formatDuration(call.duration_seconds) : '—'} />
           <MetaRow label="Status" value={call.status} />
         </div>
       </div>

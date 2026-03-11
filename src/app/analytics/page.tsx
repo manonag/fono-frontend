@@ -6,30 +6,28 @@ import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useCallEvents } from '@/hooks/use-call-events'
-import { fetchDashboardSummary, fetchCallLog } from '@/lib/api'
-import { config } from '@/lib/config'
+import { fetchDashboardSummary, fetchCallLog, fetchPeakHours, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
+import { useRestaurant } from '@/lib/restaurant-context'
+import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
 import { formatDuration } from '@/lib/utils'
-import type { DashboardSummary, CallRecord, DateFilter } from '@/types'
+import type { CallRecord, DateFilter } from '@/types'
 
 function safeNum(n: unknown): number {
   const num = Number(n)
   return isNaN(num) ? 0 : num
 }
 
-type DatePill = { id: DateFilter; label: string }
-const DATE_PILLS: DatePill[] = [
-  { id: 'today', label: 'Today' },
-  { id: 'week', label: 'This Week' },
-  { id: 'month', label: 'This Month' },
-]
+interface CustomDateRange { from: string; to: string }
 
 export default function AnalyticsPage() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [dateFilter, setDateFilter] = useState<DateFilter>('month')
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [customRange, setCustomRange] = useState<CustomDateRange | undefined>()
+  const [summary, setSummary] = useState<{ total_calls: number; missed_calls: number; answered_calls: number; total_duration_seconds: number } | null>(null)
   const [calls, setCalls] = useState<CallRecord[]>([])
+  const [peakHoursData, setPeakHoursData] = useState<number[]>(Array(24).fill(0))
   const [loading, setLoading] = useState(true)
-  const tenantId = config.tenantId
+  const { tenantId, isAll, allTenantIds, current } = useRestaurant()
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -38,20 +36,41 @@ export default function AnalyticsPage() {
       let page = 1
       let hasMore = true
       while (hasMore) {
-        const result = await fetchCallLog(tenantId, { status: 'all', page, perPage: 100 })
+        const fetcher = isAll
+          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100 })
+          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100 })
+        const result = await fetcher
         allCalls.push(...result.calls)
         hasMore = result.calls.length === 100 && page < 5
         page++
       }
-      const summaryData = await fetchDashboardSummary(tenantId)
+      const tid = isAll ? allTenantIds[0] : tenantId
+      const [summaryData, peakData] = await Promise.all([
+        isAll ? fetchCombinedSummary(allTenantIds) : fetchDashboardSummary(tenantId),
+        fetchPeakHours(tid).catch(() => null),
+      ])
       setSummary(summaryData)
       setCalls(allCalls)
+
+      // Convert UTC peak hours to local time
+      if (peakData?.peak_hours) {
+        const hours = Array(24).fill(0)
+        const tz = peakData.timezone || 'America/Los_Angeles'
+        peakData.peak_hours.forEach(ph => {
+          // Convert UTC hour to local hour using the tenant's timezone
+          const utcDate = new Date()
+          utcDate.setUTCHours(ph.hour_utc, 0, 0, 0)
+          const localHour = parseInt(utcDate.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }))
+          hours[localHour] = (hours[localHour] || 0) + ph.call_count
+        })
+        setPeakHoursData(hours)
+      }
     } catch {
       // silently fail
     } finally {
       setLoading(false)
     }
-  }, [tenantId])
+  }, [tenantId, isAll, allTenantIds])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -59,19 +78,15 @@ export default function AnalyticsPage() {
 
   // Filter calls by date range
   const filteredCalls = useMemo(() => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const { dateFrom, dateTo } = getDateRangeForFilter(dateFilter, customRange)
+    const from = new Date(dateFrom)
+    const to = new Date(dateTo)
 
     return calls.filter(call => {
       const d = new Date(call.created_at)
-      switch (dateFilter) {
-        case 'today': return d >= today
-        case 'week': return d >= new Date(today.getTime() - 7 * 86400000)
-        case 'month': return d >= new Date(today.getFullYear(), today.getMonth() - 1, today.getDate())
-        default: return true
-      }
+      return d >= from && d <= to
     })
-  }, [calls, dateFilter])
+  }, [calls, dateFilter, customRange])
 
   // Heatmap: 7 days × 24 hours
   const heatmapData = useMemo(() => {
@@ -120,12 +135,14 @@ export default function AnalyticsPage() {
     return Array.from(days.entries()).map(([date, data]) => ({ date, ...data }))
   }, [filteredCalls])
 
-  // Peak hours
+  // Peak hours — use real API data if available, else compute from calls
   const hourlyData = useMemo(() => {
+    const hasApiData = peakHoursData.some(h => h > 0)
+    if (hasApiData) return peakHoursData
     const hours = Array(24).fill(0)
     filteredCalls.forEach(c => { hours[new Date(c.created_at).getHours()]++ })
     return hours as number[]
-  }, [filteredCalls])
+  }, [filteredCalls, peakHoursData])
 
   // Stats
   const stats = useMemo(() => {
@@ -144,7 +161,7 @@ export default function AnalyticsPage() {
     const totalDays = new Set(filteredCalls.map(c => new Date(c.created_at).toDateString())).size || 1
     const avgPerDay = Math.round(filteredCalls.length / totalDays)
 
-    const durations = filteredCalls.filter(c => c.duration && c.duration > 0).map(c => c.duration as number)
+    const durations = filteredCalls.filter(c => c.duration_seconds && c.duration_seconds > 0).map(c => c.duration_seconds as number)
     const totalDur = safeNum(summary?.total_duration_seconds)
     const longest = durations.length > 0 ? Math.max(...durations) : 0
     const shortest = durations.length > 0 ? Math.min(...durations) : 0
@@ -161,28 +178,12 @@ export default function AnalyticsPage() {
         <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00' }}>
           Analytics
         </h1>
-        <div className="flex items-center gap-1.5">
-          {DATE_PILLS.map(pill => (
-            <button
-              key={pill.id}
-              onClick={() => setDateFilter(pill.id)}
-              className="transition-all"
-              style={{
-                padding: '8px 18px',
-                borderRadius: 10,
-                fontSize: 13,
-                fontWeight: 500,
-                backgroundColor: dateFilter === pill.id ? '#E0602A' : '#fff',
-                color: dateFilter === pill.id ? '#fff' : '#5C3D22',
-                border: dateFilter === pill.id ? 'none' : '1px solid rgba(0,0,0,0.06)',
-                boxShadow: dateFilter === pill.id ? '0 2px 8px rgba(224,96,42,0.25)' : 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {pill.label}
-            </button>
-          ))}
-        </div>
+        <DateFilterBar
+          value={dateFilter}
+          onChange={setDateFilter}
+          customRange={customRange}
+          onCustomRange={setCustomRange}
+        />
       </div>
 
       {loading ? (
@@ -232,7 +233,7 @@ export default function AnalyticsPage() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col">
-        <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} isMobile />
+        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
         <main className="flex-1">{content}</main>
         <MobileNav missedCount={missedCalls} />
       </div>
@@ -241,7 +242,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName="Spice Garden" connected={connected} />
+      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} />
       <div className="flex flex-1">
         <Sidebar missedCount={missedCalls} />
         <main className="flex-1 overflow-y-auto">{content}</main>

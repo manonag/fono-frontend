@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useRestaurant } from '@/lib/restaurant-context'
+import FonoLogo from './logo'
 
 interface SidebarProps {
   missedCount?: number
@@ -17,6 +19,8 @@ const NAV_ITEMS = [
 
 export function Sidebar({ missedCount = 0 }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { current, restaurants, setCurrent, isAll, setAll } = useRestaurant()
 
   return (
     <aside
@@ -24,9 +28,14 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
       style={{
         width: 260,
         borderRight: '1px solid rgba(0,0,0,0.05)',
-        padding: '28px 0',
+        padding: '20px 0',
       }}
     >
+      {/* Logo */}
+      <div className="px-6 mb-5">
+        <FonoLogo size={30} textColor="#2C1810" mode="light" />
+      </div>
+
       {/* Menu Section */}
       <SectionLabel>Menu</SectionLabel>
       <nav className="flex flex-col gap-1 px-4">
@@ -48,18 +57,73 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
       {/* Restaurants Section */}
       <SectionLabel>Restaurants</SectionLabel>
       <div className="flex flex-col gap-1 px-4">
-        <RestaurantItem
-          initials="SG"
-          name="Spice Garden"
-          location="Tracy, CA"
-          active
-        />
-        <RestaurantItem
-          initials="BC"
-          name="Bawarchi Cafe"
-          location="Fremont, CA"
-          active={false}
-        />
+        {/* All Restaurants option */}
+        <button
+          onClick={() => setAll()}
+          className={cn(
+            'flex items-center gap-3 w-full text-left transition-colors',
+            isAll ? 'bg-cream' : 'hover:bg-cream/60'
+          )}
+          style={{ padding: '8px 12px', borderRadius: 12 }}
+        >
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              backgroundColor: isAll ? '#E0602A' : '#E8E0D8',
+              color: isAll ? '#fff' : '#8B7355',
+              fontSize: 14,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#1E0E00' }} className="truncate">All Restaurants</p>
+            <p style={{ fontSize: 11, color: '#8B7355' }}>Combined view</p>
+          </div>
+          {isAll && (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E0602A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </button>
+
+        {restaurants.map(r => (
+          <RestaurantItem
+            key={r.id}
+            initials={r.initials}
+            name={r.name}
+            location={r.location}
+            active={!isAll && current.id === r.id}
+            onClick={() => setCurrent(r)}
+          />
+        ))}
+
+        {/* Add restaurant button */}
+        <button
+          className="flex items-center gap-3 w-full text-left hover:bg-cream/60 transition-colors"
+          style={{ padding: '8px 12px', borderRadius: 12 }}
+          title="Add restaurant — coming soon"
+        >
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              backgroundColor: 'rgba(0,0,0,0.03)',
+              color: '#B0A090',
+              border: '1.5px dashed #D4C8BC',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </div>
+          <span style={{ fontSize: 12, color: '#B0A090', fontWeight: 500 }}>Add restaurant</span>
+        </button>
       </div>
 
       {/* Spacer */}
@@ -70,8 +134,8 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
 
       {/* Bottom items */}
       <div className="flex flex-col gap-1 px-4 mt-2">
-        <BottomItem icon={<InfoIcon />} label="Help & Support" />
-        <BottomItem icon={<LogoutIcon />} label="Log Out" />
+        <BottomItem icon={<InfoIcon />} label="Help & Support" onClick={() => window.open('mailto:mano@fono.ai', '_blank')} />
+        <BottomItem icon={<LogoutIcon />} label="Log Out" onClick={() => router.push('/login')} />
       </div>
     </aside>
   )
@@ -149,11 +213,12 @@ function NavItem({ href, icon, label, active, badge }: {
   )
 }
 
-function RestaurantItem({ initials, name, location, active }: {
-  initials: string; name: string; location: string; active: boolean
+function RestaurantItem({ initials, name, location, active, onClick }: {
+  initials: string; name: string; location: string; active: boolean; onClick: () => void
 }) {
   return (
     <button
+      onClick={onClick}
       className={cn(
         'flex items-center gap-3 w-full text-left transition-colors',
         active ? 'bg-cream' : 'hover:bg-cream/60'
@@ -190,9 +255,10 @@ function RestaurantItem({ initials, name, location, active }: {
   )
 }
 
-function BottomItem({ icon, label }: { icon: React.ReactNode; label: string }) {
+function BottomItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
   return (
     <button
+      onClick={onClick}
       className="flex items-center gap-3 w-full text-left hover:bg-cream/60 transition-colors"
       style={{
         padding: '8px 12px',

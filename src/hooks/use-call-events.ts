@@ -23,7 +23,7 @@ export function useCallEvents({ onEvent }: UseCallEventsOptions = {}) {
   const connect = useCallback(() => {
     if (typeof window === 'undefined') return
 
-    const es = new EventSource(`${config.apiUrl}/api/v1/events/calls`)
+    const es = new EventSource(`${config.apiUrl}/api/v1/events/calls?tenant_id=${config.tenantId}`)
     eventSourceRef.current = es
 
     es.onopen = () => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { FonoLogo } from './logo'
+import FonoLogo from './logo'
 import { PulsingCircle } from './pulsing-circle'
 import { cn } from '@/lib/utils'
 
@@ -16,7 +16,7 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
   if (variant === 'signup') {
     return (
       <header className="bg-cream py-4 px-6 flex justify-center">
-        <FonoLogo size={32} textColor="#E0602A" circleColor="#E0602A" pulseColor="#E0602A" />
+        <FonoLogo size={32} textColor="#D4652C" mode="light" />
       </header>
     )
   }
@@ -25,7 +25,7 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
     return (
       <header className="bg-ink px-4 sm:px-6 flex items-center justify-between" style={{ height: 56 }}>
         <div className="flex items-center gap-3">
-          <FonoLogo size={24} textColor="#FDF0E8" circleColor="#E0602A" pulseColor="#E0602A" />
+          <FonoLogo size={24} textColor="#FDF0E8" mode="light" />
           {restaurantName && (
             <>
               <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)' }} />
@@ -72,7 +72,7 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
   // Dashboard — Desktop header
   return (
     <header
-      className="flex items-center justify-between px-6 hidden md:flex"
+      className="items-center justify-between px-6 hidden md:flex"
       style={{
         height: 56,
         backgroundColor: '#C84E20',
@@ -80,43 +80,17 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
       }}
     >
       <div className="flex items-center gap-3">
-        <FonoLogo
-          size={22}
-          textColor="white"
-          circleColor="rgba(255,255,255,0.7)"
-          pulseColor="rgba(255,255,255,0.5)"
-        />
+        <FonoLogo size={26} textColor="#fff" mode="orange" />
         {restaurantName && (
           <>
             <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)' }} />
-            <div>
-              <span className="text-white" style={{ fontSize: 15, fontWeight: 600 }}>
-                {restaurantName}
-              </span>
-              {restaurantLocation && (
-                <span className="text-white/55 ml-2" style={{ fontSize: 11 }}>
-                  {restaurantLocation}
-                </span>
-              )}
-            </div>
+            <span className="text-white" style={{ fontSize: 15, fontWeight: 600 }}>
+              {restaurantName}
+            </span>
           </>
         )}
       </div>
-      <div className="flex items-center gap-4">
-        <span className="text-white/50" style={{ fontSize: 13 }}>
-          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </span>
-        <LiveBadge connected={connected} />
-        <div
-          className="flex items-center justify-center rounded-full"
-          style={{ width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round">
-            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-        </div>
-      </div>
+      <LiveBadge connected={connected} />
     </header>
   )
 }

@@ -6,6 +6,8 @@ import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
+import { ConfirmModal } from '@/components/confirm-modal'
+import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
@@ -19,6 +21,8 @@ const TABS: { id: SettingsTab; label: string }[] = [
 export default function SettingsPage() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [activeTab, setActiveTab] = useState<SettingsTab>('restaurant')
+  const { current, isAll } = useRestaurant()
+  const restaurantName = isAll ? 'All Restaurants' : current.name
 
   const content = (
     <div style={{ maxWidth: 720, padding: isMobile ? '20px 16px 80px' : '36px 40px' }}>
@@ -57,7 +61,7 @@ export default function SettingsPage() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col">
-        <Header variant="dashboard" restaurantName="Spice Garden" connected={false} isMobile />
+        <Header variant="dashboard" restaurantName={restaurantName} connected={false} isMobile />
         <main className="flex-1">{content}</main>
         <MobileNav />
       </div>
@@ -66,7 +70,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName="Spice Garden" connected={false} />
+      <Header variant="dashboard" restaurantName={restaurantName} connected={false} />
       <div className="flex flex-1">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">{content}</main>
@@ -234,9 +238,28 @@ function RestaurantTab() {
       >
         <h3 style={{ fontSize: 16, fontWeight: 700, color: '#EF4444', marginBottom: 16 }}>Danger Zone</h3>
         <div className="space-y-4">
-          <DangerAction label="Pause Fono" description="Temporarily stop answering calls" />
-          <DangerAction label="Delete Recordings" description="Permanently delete all recordings" />
-          <DangerAction label="Delete Restaurant" description="Remove this restaurant from Fono" />
+          <DangerAction
+            label="Pause Fono"
+            description="Temporarily stop answering calls"
+            confirmTitle="Pause Fono?"
+            confirmDescription="Fono will stop answering calls for this restaurant. You can resume at any time from this settings page."
+            confirmLabel="Pause"
+            variant="warning"
+          />
+          <DangerAction
+            label="Delete Recordings"
+            description="Permanently delete all recordings"
+            confirmTitle="Delete all recordings?"
+            confirmDescription="This will permanently delete all call recordings for this restaurant. This action cannot be undone."
+            confirmLabel="Delete All Recordings"
+          />
+          <DangerAction
+            label="Delete Restaurant"
+            description="Remove this restaurant from Fono"
+            confirmTitle="Delete this restaurant?"
+            confirmDescription="This will permanently remove this restaurant and all its data from Fono, including call history, recordings, and settings. This action cannot be undone."
+            confirmLabel="Delete Restaurant"
+          />
         </div>
       </div>
     </div>
@@ -252,6 +275,7 @@ function NotificationsTab() {
   const [dailyEmail, setDailyEmail] = useState(true)
   const [weeklyReport, setWeeklyReport] = useState(true)
   const [longCallAlert, setLongCallAlert] = useState(false)
+  const [alertMinutes, setAlertMinutes] = useState(5)
   const [phone, setPhone] = useState('+1 (209) 555-0123')
 
   return (
@@ -302,12 +326,36 @@ function NotificationsTab() {
 
       <SettingsCard>
         <div className="flex items-center justify-between">
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Alert for calls over 5 minutes</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified when calls exceed 5 min</p>
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Alert for long calls</p>
+            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified when calls exceed a duration</p>
           </div>
           <ToggleSwitch on={longCallAlert} onChange={setLongCallAlert} />
         </div>
+        {longCallAlert && (
+          <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
+            <label style={{ fontSize: 13, color: '#5C3D22' }}>Alert after</label>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={alertMinutes}
+              onChange={(e) => setAlertMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              className="bg-white focus:outline-none text-center"
+              style={{
+                width: 60,
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: '1.5px solid rgba(0,0,0,0.08)',
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+            />
+            <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
+          </div>
+        )}
       </SettingsCard>
     </div>
   )
@@ -516,29 +564,46 @@ function ToggleSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) =>
   )
 }
 
-function DangerAction({ label, description }: { label: string; description: string }) {
+function DangerAction({ label, description, confirmTitle, confirmDescription, confirmLabel, variant }: {
+  label: string; description: string; confirmTitle: string; confirmDescription: string
+  confirmLabel?: string; variant?: 'danger' | 'warning'
+}) {
+  const [showModal, setShowModal] = useState(false)
+
   return (
-    <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-      <div>
-        <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>{label}</p>
-        <p style={{ fontSize: 12, color: '#8B7355' }}>{description}</p>
+    <>
+      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>{label}</p>
+          <p style={{ fontSize: 12, color: '#8B7355' }}>{description}</p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="transition-colors"
+          style={{
+            padding: '8px 16px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#EF4444',
+            border: '1px solid rgba(239,68,68,0.2)',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+          }}
+        >
+          {label}
+        </button>
       </div>
-      <button
-        className="transition-colors"
-        style={{
-          padding: '8px 16px',
-          borderRadius: 10,
-          fontSize: 13,
-          fontWeight: 600,
-          color: '#EF4444',
-          border: '1px solid rgba(239,68,68,0.2)',
-          backgroundColor: 'transparent',
-          cursor: 'pointer',
-        }}
-      >
-        {label}
-      </button>
-    </div>
+      <ConfirmModal
+        open={showModal}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={confirmLabel || label}
+        onConfirm={() => setShowModal(false)}
+        onCancel={() => setShowModal(false)}
+        variant={variant || 'danger'}
+      />
+    </>
   )
 }
 
@@ -579,6 +644,23 @@ function PlanCard({ plan }: { plan: Plan }) {
       <p style={{ fontSize: 12, color: '#E0602A', fontWeight: 600, marginTop: 4 }}>
         ${plan.founding_price_monthly}/mo founding rate
       </p>
+      <button
+        disabled
+        className="w-full mt-4"
+        style={{
+          padding: '10px 0',
+          borderRadius: 12,
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#8B7355',
+          backgroundColor: 'rgba(0,0,0,0.04)',
+          border: 'none',
+          cursor: 'not-allowed',
+          opacity: 0.7,
+        }}
+      >
+        Coming Soon
+      </button>
     </div>
   )
 }
