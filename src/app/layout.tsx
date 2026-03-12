@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Nunito } from 'next/font/google'
+import { Providers } from './providers'
 import { RestaurantProvider } from '@/lib/restaurant-context'
 import './globals.css'
 
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${jakarta.variable} ${nunito.variable}`}>
       <body className="font-sans bg-cream text-ink antialiased">
-        <RestaurantProvider>{children}</RestaurantProvider>
+        <Providers>
+          <RestaurantProvider>{children}</RestaurantProvider>
+        </Providers>
       </body>
     </html>
   )

@@ -8,6 +8,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { useCallEvents } from '@/hooks/use-call-events'
 import { fetchDashboardSummary, fetchCallLog, fetchPeakHours, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
 import { formatDuration } from '@/lib/utils'
 import type { CallRecord, DateFilter } from '@/types'
@@ -28,6 +29,7 @@ export default function AnalyticsPage() {
   const [peakHoursData, setPeakHoursData] = useState<number[]>(Array(24).fill(0))
   const [loading, setLoading] = useState(true)
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
+  const token = useFonoToken()
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -37,8 +39,8 @@ export default function AnalyticsPage() {
       let hasMore = true
       while (hasMore) {
         const fetcher = isAll
-          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100 })
-          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100 })
+          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100 }, token)
+          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100 }, token)
         const result = await fetcher
         allCalls.push(...result.calls)
         hasMore = result.calls.length === 100 && page < 5
@@ -46,8 +48,8 @@ export default function AnalyticsPage() {
       }
       const tid = isAll ? allTenantIds[0] : tenantId
       const [summaryData, peakData] = await Promise.all([
-        isAll ? fetchCombinedSummary(allTenantIds) : fetchDashboardSummary(tenantId),
-        fetchPeakHours(tid).catch(() => null),
+        isAll ? fetchCombinedSummary(allTenantIds, undefined, token) : fetchDashboardSummary(tenantId, undefined, token),
+        fetchPeakHours(tid, 30, token).catch(() => null),
       ])
       setSummary(summaryData)
       setCalls(allCalls)
@@ -70,7 +72,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false)
     }
-  }, [tenantId, isAll, allTenantIds])
+  }, [tenantId, isAll, allTenantIds, token])
 
   useEffect(() => { loadData() }, [loadData])
 

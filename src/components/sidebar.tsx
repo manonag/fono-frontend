@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { useRestaurant } from '@/lib/restaurant-context'
 import FonoLogo from './logo'
@@ -19,7 +20,6 @@ const NAV_ITEMS = [
 
 export function Sidebar({ missedCount = 0 }: SidebarProps) {
   const pathname = usePathname()
-  const router = useRouter()
   const { current, restaurants, setCurrent, isAll, setAll } = useRestaurant()
 
   return (
@@ -135,7 +135,7 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
       {/* Bottom items */}
       <div className="flex flex-col gap-1 px-4 mt-2">
         <BottomItem icon={<InfoIcon />} label="Help & Support" onClick={() => window.open('mailto:mano@fono.ai', '_blank')} />
-        <BottomItem icon={<LogoutIcon />} label="Log Out" onClick={() => router.push('/login')} />
+        <BottomItem icon={<LogoutIcon />} label="Log Out" onClick={() => signOut({ callbackUrl: '/login' })} />
       </div>
     </aside>
   )

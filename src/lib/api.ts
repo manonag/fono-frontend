@@ -11,22 +11,31 @@ import type {
 
 const baseUrl = config.apiUrl
 
+function authHeaders(token?: string): HeadersInit {
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
+
 export async function fetchDashboardSummary(
   tenantId: string,
-  days?: number
+  days?: number,
+  token?: string
 ): Promise<DashboardSummary> {
   const params = new URLSearchParams()
   if (days) params.set('days', days.toString())
 
   const qs = params.toString() ? `?${params.toString()}` : ''
-  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/summary${qs}`)
+  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/summary${qs}`, {
+    headers: authHeaders(token),
+  })
   if (!res.ok) throw new Error(`Failed to fetch summary: ${res.status}`)
   return res.json()
 }
 
 export async function fetchCallLog(
   tenantId: string,
-  filters: CallLogFilters
+  filters: CallLogFilters,
+  token?: string
 ): Promise<{ calls: CallRecord[]; total: number; page: number; totalPages: number }> {
   const params = new URLSearchParams({
     page: filters.page.toString(),
@@ -45,7 +54,9 @@ export async function fetchCallLog(
     params.set('date_to', filters.dateTo)
   }
 
-  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/calls?${params.toString()}`)
+  const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/calls?${params.toString()}`, {
+    headers: authHeaders(token),
+  })
   if (!res.ok) throw new Error(`Failed to fetch calls: ${res.status}`)
   const data = await res.json()
 
@@ -59,27 +70,34 @@ export async function fetchCallLog(
 
 export async function fetchAnalyticsSummary(
   tenantId: string,
-  days: number = 7
+  days: number = 7,
+  token?: string
 ): Promise<AnalyticsSummary> {
-  const res = await fetch(`${baseUrl}/analytics/${tenantId}/summary?days=${days}`)
+  const res = await fetch(`${baseUrl}/analytics/${tenantId}/summary?days=${days}`, {
+    headers: authHeaders(token),
+  })
   if (!res.ok) throw new Error(`Failed to fetch analytics summary: ${res.status}`)
   return res.json()
 }
 
 export async function fetchPeakHours(
   tenantId: string,
-  days: number = 30
+  days: number = 30,
+  token?: string
 ): Promise<PeakHoursResponse> {
-  const res = await fetch(`${baseUrl}/analytics/${tenantId}/peak-hours?days=${days}`)
+  const res = await fetch(`${baseUrl}/analytics/${tenantId}/peak-hours?days=${days}`, {
+    headers: authHeaders(token),
+  })
   if (!res.ok) throw new Error(`Failed to fetch peak hours: ${res.status}`)
   return res.json()
 }
 
 export async function fetchCombinedSummary(
   tenantIds: string[],
-  days?: number
+  days?: number,
+  token?: string
 ): Promise<DashboardSummary> {
-  const results = await Promise.all(tenantIds.map(id => fetchDashboardSummary(id, days)))
+  const results = await Promise.all(tenantIds.map(id => fetchDashboardSummary(id, days, token)))
   return {
     total_calls: results.reduce((s, r) => s + (r.total_calls || 0), 0),
     missed_calls: results.reduce((s, r) => s + (r.missed_calls || 0), 0),
@@ -92,9 +110,10 @@ export async function fetchCombinedSummary(
 
 export async function fetchCombinedCallLog(
   tenantIds: string[],
-  filters: CallLogFilters
+  filters: CallLogFilters,
+  token?: string
 ): Promise<{ calls: CallRecord[]; total: number; page: number; totalPages: number }> {
-  const results = await Promise.all(tenantIds.map(id => fetchCallLog(id, filters)))
+  const results = await Promise.all(tenantIds.map(id => fetchCallLog(id, filters, token)))
   const allCalls = results.flatMap(r => r.calls).sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
@@ -132,7 +151,8 @@ function getDateRange(period: DateFilter): { start: Date; end: Date } {
 
 export async function fetchChartData(
   tenantId: string,
-  period: DateFilter
+  period: DateFilter,
+  token?: string
 ): Promise<ChartDataPoint[]> {
   const allCalls: CallRecord[] = []
   let page = 1
@@ -140,7 +160,7 @@ export async function fetchChartData(
   let hasMore = true
 
   while (hasMore) {
-    const result = await fetchCallLog(tenantId, { status: 'all', page, perPage })
+    const result = await fetchCallLog(tenantId, { status: 'all', page, perPage }, token)
     allCalls.push(...result.calls)
     hasMore = result.calls.length === perPage && page < 5
     page++

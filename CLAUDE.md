@@ -12,7 +12,7 @@ Fono — AI voice assistant for restaurant phone calls. This is the customer-fac
 - **State**: React hooks (useState, useEffect, useReducer). No Redux.
 - **API**: Fetch with typed responses. Backend at env var NEXT_PUBLIC_API_URL
 - **Real-time**: Server-Sent Events (SSE) with exponential backoff reconnection
-- **Auth**: Supabase Auth (Google OAuth + email/password) — added in Sprint 3
+- **Auth**: NextAuth.js (Google OAuth) → Fono JWT (migrated from Supabase Auth)
 
 ## Backend
 - **Live URL**: https://fono-backend-production.up.railway.app

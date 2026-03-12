@@ -11,6 +11,7 @@ import { useCallEvents } from '@/hooks/use-call-events'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { fetchDashboardSummary, fetchCallLog, fetchChartData, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import { formatPhoneNumber, formatDuration, timeAgo } from '@/lib/utils'
 import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
 import type { CallRecord, ChartDataPoint, DateFilter } from '@/types'
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [chartLoading, setChartLoading] = useState(true)
 
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
+  const token = useFonoToken()
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -42,18 +44,18 @@ export default function DashboardPage() {
       const { dateFrom, dateTo, days } = getDateRangeForFilter(dateFilter, customRange)
       if (isAll) {
         const [summaryData, callData, allCallData] = await Promise.all([
-          fetchCombinedSummary(allTenantIds, days),
-          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }),
-          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }),
+          fetchCombinedSummary(allTenantIds, days, token),
+          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
+          fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
         setAllCalls(allCallData.calls)
       } else {
         const [summaryData, callData, allCallData] = await Promise.all([
-          fetchDashboardSummary(tenantId, days),
-          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }),
-          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }),
+          fetchDashboardSummary(tenantId, days, token),
+          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
+          fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
@@ -64,20 +66,20 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [tenantId, isAll, allTenantIds, dateFilter, customRange])
+  }, [tenantId, isAll, allTenantIds, dateFilter, customRange, token])
 
   const loadChart = useCallback(async () => {
     setChartLoading(true)
     try {
       const tid = isAll ? allTenantIds[0] : tenantId
-      const data = await fetchChartData(tid, dateFilter)
+      const data = await fetchChartData(tid, dateFilter, token)
       setChartData(data)
     } catch {
       // silently fail
     } finally {
       setChartLoading(false)
     }
-  }, [tenantId, dateFilter, isAll, allTenantIds])
+  }, [tenantId, dateFilter, isAll, allTenantIds, token])
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => { loadChart() }, [loadChart])

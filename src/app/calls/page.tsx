@@ -10,6 +10,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { useCallEvents } from '@/hooks/use-call-events'
 import { fetchCallLog, fetchDashboardSummary, fetchCombinedCallLog, fetchCombinedSummary } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import { formatPhoneNumber, formatDuration } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { CallRecord } from '@/types'
@@ -40,6 +41,7 @@ export default function CallsPage() {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null)
 
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
+  const token = useFonoToken()
 
   const loadCalls = useCallback(async (reset = false) => {
     const p = reset ? 1 : page
@@ -49,8 +51,8 @@ export default function CallsPage() {
     try {
       const filters = { status: statusFilter === 'all' ? 'all' as const : statusFilter, page: p, perPage: 20, caller: search.trim() || undefined }
       const [result, summaryData] = await Promise.all([
-        isAll ? fetchCombinedCallLog(allTenantIds, filters) : fetchCallLog(tenantId, filters),
-        reset ? (isAll ? fetchCombinedSummary(allTenantIds) : fetchDashboardSummary(tenantId)) : Promise.resolve(summary),
+        isAll ? fetchCombinedCallLog(allTenantIds, filters, token) : fetchCallLog(tenantId, filters, token),
+        reset ? (isAll ? fetchCombinedSummary(allTenantIds, undefined, token) : fetchDashboardSummary(tenantId, undefined, token)) : Promise.resolve(summary),
       ])
       if (reset) {
         setCalls(result.calls)
@@ -67,7 +69,7 @@ export default function CallsPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [tenantId, statusFilter, page, summary, search])
+  }, [tenantId, statusFilter, page, summary, search, token])
 
   useEffect(() => { loadCalls(true) }, [tenantId, statusFilter, search]) // eslint-disable-line react-hooks/exhaustive-deps
 
