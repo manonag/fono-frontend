@@ -68,3 +68,42 @@ html {
   15% { transform: scale(1.06); }
   30% { transform: scale(1); }
 }
+
+/* ── Kiosk animations ──────────────────────────────────────────────── */
+@keyframes kiosk-slide-out {
+  0% { opacity: 1; transform: translateX(0); max-height: 120px; }
+  60% { opacity: 0; transform: translateX(40px); max-height: 120px; }
+  100% { opacity: 0; transform: translateX(40px); max-height: 0; padding: 0; margin: 0; }
+}
+
+@keyframes kiosk-flash-in {
+  0% { background-color: rgba(232,115,26,0.3); }
+  100% { background-color: transparent; }
+}
+
+@keyframes sla-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.kiosk-slide-out {
+  animation: kiosk-slide-out 0.5s ease-out forwards;
+}
+
+.kiosk-flash-in {
+  animation: kiosk-flash-in 1.5s ease-out;
+}
+
+.sla-pulse {
+  animation: sla-pulse 1s ease-in-out infinite;
+}
+
+@keyframes kiosk-modal-enter {
+  0% { opacity: 0; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes sla-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}
