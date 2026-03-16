@@ -10,22 +10,15 @@ import FonoLogo from '@/components/logo'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://fono-backend-production.up.railway.app'
 
 function maskPhone(value: string): string {
-  // Strip everything except digits
-  const digits = value.replace(/\D/g, '')
-
-  // Remove leading 1 if 11 digits (country code already included)
-  const local = digits.startsWith('1') && digits.length === 11
-    ? digits.slice(1)
-    : digits
-
+  let digits = value.replace(/\D/g, '')
+  // Always remove leading 1 (whether from user input or from our own +1- prefix reprocessing)
+  if (digits.startsWith('1')) digits = digits.slice(1)
   // Cap at 10 digits
-  const d = local.slice(0, 10)
-
-  // Format progressively
+  const d = digits.slice(0, 10)
   if (d.length === 0) return ''
   if (d.length <= 3) return `+1-${d}`
-  if (d.length <= 6) return `+1-${d.slice(0, 3)}-${d.slice(3)}`
-  return `+1-${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`
+  if (d.length <= 6) return `+1-${d.slice(0,3)}-${d.slice(3)}`
+  return `+1-${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`
 }
 
 function SignupContent() {
