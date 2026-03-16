@@ -9,6 +9,20 @@ import FonoLogo from '@/components/logo'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://fono-backend-production.up.railway.app'
 
+/** Strip to digits, normalize to +1-XXX-XXX-XXXX. Returns null if invalid. */
+function formatPhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '')
+  let ten: string
+  if (digits.length === 10) {
+    ten = digits
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    ten = digits.slice(1)
+  } else {
+    return null
+  }
+  return `+1-${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`
+}
+
 function SignupContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -25,6 +39,7 @@ function SignupContent() {
   const [ownerName, setOwnerName] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [callbackNumber, setCallbackNumber] = useState('')
+  const [callbackEdited, setCallbackEdited] = useState(false)
   const [city, setCity] = useState('')
   const [error, setError] = useState('')
   const [, setCreating] = useState(false)
@@ -40,19 +55,22 @@ function SignupContent() {
     setCreating(true)
     setStep('creating')
 
+    const tenantBody = {
+      restaurant_name: data.restaurant_name,
+      owner_name: data.owner_name,
+      phone_number: data.phone_number,
+      callback_number: data.callback_number,
+      city: data.city || null,
+    }
+    console.log('[Signup] POST /api/v1/tenants →', { url: `${API_URL}/api/v1/tenants`, body: tenantBody, hasToken: !!session.fonoToken })
+
     fetch(`${API_URL}/api/v1/tenants`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.fonoToken}`,
       },
-      body: JSON.stringify({
-        restaurant_name: data.restaurant_name,
-        owner_name: data.owner_name,
-        phone_number: data.phone_number,
-        callback_number: data.callback_number,
-        city: data.city || null,
-      }),
+      body: JSON.stringify(tenantBody),
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -84,8 +102,7 @@ function SignupContent() {
     restaurantName.trim() &&
     ownerName.trim() &&
     phoneNumber.trim() &&
-    callbackNumber.trim() &&
-    phoneNumber.trim() !== callbackNumber.trim()
+    callbackNumber.trim()
 
   const handleSubmitForm = () => {
     if (!isFormValid) return
@@ -96,8 +113,8 @@ function SignupContent() {
       JSON.stringify({
         restaurant_name: restaurantName.trim(),
         owner_name: ownerName.trim(),
-        phone_number: phoneNumber.trim(),
-        callback_number: callbackNumber.trim(),
+        phone_number: formatPhone(phoneNumber) || phoneNumber.trim(),
+        callback_number: formatPhone(callbackNumber) || callbackNumber.trim(),
         city: city.trim(),
       })
     )
@@ -244,16 +261,22 @@ function SignupContent() {
                 <FormField
                   label="Restaurant phone number"
                   value={phoneNumber}
-                  onChange={setPhoneNumber}
+                  onChange={(v) => {
+                    setPhoneNumber(v)
+                    if (!callbackEdited) setCallbackNumber(v)
+                  }}
                   placeholder="+1 (209) 555-0100"
-                  helper="The number customers call"
+                  helper={formatPhone(phoneNumber) ? `Will be saved as ${formatPhone(phoneNumber)}` : 'The number customers call'}
                 />
                 <FormField
                   label="Your callback number"
                   value={callbackNumber}
-                  onChange={setCallbackNumber}
+                  onChange={(v) => {
+                    setCallbackNumber(v)
+                    setCallbackEdited(true)
+                  }}
                   placeholder="+1 (209) 555-0199"
-                  helper="Where we ring you back for missed calls"
+                  helper={formatPhone(callbackNumber) ? `Will be saved as ${formatPhone(callbackNumber)}` : 'Defaults to your main number. Change only if you have a separate direct line for callbacks.'}
                 />
                 <FormField
                   label="City (optional)"
@@ -262,11 +285,6 @@ function SignupContent() {
                   placeholder="e.g. Tracy, CA"
                 />
 
-                {phoneNumber.trim() && callbackNumber.trim() && phoneNumber.trim() === callbackNumber.trim() && (
-                  <p style={{ fontSize: 12, color: '#DC2626', marginTop: -8 }}>
-                    Phone number and callback number must be different.
-                  </p>
-                )}
               </div>
 
               {/* Continue button → triggers Google OAuth */}
