@@ -9,18 +9,21 @@ import FonoLogo from '@/components/logo'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://fono-backend-production.up.railway.app'
 
-/** Strip to digits, normalize to +1-XXX-XXX-XXXX. Returns null if invalid. */
-function formatPhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '')
-  let ten: string
-  if (digits.length === 10) {
-    ten = digits
-  } else if (digits.length === 11 && digits.startsWith('1')) {
-    ten = digits.slice(1)
-  } else {
-    return null
-  }
-  return `+1-${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`
+/** Strip raw input to max 10 digits and format as +1-XXX-XXX-XXXX progressively. */
+function maskPhone(raw: string): string {
+  // Strip everything except digits
+  let digits = raw.replace(/\D/g, '')
+  // If user pasted/typed a leading 1 for 11-digit number, drop it
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1)
+  // Cap at 10 digits
+  digits = digits.slice(0, 10)
+  if (digits.length === 0) return ''
+  // Build formatted string progressively
+  let out = '+1-'
+  out += digits.slice(0, 3)
+  if (digits.length > 3) out += '-' + digits.slice(3, 6)
+  if (digits.length > 6) out += '-' + digits.slice(6)
+  return out
 }
 
 function SignupContent() {
@@ -113,8 +116,8 @@ function SignupContent() {
       JSON.stringify({
         restaurant_name: restaurantName.trim(),
         owner_name: ownerName.trim(),
-        phone_number: formatPhone(phoneNumber) || phoneNumber.trim(),
-        callback_number: formatPhone(callbackNumber) || callbackNumber.trim(),
+        phone_number: phoneNumber.trim(),
+        callback_number: callbackNumber.trim(),
         city: city.trim(),
       })
     )
@@ -258,25 +261,23 @@ function SignupContent() {
                   onChange={setOwnerName}
                   placeholder="Your full name"
                 />
-                <FormField
+                <PhoneField
                   label="Restaurant phone number"
                   value={phoneNumber}
                   onChange={(v) => {
                     setPhoneNumber(v)
                     if (!callbackEdited) setCallbackNumber(v)
                   }}
-                  placeholder="+1 (209) 555-0100"
-                  helper={formatPhone(phoneNumber) ? `Will be saved as ${formatPhone(phoneNumber)}` : 'The number customers call'}
+                  helper="The number customers call"
                 />
-                <FormField
+                <PhoneField
                   label="Your callback number"
                   value={callbackNumber}
                   onChange={(v) => {
                     setCallbackNumber(v)
                     setCallbackEdited(true)
                   }}
-                  placeholder="+1 (209) 555-0199"
-                  helper={formatPhone(callbackNumber) ? `Will be saved as ${formatPhone(callbackNumber)}` : 'Defaults to your main number. Change only if you have a separate direct line for callbacks.'}
+                  helper="Defaults to your main number. Change only if you have a separate direct line for callbacks."
                 />
                 <FormField
                   label="City (optional)"
@@ -598,6 +599,64 @@ function PlacesAutocompleteField({
             </p>
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+function PhoneField({
+  label,
+  value,
+  onChange,
+  helper,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  helper?: string
+}) {
+  const handleChange = (raw: string) => {
+    onChange(maskPhone(raw))
+  }
+
+  return (
+    <div>
+      <label
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: '#8B7355',
+          display: 'block',
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </label>
+      <input
+        type="tel"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="+1-XXX-XXX-XXXX"
+        className="w-full focus:outline-none"
+        style={{
+          padding: '12px 14px',
+          borderRadius: 12,
+          border: '1.5px solid rgba(0,0,0,0.1)',
+          backgroundColor: '#fff',
+          color: '#1E0E00',
+          fontSize: 14,
+          letterSpacing: '0.02em',
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = '#E0602A'
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = 'rgba(0,0,0,0.1)'
+        }}
+      />
+      {helper && (
+        <p style={{ fontSize: 11, color: '#B0A090', marginTop: 4 }}>{helper}</p>
       )}
     </div>
   )
