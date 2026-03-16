@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
+import { cookies } from 'next/headers'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://fono-backend-production.up.railway.app'
 
@@ -17,13 +18,21 @@ const handler = NextAuth({
     async signIn({ account, user }) {
       if (account?.provider === 'google' && account.id_token) {
         try {
+          // Read is_signup flag from cookie (set by login/signup pages before OAuth)
+          const cookieStore = await cookies()
+          const isSignup = cookieStore.get('fono_is_signup')?.value === 'true'
+
           const res = await fetch(`${API_URL}/api/v1/auth/google`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: account.id_token }),
+            body: JSON.stringify({ token: account.id_token, is_signup: isSignup }),
           })
 
           if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            if (res.status === 404 && body.detail === 'no_account') {
+              return '/login?error=no_account'
+            }
             console.error('Fono backend auth failed:', res.status)
             return false
           }

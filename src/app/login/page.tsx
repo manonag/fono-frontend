@@ -1,9 +1,20 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import FonoLogo from '@/components/logo'
 
-export default function LoginPage() {
+function LoginContent() {
+  const searchParams = useSearchParams()
+  const error = searchParams.get('error')
+
+  const handleLogin = () => {
+    // Set cookie so NextAuth callback knows this is a login (not signup)
+    document.cookie = 'fono_is_signup=false; path=/; max-age=300; SameSite=Lax'
+    signIn('google', { callbackUrl: '/dashboard' })
+  }
+
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4"
@@ -28,6 +39,31 @@ export default function LoginPage() {
         >
           Sign in to manage your restaurant
         </p>
+
+        {/* No-account error banner */}
+        {error === 'no_account' && (
+          <div
+            style={{
+              backgroundColor: '#FEF2F2',
+              border: '1px solid #FECACA',
+              borderRadius: 12,
+              padding: '14px 16px',
+              marginBottom: 20,
+              textAlign: 'center',
+            }}
+          >
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#DC2626', marginBottom: 4 }}>
+              No account found
+            </p>
+            <p style={{ fontSize: 13, color: '#991B1B' }}>
+              You need to{' '}
+              <a href="/signup" style={{ color: '#E0602A', fontWeight: 600, textDecoration: 'underline' }}>
+                sign up
+              </a>{' '}
+              first.
+            </p>
+          </div>
+        )}
 
         {/* Sign in card */}
         <div
@@ -64,7 +100,7 @@ export default function LoginPage() {
 
           {/* Google sign in button */}
           <button
-            onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+            onClick={handleLogin}
             className="w-full flex items-center justify-center gap-3 transition-all hover:shadow-md"
             style={{
               height: 52,
@@ -97,6 +133,21 @@ export default function LoginPage() {
             </svg>
             Continue with Google
           </button>
+
+          {/* Sign up link */}
+          <p
+            style={{
+              fontSize: 13,
+              color: '#8B7355',
+              textAlign: 'center',
+              marginTop: 20,
+            }}
+          >
+            Don&apos;t have an account?{' '}
+            <a href="/signup" style={{ color: '#E0602A', fontWeight: 600 }}>
+              Sign up
+            </a>
+          </p>
         </div>
 
         {/* Footer */}
@@ -112,5 +163,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   )
 }
