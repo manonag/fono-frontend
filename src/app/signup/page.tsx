@@ -9,21 +9,23 @@ import FonoLogo from '@/components/logo'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://fono-backend-production.up.railway.app'
 
-/** Strip raw input to max 10 digits and format as +1-XXX-XXX-XXXX progressively. */
-function maskPhone(raw: string): string {
+function maskPhone(value: string): string {
   // Strip everything except digits
-  let digits = raw.replace(/\D/g, '')
-  // If user pasted/typed a leading 1 for 11-digit number, drop it
-  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1)
+  const digits = value.replace(/\D/g, '')
+
+  // Remove leading 1 if 11 digits (country code already included)
+  const local = digits.startsWith('1') && digits.length === 11
+    ? digits.slice(1)
+    : digits
+
   // Cap at 10 digits
-  digits = digits.slice(0, 10)
-  if (digits.length === 0) return ''
-  // Build formatted string progressively
-  let out = '+1-'
-  out += digits.slice(0, 3)
-  if (digits.length > 3) out += '-' + digits.slice(3, 6)
-  if (digits.length > 6) out += '-' + digits.slice(6)
-  return out
+  const d = local.slice(0, 10)
+
+  // Format progressively
+  if (d.length === 0) return ''
+  if (d.length <= 3) return `+1-${d}`
+  if (d.length <= 6) return `+1-${d.slice(0, 3)}-${d.slice(3)}`
+  return `+1-${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`
 }
 
 function SignupContent() {
