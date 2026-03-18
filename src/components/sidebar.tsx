@@ -49,12 +49,24 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
             badge={item.icon === 'phone' && missedCount > 0 ? missedCount : undefined}
           />
         ))}
-        <NavItem
+        <a
           href={`/kiosk?tenant=${isAll ? (restaurants[0]?.id || '') : current.id}`}
-          icon={<NavIcon name="monitor" />}
-          label="Launch Kiosk"
-          active={pathname === '/kiosk'}
-        />
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            'flex items-center gap-3 w-full text-left transition-colors',
+            pathname === '/kiosk' ? 'bg-cream' : 'hover:bg-cream/60'
+          )}
+          style={{ height: 44, padding: '11px 12px', borderRadius: 12, textDecoration: 'none' }}
+        >
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.03)' }}
+          >
+            <span style={{ color: '#5C3D22' }}><NavIcon name="monitor" /></span>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 500, color: '#5C3D22' }}>Launch Kiosk</span>
+        </a>
       </nav>
 
       {/* Divider */}
