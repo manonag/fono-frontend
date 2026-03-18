@@ -8,137 +8,6 @@ import { CallCard, type KioskCall } from './components/call-card'
 import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
 
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-
-function makeMockData() {
-  const now = Date.now()
-
-  const missed: KioskCall[] = [
-    // Breached #1
-    {
-      id: '1',
-      caller_phone: '+1 (510) 555-5678',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 22 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 3,
-      sla_deadline: new Date(now - 7 * 60000).toISOString(),
-      sla_breached: true,
-    },
-    // Breached #2
-    {
-      id: '2',
-      caller_phone: '+1 (925) 555-1122',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 18 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 1,
-      sla_deadline: new Date(now - 3 * 60000).toISOString(),
-      sla_breached: true,
-    },
-    // Approaching (<5min left)
-    {
-      id: '3',
-      caller_phone: '+1 (408) 555-1234',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 12 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 2,
-      sla_deadline: new Date(now + 3 * 60000).toISOString(),
-      sla_breached: false,
-    },
-    // Safe #1
-    {
-      id: '4',
-      caller_phone: '+1 (650) 555-9012',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 7 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 1,
-      sla_deadline: new Date(now + 8 * 60000).toISOString(),
-      sla_breached: false,
-    },
-    // Safe #2
-    {
-      id: '5',
-      caller_phone: '+1 (925) 555-7890',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 4 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 1,
-      sla_deadline: new Date(now + 11 * 60000).toISOString(),
-      sla_breached: false,
-    },
-    // Safe #3
-    {
-      id: '6',
-      caller_phone: '+1 (408) 555-3456',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 2 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'pending',
-      callback_at: null,
-      repeat_count: 1,
-      sla_deadline: new Date(now + 13 * 60000).toISOString(),
-      sla_breached: false,
-    },
-  ]
-
-  const recovered: KioskCall[] = [
-    {
-      id: '7',
-      caller_phone: '+1 (408) 555-0000',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 45 * 60000).toISOString(),
-      duration_seconds: 180,
-      callback_status: 'recovered',
-      callback_at: new Date(now - 35 * 60000).toISOString(),
-      repeat_count: 1,
-      sla_deadline: null,
-      sla_breached: false,
-    },
-    {
-      id: '8',
-      caller_phone: '+1 (510) 555-4444',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 90 * 60000).toISOString(),
-      duration_seconds: 120,
-      callback_status: 'recovered',
-      callback_at: new Date(now - 80 * 60000).toISOString(),
-      repeat_count: 2,
-      sla_deadline: null,
-      sla_breached: false,
-    },
-  ]
-
-  const ignored: KioskCall[] = [
-    {
-      id: '9',
-      caller_phone: '+1 (510) 555-9999',
-      call_status: 'NO_ANSWER',
-      started_at: new Date(now - 60 * 60000).toISOString(),
-      duration_seconds: null,
-      callback_status: 'ignored',
-      callback_at: new Date(now - 50 * 60000).toISOString(),
-      repeat_count: 1,
-      sla_deadline: null,
-      sla_breached: false,
-    },
-  ]
-
-  return { missed, recovered, ignored }
-}
-
 // ── Sorting ───────────────────────────────────────────────────────────────────
 
 function getSLARemaining(call: KioskCall): number {
@@ -175,19 +44,62 @@ function sortMissedCalls(calls: KioskCall[]): KioskCall[] {
 
 export default function KioskPage() {
   const { data: session } = useSession()
+  const tenantId = (session?.tenants as Array<{ id: string }>)?.[0]?.id
   const [dark, setDark] = useState(true)
   const [activeTab, setActiveTab] = useState<KioskTab>('missed')
-  const [mockData] = useState(makeMockData)
-  const [missedCalls, setMissedCalls] = useState<KioskCall[]>(mockData.missed)
-  const [recoveredCalls, setRecoveredCalls] = useState<KioskCall[]>(mockData.recovered)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [ignoredCalls, setIgnoredCalls] = useState<KioskCall[]>(mockData.ignored)
+
+  // Calls state — one array per tab
+  const [missedCalls, setMissedCalls] = useState<KioskCall[]>([])
+  const [recoveredCalls, setRecoveredCalls] = useState<KioskCall[]>([])
+  const [ignoredCalls, setIgnoredCalls] = useState<KioskCall[]>([])
+  const [loading, setLoading] = useState(true)
+
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [confirmCall, setConfirmCall] = useState<KioskCall | null>(null)
   const [callbackLoading, setCallbackLoading] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [animatingOut, setAnimatingOut] = useState<string | null>(null)
   const toastTimeout = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // Fetch calls for a given tab
+  const fetchTab = useCallback(async (tab: string): Promise<KioskCall[]> => {
+    if (!tenantId || !session?.fonoToken) return []
+    try {
+      const res = await fetch(
+        `${config.apiUrl}/api/v1/tenants/${tenantId}/kiosk/calls?tab=${tab}`,
+        { headers: { Authorization: `Bearer ${session.fonoToken}` } }
+      )
+      if (!res.ok) return []
+      return await res.json()
+    } catch {
+      return []
+    }
+  }, [tenantId, session?.fonoToken])
+
+  // Fetch all tabs
+  const fetchAllTabs = useCallback(async () => {
+    if (!tenantId || !session?.fonoToken) return
+    setLoading(true)
+    const [missed, recovered, ignored] = await Promise.all([
+      fetchTab('missed'),
+      fetchTab('recovered'),
+      fetchTab('ignored'),
+    ])
+    setMissedCalls(missed)
+    setRecoveredCalls(recovered)
+    setIgnoredCalls(ignored)
+    setLoading(false)
+  }, [tenantId, session?.fonoToken, fetchTab])
+
+  // Initial fetch + poll every 30 seconds
+  useEffect(() => {
+    fetchAllTabs()
+  }, [fetchAllTabs])
+
+  useEffect(() => {
+    const interval = setInterval(fetchAllTabs, 30000)
+    return () => clearInterval(interval)
+  }, [fetchAllTabs])
 
   // Request wake lock to keep screen on
   useEffect(() => {
@@ -249,23 +161,31 @@ export default function KioskPage() {
   }, [])
 
   const handleConfirmCallback = useCallback(async () => {
-    if (!confirmCall) return
+    if (!confirmCall || !session?.fonoToken) return
     setCallbackLoading(true)
     const callToMove = confirmCall
     setConfirmCall(null)
     setSelectedCardId(null)
 
     try {
-      const token = session?.fonoToken
-      await fetch(`${config.apiUrl}/api/v1/calls/${callToMove.id}/callback`, {
+      const res = await fetch(`${config.apiUrl}/api/v1/calls/${callToMove.id}/callback`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${session.fonoToken}`,
         },
+        body: JSON.stringify({ status: 'recovered' }),
       })
+
+      if (!res.ok) {
+        showToast('Callback failed', 'error')
+        setCallbackLoading(false)
+        return
+      }
     } catch {
-      // Backend callback endpoint may not exist yet — continue with mock flow
+      showToast('Callback failed', 'error')
+      setCallbackLoading(false)
+      return
     }
 
     // Animate out the card, then move to recovered
@@ -327,7 +247,33 @@ export default function KioskPage() {
           padding: '20px 24px',
         }}
       >
-        {visibleCalls.length === 0 ? (
+        {loading ? (
+          <div
+            style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                border: `3px solid ${dark ? 'rgba(253,240,232,0.15)' : 'rgba(0,0,0,0.1)'}`,
+                borderTopColor: '#E8731A',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+            <span style={{ fontSize: 14, color: dark ? 'rgba(253,240,232,0.3)' : '#8B7355', fontWeight: 500 }}>
+              Loading calls...
+            </span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        ) : visibleCalls.length === 0 ? (
           <div
             style={{
               height: '100%',
