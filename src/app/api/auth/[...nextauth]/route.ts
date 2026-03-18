@@ -49,11 +49,25 @@ const handler = NextAuth({
       return true
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.fonoToken = user.fonoToken
         token.tenants = user.tenants
         token.userId = user.id
+      }
+      // When client calls update(), re-fetch tenants from backend
+      if (trigger === 'update' && token.fonoToken) {
+        try {
+          const res = await fetch(`${API_URL}/api/v1/auth/me`, {
+            headers: { Authorization: `Bearer ${token.fonoToken}` },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            token.tenants = data.tenants || []
+          }
+        } catch {
+          // keep existing token on error
+        }
       }
       return token
     },

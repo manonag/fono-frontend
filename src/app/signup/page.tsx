@@ -24,7 +24,7 @@ function maskPhone(value: string): string {
 function SignupContent() {
 
   const searchParams = useSearchParams()
-  const { data: session, status: sessionStatus } = useSession()
+  const { data: session, status: sessionStatus, update } = useSession()
 
   // Determine starting step from URL param
   const stepParam = searchParams.get('step')
@@ -77,9 +77,11 @@ function SignupContent() {
         }
         return res.json()
       })
-      .then(() => {
+      .then(async () => {
         sessionStorage.removeItem('fono_signup')
         setStep('done')
+        // Force NextAuth to re-fetch session so JWT gets updated tenant list
+        await update()
         // Full reload to pick up fresh session with tenant data
         setTimeout(() => { window.location.href = '/dashboard' }, 1500)
       })
