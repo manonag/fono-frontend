@@ -108,6 +108,50 @@ function RestaurantTab() {
   const [ownerOpen, setOwnerOpen] = useState(false)
   const [dangerOpen, setDangerOpen] = useState(false)
 
+  // Missed Call Recovery state
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+  const [slaMinutes, setSlaMinutes] = useState(15)
+  const [orderUrl, setOrderUrl] = useState('')
+  const [slaLoading, setSlaLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    const tid = isAll ? tenantId : current.id
+    if (!tid || tid === 'all' || !token) return
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setSlaMinutes(data.sla_minutes || 15)
+          setOrderUrl(data.online_order_url || '')
+        }
+        setSlaLoading(false)
+      })
+      .catch(() => setSlaLoading(false))
+  }, [isAll, tenantId, current.id, token])
+
+  const handleSaveSla = async () => {
+    const tid = isAll ? tenantId : current.id
+    if (!tid || tid === 'all' || !token) return
+    setSaving(true)
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sla_minutes: slaMinutes, online_order_url: orderUrl }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      }
+    } catch { /* ignore */ }
+    setSaving(false)
+  }
+
   return (
     <div className="space-y-6">
       {/* Restaurant Info */}
@@ -202,6 +246,64 @@ function RestaurantTab() {
               </button>
             </div>
           </div>
+        )}
+      </SettingsCard>
+
+      {/* Missed Call Recovery */}
+      <SettingsCard title="Missed Call Recovery">
+        {slaLoading ? (
+          <div className="flex items-center justify-center" style={{ padding: 20 }}>
+            <div className="animate-spin" style={{ width: 20, height: 20, border: '2px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
+          </div>
+        ) : (
+          <>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Call back within</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min={5}
+                  max={60}
+                  value={slaMinutes}
+                  onChange={(e) => setSlaMinutes(Math.max(5, Math.min(60, Number(e.target.value) || 5)))}
+                  className="bg-white focus:outline-none text-center"
+                  style={{ width: 80, padding: '10px 14px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14, fontWeight: 600 }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+                />
+                <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
+              </div>
+              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
+                Customers who miss a call will receive an SMS promising a callback within this time
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Online ordering link</label>
+              <input
+                type="text"
+                value={orderUrl}
+                onChange={(e) => setOrderUrl(e.target.value)}
+                placeholder="https://your-restaurant.com/order"
+                className="w-full bg-white focus:outline-none"
+                style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
+              />
+              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
+                Optional. Included in the missed call SMS so customers can order online instead of waiting
+              </p>
+            </div>
+
+            <button
+              onClick={handleSaveSla}
+              disabled={saving}
+              className="bg-terra text-white transition-colors hover:bg-terra-dark"
+              style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+            >
+              {saved ? 'Saved \u2713' : saving ? 'Saving...' : 'Save'}
+            </button>
+          </>
         )}
       </SettingsCard>
 
