@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { signIn, useSession } from 'next-auth/react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
 import FonoLogo from '@/components/logo'
@@ -22,7 +22,7 @@ function maskPhone(value: string): string {
 }
 
 function SignupContent() {
-  const router = useRouter()
+
   const searchParams = useSearchParams()
   const { data: session, status: sessionStatus } = useSession()
 
@@ -80,8 +80,8 @@ function SignupContent() {
       .then(() => {
         sessionStorage.removeItem('fono_signup')
         setStep('done')
-        // Small delay then redirect to dashboard
-        setTimeout(() => router.push('/dashboard'), 1500)
+        // Full reload to pick up fresh session with tenant data
+        setTimeout(() => { window.location.href = '/dashboard' }, 1500)
       })
       .catch((err) => {
         setError(err.message)
@@ -94,7 +94,7 @@ function SignupContent() {
         setCallbackNumber(data.callback_number || '')
         setCity(data.city || '')
       })
-  }, [sessionStatus, session, router])
+  }, [sessionStatus, session])
 
   const isFormValid =
     restaurantName.trim() &&
