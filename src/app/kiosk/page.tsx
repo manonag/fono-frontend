@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import { KioskHeader } from './components/kiosk-header'
 import { CallTabs, type KioskTab } from './components/call-tabs'
 import { CallCard, type KioskCall } from './components/call-card'
@@ -42,9 +44,15 @@ function sortMissedCalls(calls: KioskCall[]): KioskCall[] {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function KioskPage() {
+function KioskContent() {
   const { data: session } = useSession()
-  const tenantId = (session?.tenants as Array<{ id: string }>)?.[0]?.id
+  const searchParams = useSearchParams()
+  const urlTenantId = searchParams.get('tenant')
+  const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
+  const tenantId = urlTenantId && userTenants.some(t => t.id === urlTenantId)
+    ? urlTenantId
+    : userTenants[0]?.id
+  const tenantName = userTenants.find(t => t.id === tenantId)?.name || ''
   const [dark, setDark] = useState(true)
   const [activeTab, setActiveTab] = useState<KioskTab>('missed')
 
@@ -226,6 +234,7 @@ export default function KioskPage() {
         connected={true}
         dark={dark}
         onToggleTheme={() => setDark((d) => !d)}
+        restaurantName={tenantName}
       />
 
       <CallTabs
@@ -470,5 +479,13 @@ export default function KioskPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function KioskPage() {
+  return (
+    <Suspense>
+      <KioskContent />
+    </Suspense>
   )
 }

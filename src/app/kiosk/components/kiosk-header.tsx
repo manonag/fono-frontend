@@ -9,10 +9,12 @@ interface KioskHeaderProps {
   connected: boolean
   dark: boolean
   onToggleTheme: () => void
+  restaurantName?: string
 }
 
-export function KioskHeader({ connected, dark, onToggleTheme }: KioskHeaderProps) {
+export function KioskHeader({ connected, dark, onToggleTheme, restaurantName }: KioskHeaderProps) {
   const { current } = useRestaurant()
+  const displayName = restaurantName || current.name
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export function KioskHeader({ connected, dark, onToggleTheme }: KioskHeaderProps
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <FonoLogo size={24} textColor={dark ? '#FDF0E8' : '#D4652C'} mode={dark ? 'light' : 'light'} />
         <div style={{ width: 1, height: 24, background: border }} />
-        <span style={{ fontSize: 15, fontWeight: 600, color: textPrimary }}>{current.name}</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: textPrimary }}>{displayName}</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

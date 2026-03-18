@@ -16,6 +16,11 @@ export async function middleware(request: NextRequest) {
   if (!token && isProtected) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
+    // Preserve original URL as redirect param (for kiosk deep-links)
+    const originalPath = request.nextUrl.pathname + request.nextUrl.search
+    if (originalPath !== '/') {
+      url.searchParams.set('redirect', originalPath)
+    }
     return NextResponse.redirect(url)
   }
 

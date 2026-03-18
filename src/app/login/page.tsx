@@ -8,11 +8,13 @@ import FonoLogo from '@/components/logo'
 function LoginContent() {
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  const redirect = searchParams.get('redirect')
+  const isKiosk = redirect?.startsWith('/kiosk')
 
   const handleLogin = () => {
     // Set cookie so NextAuth callback knows this is a login (not signup)
     document.cookie = 'fono_is_signup=false; path=/; max-age=300; SameSite=Lax'
-    signIn('google', { callbackUrl: '/dashboard' })
+    signIn('google', { callbackUrl: redirect || '/dashboard' })
   }
 
   return (
@@ -37,7 +39,7 @@ function LoginContent() {
             lineHeight: 1.5,
           }}
         >
-          Sign in to manage your restaurant
+          {isKiosk ? 'Sign in to access the kiosk' : 'Sign in to manage your restaurant'}
         </p>
 
         {/* No-account error banner */}
@@ -134,20 +136,22 @@ function LoginContent() {
             Continue with Google
           </button>
 
-          {/* Sign up link */}
-          <p
-            style={{
-              fontSize: 13,
-              color: '#8B7355',
-              textAlign: 'center',
-              marginTop: 20,
-            }}
-          >
-            Don&apos;t have an account?{' '}
-            <a href="/signup" style={{ color: '#E0602A', fontWeight: 600 }}>
-              Sign up
-            </a>
-          </p>
+          {/* Sign up link — hidden for kiosk redirects */}
+          {!isKiosk && (
+            <p
+              style={{
+                fontSize: 13,
+                color: '#8B7355',
+                textAlign: 'center',
+                marginTop: 20,
+              }}
+            >
+              Don&apos;t have an account?{' '}
+              <a href="/signup" style={{ color: '#E0602A', fontWeight: 600 }}>
+                Sign up
+              </a>
+            </p>
+          )}
         </div>
 
         {/* Footer */}
