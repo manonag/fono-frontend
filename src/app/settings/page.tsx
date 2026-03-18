@@ -508,24 +508,20 @@ function ForwardingTab() {
         </p>
 
         <div className="space-y-3">
-          <CarrierStep carrier="iPhone" steps={[
-            'Open the Phone app on your iPhone',
-            `Dial: *004*${fonoNumber}#`,
-            'Tap the green Call button',
-            'Wait for "Call Forwarding Activated" confirmation',
-            'Call your restaurant number to verify',
-          ]} />
-          <CarrierStep carrier="Android" steps={[
-            'Open the Phone app on your Android',
-            'Go to Settings (3 dots or gear icon) → Calls → Call Forwarding',
-            `Select "When unanswered" → Enter: ${fonoNumber} → Enable`,
-            `Also set "When busy" → Enter: ${fonoNumber} → Enable`,
-            'Call your restaurant number to verify',
-          ]} />
           <CarrierStep carrier="AT&T" code={`*92${fonoNumber}#`} note="Forwards unanswered calls" />
           <CarrierStep carrier="T-Mobile" code={`**62*${fonoNumber}#`} note="Forwards when unreachable" />
           <CarrierStep carrier="Verizon" code={`*71${fonoNumber}`} note="Forwards all calls" />
           <CarrierStep carrier="Other / Landline" code="" note="Contact your phone provider and ask them to set up call forwarding to the Fono number above" />
+          <CarrierStep carrier="iPhone" steps={[
+            `Go to iPhone Settings → Phone → Call Forwarding → Toggle ON → Forward To: ${fonoNumber}`,
+            'Call your restaurant number to verify',
+          ]} />
+          <CarrierStep carrier="Android" steps={[
+            'Open the Phone app → Settings (3 dots or gear icon) → Calls → Call Forwarding',
+            `Select "When unanswered" → Enter: ${fonoNumber} → Enable`,
+            `Also set "When busy" → Enter: ${fonoNumber} → Enable`,
+            'Call your restaurant number to verify',
+          ]} />
         </div>
       </SettingsCard>
 
@@ -563,11 +559,11 @@ function CarrierStep({ carrier, code, note, steps }: { carrier: string; code?: s
       {code ? (
         <p style={{ fontSize: 15, fontWeight: 600, color: '#5C3D22', fontFamily: 'monospace', letterSpacing: '0.02em' }}>{code}</p>
       ) : null}
-      {note && <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>{note}</p>}
+      {note && <p style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.5, marginTop: 2 }}>{note}</p>}
       {steps && (
         <ol style={{ margin: 0, paddingLeft: 20, marginTop: 4 }}>
           {steps.map((s, i) => (
-            <li key={i} style={{ fontSize: 12, color: '#5C3D22', lineHeight: 1.8 }}>{s}</li>
+            <li key={i} style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.5 }}>{s}</li>
           ))}
         </ol>
       )}
