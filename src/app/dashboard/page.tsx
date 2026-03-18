@@ -12,6 +12,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { fetchDashboardSummary, fetchCallLog, fetchChartData, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
+import { config } from '@/lib/config'
 import { formatPhoneNumber, formatDuration, timeAgo } from '@/lib/utils'
 import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
 import type { CallRecord, ChartDataPoint, DateFilter } from '@/types'
@@ -37,6 +38,20 @@ export default function DashboardPage() {
 
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
   const token = useFonoToken()
+  const [forwardingVerified, setForwardingVerified] = useState(true)
+
+  useEffect(() => {
+    const tid = isAll ? allTenantIds[0] : tenantId
+    if (!tid || tid === 'all' || !token) return
+    let cancelled = false
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (!cancelled && data) setForwardingVerified(data.verified) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAll, allTenantIds, tenantId, token])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -143,6 +158,28 @@ export default function DashboardPage() {
         <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
 
         <main className="flex-1 px-4 pt-5 pb-4">
+          {/* Forwarding Setup Banner (Mobile) */}
+          {!forwardingVerified && (
+            <Link
+              href="/settings?tab=forwarding"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '12px 16px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(245,158,11,0.08)',
+                border: '1px solid rgba(245,158,11,0.2)',
+                marginBottom: 16,
+                textDecoration: 'none',
+              }}
+            >
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F59E0B', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#92400E', flex: 1 }}>Set up call forwarding</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+            </Link>
+          )}
+
           {/* Stacked Cards */}
           <div className="flex flex-col gap-3">
             {loading ? (
@@ -238,6 +275,38 @@ export default function DashboardPage() {
 
         <main className="flex-1 overflow-y-auto" style={{ padding: '36px 40px' }}>
           <div style={{ maxWidth: 960 }}>
+            {/* Forwarding Setup Banner */}
+            {!forwardingVerified && (
+              <Link
+                href="/settings?tab=forwarding"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '14px 20px',
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(245,158,11,0.08)',
+                  border: '1px solid rgba(245,158,11,0.2)',
+                  marginBottom: 20,
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2">
+                    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.12.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.34 1.85.58 2.81.7A2 2 0 0122 16.92z" />
+                  </svg>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#92400E' }}>Set up call forwarding</p>
+                  <p style={{ fontSize: 12, color: '#92400E', opacity: 0.8 }}>Forward your restaurant calls to Fono so we can answer them</p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </Link>
+            )}
+
             {/* Date Filter Pills */}
             <div style={{ marginBottom: 28 }}>
               <DateFilterBar

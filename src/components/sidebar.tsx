@@ -1,10 +1,13 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
+import { config } from '@/lib/config'
 import { useRestaurant } from '@/lib/restaurant-context'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import FonoLogo from './logo'
 
 interface SidebarProps {
@@ -21,6 +24,21 @@ const NAV_ITEMS = [
 export function Sidebar({ missedCount = 0 }: SidebarProps) {
   const pathname = usePathname()
   const { current, restaurants, setCurrent, isAll, setAll } = useRestaurant()
+  const token = useFonoToken()
+  const [forwardingVerified, setForwardingVerified] = useState(true)
+
+  useEffect(() => {
+    const tid = isAll ? restaurants[0]?.id : current.id
+    if (!tid || !token) return
+    let cancelled = false
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (!cancelled && data) setForwardingVerified(data.verified) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAll, restaurants, current.id, token])
 
   return (
     <aside
@@ -42,11 +60,12 @@ export function Sidebar({ missedCount = 0 }: SidebarProps) {
         {NAV_ITEMS.map((item) => (
           <NavItem
             key={item.href}
-            href={item.href}
+            href={item.icon === 'settings' && !forwardingVerified ? '/settings?tab=forwarding' : item.href}
             icon={<NavIcon name={item.icon} />}
             label={item.label}
             active={pathname === item.href}
             badge={item.icon === 'phone' && missedCount > 0 ? missedCount : undefined}
+            showDot={item.icon === 'settings' && !forwardingVerified}
           />
         ))}
         <a
@@ -155,8 +174,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function NavItem({ href, icon, label, active, badge }: {
-  href: string; icon: React.ReactNode; label: string; active?: boolean; badge?: number
+function NavItem({ href, icon, label, active, badge, showDot }: {
+  href: string; icon: React.ReactNode; label: string; active?: boolean; badge?: number; showDot?: boolean
 }) {
   return (
     <Link
@@ -178,9 +197,13 @@ function NavItem({ href, icon, label, active, badge }: {
           height: 36,
           borderRadius: 10,
           backgroundColor: active ? 'rgba(224,96,42,0.1)' : 'rgba(0,0,0,0.03)',
+          position: 'relative',
         }}
       >
         <span style={{ color: active ? '#E0602A' : '#5C3D22' }}>{icon}</span>
+        {showDot && (
+          <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: '50%', backgroundColor: '#EF4444', border: '2px solid #fff' }} />
+        )}
       </div>
       <span
         style={{

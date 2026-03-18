@@ -1,26 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import { cn } from '@/lib/utils'
+import { config } from '@/lib/config'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
-type SettingsTab = 'restaurant' | 'notifications' | 'plan'
+type SettingsTab = 'restaurant' | 'notifications' | 'plan' | 'forwarding'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'forwarding', label: 'Call Forwarding' },
   { id: 'plan', label: 'Plan' },
 ]
 
-export default function SettingsPage() {
+function SettingsContent() {
   const isMobile = useMediaQuery('(max-width: 767px)')
-  const [activeTab, setActiveTab] = useState<SettingsTab>('restaurant')
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    tabParam === 'forwarding' ? 'forwarding' : 'restaurant'
+  )
   const { current, isAll } = useRestaurant()
   const restaurantName = isAll ? 'All Restaurants' : current.name
 
@@ -54,6 +62,7 @@ export default function SettingsPage() {
 
       {activeTab === 'restaurant' && <RestaurantTab />}
       {activeTab === 'notifications' && <NotificationsTab />}
+      {activeTab === 'forwarding' && <ForwardingTab />}
       {activeTab === 'plan' && <PlanTab isMobile={isMobile} />}
     </div>
   )
@@ -76,6 +85,14 @@ export default function SettingsPage() {
         <main className="flex-1 overflow-y-auto">{content}</main>
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsContent />
+    </Suspense>
   )
 }
 
@@ -389,7 +406,167 @@ function NotificationsTab() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tab 3: Plan (Billing)
+// Tab 3: Call Forwarding
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function ForwardingTab() {
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+  const [status, setStatus] = useState<{ verified: boolean; verified_at: string | null; fono_number: string } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchStatus = useCallback(async () => {
+    const tid = isAll ? tenantId : current.id
+    if (!tid || !token) return
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setStatus(await res.json())
+    } catch { /* ignore */ }
+    setLoading(false)
+  }, [isAll, tenantId, current.id, token])
+
+  useEffect(() => {
+    fetchStatus()
+    const id = setInterval(fetchStatus, 5000)
+    return () => clearInterval(id)
+  }, [fetchStatus])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center" style={{ padding: 60 }}>
+        <div className="animate-spin" style={{ width: 24, height: 24, border: '2.5px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
+      </div>
+    )
+  }
+
+  if (status?.verified) {
+    return (
+      <div className="space-y-6">
+        <SettingsCard>
+          <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Call Forwarding Verified</p>
+              <p style={{ fontSize: 13, color: '#8B7355' }}>
+                Verified {status.verified_at ? new Date(status.verified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+              </p>
+            </div>
+          </div>
+          <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.6 }}>
+            Calls to your restaurant are being forwarded to your Fono number{status.fono_number ? ` (${status.fono_number})` : ''}. Fono is answering and recording incoming calls.
+          </p>
+        </SettingsCard>
+      </div>
+    )
+  }
+
+  const fonoNumber = status?.fono_number || ''
+
+  return (
+    <div className="space-y-6">
+      {/* Status banner */}
+      <div style={{ borderRadius: 14, padding: '16px 20px', backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F59E0B' }} />
+          <p style={{ fontSize: 14, fontWeight: 700, color: '#92400E' }}>Forwarding Not Set Up</p>
+        </div>
+        <p style={{ fontSize: 13, color: '#92400E' }}>
+          Set up call forwarding so Fono can answer your restaurant&apos;s calls. Follow the steps below, then call your restaurant number to verify.
+        </p>
+      </div>
+
+      {/* Fono number */}
+      <SettingsCard title="Your Fono Number">
+        <div style={{ padding: '12px 16px', borderRadius: 12, backgroundColor: '#F5F0EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#1E0E00', letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums' }}>
+            {fonoNumber || 'Loading...'}
+          </span>
+          {fonoNumber && (
+            <button
+              onClick={() => navigator.clipboard.writeText(fonoNumber)}
+              style={{ fontSize: 12, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              Copy
+            </button>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: '#8B7355', marginTop: 8 }}>
+          Forward your restaurant&apos;s calls to this number
+        </p>
+      </SettingsCard>
+
+      {/* Carrier instructions */}
+      <SettingsCard title="Setup Instructions">
+        <p style={{ fontSize: 13, color: '#5C3D22', marginBottom: 16, lineHeight: 1.5 }}>
+          From your restaurant&apos;s phone, dial the code for your carrier. This sets up call forwarding when you&apos;re busy or don&apos;t answer.
+        </p>
+
+        <div className="space-y-3">
+          <CarrierStep carrier="AT&T" code={`*92${fonoNumber}#`} note="Forwards unanswered calls" />
+          <CarrierStep carrier="T-Mobile" code={`**62*${fonoNumber}#`} note="Forwards when unreachable" />
+          <CarrierStep carrier="Verizon" code={`*71${fonoNumber}`} note="Forwards all calls" />
+          <CarrierStep carrier="Other / Landline" code="" note="Contact your phone provider and ask them to set up call forwarding to the Fono number above" />
+        </div>
+      </SettingsCard>
+
+      {/* Verify instructions */}
+      <SettingsCard title="Verify Setup">
+        <div className="space-y-3">
+          <StepItem step={1} text="Dial the forwarding code from your restaurant phone" />
+          <StepItem step={2} text="You should hear a confirmation tone or message" />
+          <StepItem step={3} text="Call your restaurant number from any other phone" />
+          <StepItem step={4} text="If Fono answers, verification will happen automatically" />
+        </div>
+        <div className="flex items-center gap-2" style={{ marginTop: 16, padding: '10px 14px', borderRadius: 10, backgroundColor: 'rgba(224,96,42,0.06)' }}>
+          <div className="animate-spin" style={{ width: 14, height: 14, border: '2px solid rgba(224,96,42,0.2)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#E0602A' }}>Waiting for verification call...</span>
+        </div>
+      </SettingsCard>
+    </div>
+  )
+}
+
+function CarrierStep({ carrier, code, note }: { carrier: string; code: string; note: string }) {
+  return (
+    <div style={{ padding: '12px 16px', borderRadius: 12, border: '1px solid rgba(0,0,0,0.06)' }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: '#1E0E00' }}>{carrier}</span>
+        {code && (
+          <button
+            onClick={() => navigator.clipboard.writeText(code)}
+            style={{ fontSize: 11, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            Copy
+          </button>
+        )}
+      </div>
+      {code ? (
+        <p style={{ fontSize: 15, fontWeight: 600, color: '#5C3D22', fontFamily: 'monospace', letterSpacing: '0.02em' }}>{code}</p>
+      ) : null}
+      <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>{note}</p>
+    </div>
+  )
+}
+
+function StepItem({ step, text }: { step: number; text: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div style={{ width: 24, height: 24, borderRadius: 8, backgroundColor: 'rgba(224,96,42,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: '#E0602A' }}>{step}</span>
+      </div>
+      <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.5, paddingTop: 2 }}>{text}</p>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 4: Plan (Billing)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function PlanTab({ isMobile }: { isMobile: boolean }) {
