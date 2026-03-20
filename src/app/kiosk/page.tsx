@@ -198,22 +198,22 @@ function KioskContent() {
   const handleConfirmCallback = useCallback(async () => {
     if (!confirmCall || !session?.fonoToken) return
     setCallbackLoading(true)
-    const callToMove = confirmCall
+    const callToAct = confirmCall
     setConfirmCall(null)
     setSelectedCardId(null)
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/v1/calls/${callToMove.id}/callback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.fonoToken}`,
-        },
-        body: JSON.stringify({ status: 'recovered' }),
-      })
+      const res = await fetch(
+        `${config.apiUrl}/api/v1/calls/${callToAct.id}/callback?action=call`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.fonoToken}` },
+        }
+      )
 
       if (!res.ok) {
-        showToast('Callback failed', 'error')
+        const data = await res.json().catch(() => ({}))
+        showToast(data.detail || 'Callback failed', 'error')
         setCallbackLoading(false)
         return
       }
@@ -223,20 +223,51 @@ function KioskContent() {
       return
     }
 
-    // Animate out the card, then move all calls from this caller to recovered
-    setAnimatingOut(callToMove.id)
+    // Optimistically set callback_status to 'calling' — polling picks up final status
+    setMissedCalls((prev) =>
+      prev.map((c) =>
+        c.caller_phone === callToAct.caller_phone
+          ? { ...c, callback_status: 'calling' as const }
+          : c
+      )
+    )
+    showToast(`Calling ${callToAct.caller_phone}...`, 'success')
+    setCallbackLoading(false)
+  }, [confirmCall, session, showToast])
+
+  const handleIgnore = useCallback(async (call: KioskCall) => {
+    if (!session?.fonoToken) return
+
+    try {
+      const res = await fetch(
+        `${config.apiUrl}/api/v1/calls/${call.id}/callback?action=ignore`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.fonoToken}` },
+        }
+      )
+      if (!res.ok) {
+        showToast('Failed to ignore call', 'error')
+        return
+      }
+    } catch {
+      showToast('Failed to ignore call', 'error')
+      return
+    }
+
+    // Animate out and move to ignored
+    setAnimatingOut(call.id)
+    setSelectedCardId(null)
     setTimeout(() => {
-      setMissedCalls((prev) => prev.filter((c) => c.caller_phone !== callToMove.caller_phone))
-      setRecoveredCalls((prev) => [
-        { ...callToMove, callback_status: 'recovered' as const, callback_at: new Date().toISOString() },
+      setMissedCalls((prev) => prev.filter((c) => c.caller_phone !== call.caller_phone))
+      setIgnoredCalls((prev) => [
+        { ...call, callback_status: 'ignored' as const, callback_at: new Date().toISOString() },
         ...prev,
       ])
       setAnimatingOut(null)
-      showToast(`Calling back ${callToMove.caller_phone}...`, 'success')
+      showToast(`Ignored ${call.caller_phone}`, 'success')
     }, 500)
-
-    setCallbackLoading(false)
-  }, [confirmCall, session, showToast])
+  }, [session, showToast])
 
   // Which calls to show
   const visibleCalls = activeTab === 'missed' ? sortedMissed
@@ -347,6 +378,7 @@ function KioskContent() {
                 selected={selectedCardId === call.id}
                 onSelect={activeTab === 'missed' ? handleSelectCard : undefined}
                 onCallBack={activeTab === 'missed' ? handleCallBack : undefined}
+                onIgnore={activeTab === 'missed' ? handleIgnore : undefined}
                 animateOut={animatingOut === call.id}
               />
             ))}

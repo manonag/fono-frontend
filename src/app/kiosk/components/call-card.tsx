@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { SLATimer } from './sla-timer'
 import { timeAgo } from '@/lib/utils'
 
@@ -9,11 +10,12 @@ export interface KioskCall {
   call_status: 'NO_ANSWER' | 'COMPLETED' | 'BUSY' | 'FAILED'
   started_at: string
   duration_seconds: number | null
-  callback_status: 'pending' | 'recovered' | 'ignored' | null
+  callback_status: 'pending' | 'recovered' | 'ignored' | 'calling' | 'no-rest-answer' | null
   callback_at: string | null
   repeat_count: number
   sla_deadline: string | null
   sla_breached: boolean
+  has_callback_number: boolean
 }
 
 interface CallCardProps {
@@ -23,10 +25,11 @@ interface CallCardProps {
   selected: boolean
   onSelect?: (id: string) => void
   onCallBack?: (call: KioskCall) => void
+  onIgnore?: (call: KioskCall) => void
   animateOut?: boolean
 }
 
-export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, animateOut }: CallCardProps) {
+export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, onIgnore, animateOut }: CallCardProps) {
   const isBreached = call.sla_breached || (call.sla_deadline && new Date(call.sla_deadline).getTime() < Date.now())
   const isApproaching = !isBreached && call.sla_deadline &&
     (new Date(call.sla_deadline).getTime() - Date.now()) < 5 * 60 * 1000
@@ -59,6 +62,11 @@ export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, 
 
   const textPrimary = dark ? '#FDF0E8' : '#1E0E00'
   const textSecondary = dark ? 'rgba(253,240,232,0.5)' : '#8B7355'
+
+  const [confirmingIgnore, setConfirmingIgnore] = useState(false)
+  useEffect(() => {
+    if (!selected) setConfirmingIgnore(false)
+  }, [selected])
 
   return (
     <div
@@ -137,41 +145,85 @@ export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, 
         )}
       </div>
 
-      {/* Expandable callback button */}
-      {variant === 'missed' && onCallBack && (
+      {/* Status indicator for calling/no-rest-answer */}
+      {variant === 'missed' && call.callback_status === 'calling' && (
+        <div style={{ padding: '8px 16px 8px 20px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#3B82F6', animation: 'sla-dot-pulse 1.5s ease-in-out infinite' }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#3B82F6' }}>Calling customer...</span>
+        </div>
+      )}
+      {variant === 'missed' && call.callback_status === 'no-rest-answer' && (
+        <div style={{ padding: '8px 16px 8px 20px' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#D97706' }}>{"Restaurant didn't answer"}</span>
+        </div>
+      )}
+
+      {/* Expandable callback + ignore buttons */}
+      {variant === 'missed' && (
         <div
           style={{
-            maxHeight: selected ? 56 : 0,
+            maxHeight: selected ? 96 : 0,
             overflow: 'hidden',
             transition: 'max-height 0.3s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onCallBack(call)
-            }}
-            style={{
-              width: '100%',
-              height: 48,
-              border: 'none',
-              backgroundColor: '#22C55E',
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              letterSpacing: '0.03em',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
-            </svg>
-            CALL BACK
-          </button>
+          {call.has_callback_number && onCallBack && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onCallBack(call)
+              }}
+              disabled={call.callback_status === 'calling'}
+              style={{
+                width: '100%',
+                height: 44,
+                border: 'none',
+                backgroundColor: call.callback_status === 'calling' ? '#6B7280' : '#22C55E',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: call.callback_status === 'calling' ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                letterSpacing: '0.03em',
+                opacity: call.callback_status === 'calling' ? 0.6 : 1,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
+              </svg>
+              {call.callback_status === 'no-rest-answer' ? 'RETRY' : call.callback_status === 'calling' ? 'CALLING...' : 'CALL BACK'}
+            </button>
+          )}
+          {onIgnore && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (confirmingIgnore) {
+                  onIgnore(call)
+                  setConfirmingIgnore(false)
+                } else {
+                  setConfirmingIgnore(true)
+                }
+              }}
+              style={{
+                width: '100%',
+                height: 36,
+                border: 'none',
+                backgroundColor: confirmingIgnore ? '#EF4444' : 'transparent',
+                color: confirmingIgnore ? '#fff' : textSecondary,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                letterSpacing: '0.03em',
+                transition: 'background-color 0.2s, color 0.2s',
+              }}
+            >
+              {confirmingIgnore ? 'TAP TO CONFIRM IGNORE' : 'IGNORE'}
+            </button>
+          )}
         </div>
       )}
     </div>
