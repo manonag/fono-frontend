@@ -42,6 +42,29 @@ function sortMissedCalls(calls: KioskCall[]): KioskCall[] {
   })
 }
 
+// ── Deduplication ─────────────────────────────────────────────────────────────
+
+/** Group calls by caller_phone. Returns one card per unique number using the oldest call's data. */
+function deduplicateByCaller(calls: KioskCall[]): KioskCall[] {
+  const grouped = new Map<string, KioskCall[]>()
+
+  for (const call of calls) {
+    const key = call.caller_phone
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
+    }
+    grouped.get(key)!.push(call)
+  }
+
+  return Array.from(grouped.values()).map(group => {
+    // Sort ascending by started_at — oldest first (most urgent SLA)
+    group.sort((a, b) =>
+      new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+    )
+    return group[0]
+  })
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function KioskContent() {
@@ -139,17 +162,21 @@ function KioskContent() {
     return () => clearInterval(id)
   }, [])
 
+  const dedupedMissed = useMemo(() => deduplicateByCaller(missedCalls), [missedCalls])
+  const dedupedRecovered = useMemo(() => deduplicateByCaller(recoveredCalls), [recoveredCalls])
+  const dedupedIgnored = useMemo(() => deduplicateByCaller(ignoredCalls), [ignoredCalls])
+
   const sortedMissed = useMemo(
-    () => sortMissedCalls(missedCalls),
+    () => sortMissedCalls(dedupedMissed),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [missedCalls, sortTick],
+    [dedupedMissed, sortTick],
   )
 
   // Counts
-  const breachedCount = missedCalls.filter(
+  const breachedCount = dedupedMissed.filter(
     (c) => c.sla_breached || (c.sla_deadline && new Date(c.sla_deadline).getTime() < Date.now())
   ).length
-  const totalCalls = missedCalls.length + recoveredCalls.length + ignoredCalls.length
+  const totalCalls = dedupedMissed.length + dedupedRecovered.length + dedupedIgnored.length
 
   // Toast helper
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
@@ -196,10 +223,10 @@ function KioskContent() {
       return
     }
 
-    // Animate out the card, then move to recovered
+    // Animate out the card, then move all calls from this caller to recovered
     setAnimatingOut(callToMove.id)
     setTimeout(() => {
-      setMissedCalls((prev) => prev.filter((c) => c.id !== callToMove.id))
+      setMissedCalls((prev) => prev.filter((c) => c.caller_phone !== callToMove.caller_phone))
       setRecoveredCalls((prev) => [
         { ...callToMove, callback_status: 'recovered' as const, callback_at: new Date().toISOString() },
         ...prev,
@@ -213,8 +240,8 @@ function KioskContent() {
 
   // Which calls to show
   const visibleCalls = activeTab === 'missed' ? sortedMissed
-    : activeTab === 'recovered' ? recoveredCalls
-    : ignoredCalls
+    : activeTab === 'recovered' ? dedupedRecovered
+    : dedupedIgnored
 
   const bg = dark ? '#0a0a0a' : '#F5EDE6'
 
@@ -240,9 +267,9 @@ function KioskContent() {
       <CallTabs
         active={activeTab}
         onTabChange={setActiveTab}
-        missedCount={missedCalls.length}
-        recoveredCount={recoveredCalls.length}
-        ignoredCount={ignoredCalls.length}
+        missedCount={dedupedMissed.length}
+        recoveredCount={dedupedRecovered.length}
+        ignoredCount={dedupedIgnored.length}
         breachedCount={breachedCount}
         dark={dark}
       />
