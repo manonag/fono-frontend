@@ -418,7 +418,7 @@ function RestaurantTab() {
 // Tab 2: Call Setup (Path A/B)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const FONO_NUMBER = '(855) 789-3783'
+const FONO_NUMBER = '(209) 437-6888'
 
 function getForwardingCode(carrierName: string | null, path: 'A' | 'B'): { code: string; note: string } {
   const cn = (carrierName || '').toLowerCase()
