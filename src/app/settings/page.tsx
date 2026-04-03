@@ -14,9 +14,10 @@ import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
-type SettingsTab = 'restaurant' | 'notifications' | 'plan' | 'forwarding'
+type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'plan'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
+  { id: 'call-setup', label: 'Call Setup' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'forwarding', label: 'Call Forwarding' },
   { id: 'plan', label: 'Plan' },
@@ -27,7 +28,7 @@ function SettingsContent() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    tabParam === 'forwarding' ? 'forwarding' : 'restaurant'
+    (tabParam && TABS.some(t => t.id === tabParam) ? tabParam : 'restaurant') as SettingsTab
   )
   const { current, isAll } = useRestaurant()
   const restaurantName = isAll ? 'All Restaurants' : current.name
@@ -61,6 +62,7 @@ function SettingsContent() {
       </div>
 
       {activeTab === 'restaurant' && <RestaurantTab />}
+      {activeTab === 'call-setup' && <CallSetupTab />}
       {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'forwarding' && <ForwardingTab />}
       {activeTab === 'plan' && <PlanTab isMobile={isMobile} />}
@@ -413,7 +415,450 @@ function RestaurantTab() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tab 2: Notifications
+// Tab 2: Call Setup (Path A/B)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const FONO_NUMBER = '(855) 789-3783'
+
+function getForwardingCode(carrierName: string | null, path: 'A' | 'B'): { code: string; note: string } {
+  const cn = (carrierName || '').toLowerCase()
+  const isUnconditional = path === 'A'
+  const star = isUnconditional ? '*72' : '*71'
+
+  if (cn.includes('t-mobile') || cn.includes('tmobile')) {
+    return isUnconditional
+      ? { code: '', note: 'Open Settings > Phone > Call Forwarding > Forward to ' + FONO_NUMBER }
+      : { code: '', note: 'Open Settings > Phone > Call Forwarding > Forward when unanswered to ' + FONO_NUMBER }
+  }
+  if (cn.includes('comcast') || cn.includes('xfinity')) {
+    return isUnconditional
+      ? { code: '', note: 'Log into Xfinity account > Voice > Call Forwarding > Forward to ' + FONO_NUMBER }
+      : { code: '', note: 'Log into Xfinity > Voice > No Answer Forwarding > Forward to ' + FONO_NUMBER }
+  }
+
+  // AT&T, Verizon, CenturyLink, Frontier, Windstream, Sprint, unknown
+  const code = `${star} ${FONO_NUMBER}`
+  const fallback = !carrierName ? ' These codes work for most carriers. Check the Call Forwarding tab for your carrier.' : ''
+  return { code, note: `Dial from your restaurant phone.${fallback}` }
+}
+
+function formatPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return phone
+}
+
+function CallSetupTab() {
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+
+  // State
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [selectedPath, setSelectedPath] = useState<'A' | 'B' | null>(null)
+  const [callbackNumber, setCallbackNumber] = useState('')
+  const [callbackError, setCallbackError] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [carrierName, setCarrierName] = useState<string | null>(null)
+  const [lineType, setLineType] = useState<string | null>(null)
+  const [carrierLoading, setCarrierLoading] = useState(true)
+  const [originalPath, setOriginalPath] = useState<'A' | 'B' | null>(null)
+  const [openAccordion, setOpenAccordion] = useState<'A' | 'B' | null>(null)
+  const [switchWarning, setSwitchWarning] = useState(false)
+
+  const tid = isAll ? tenantId : current.id
+
+  // Load tenant settings
+  useEffect(() => {
+    if (!tid || tid === 'all' || !token) return
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setPhoneNumber(data.phone_number || '')
+          setCallbackNumber(data.callback_number || '')
+          if (data.call_setup_path === 'A' || data.call_setup_path === 'B') {
+            setSelectedPath(data.call_setup_path)
+            setOriginalPath(data.call_setup_path)
+          }
+          if (data.carrier_name) {
+            setCarrierName(data.carrier_name)
+            setLineType(data.line_type)
+            setCarrierLoading(false)
+          }
+        }
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [tid, token])
+
+  // Carrier lookup (lazy)
+  useEffect(() => {
+    if (!tid || tid === 'all' || !token || !carrierLoading) return
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/carrier-lookup`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setCarrierName(data.carrier_name)
+          setLineType(data.line_type)
+        }
+        setCarrierLoading(false)
+      })
+      .catch(() => setCarrierLoading(false))
+  }, [tid, token, carrierLoading])
+
+  // Validate callback number on blur
+  const validateCallback = (value: string) => {
+    if (!value) {
+      setCallbackError('')
+      return
+    }
+    const clean = value.replace(/\D/g, '')
+    const phoneClean = phoneNumber.replace(/\D/g, '')
+    if (clean === phoneClean || (clean.length === 11 && phoneClean.length === 10 && clean.slice(1) === phoneClean)) {
+      setCallbackError("This can't be the same as your restaurant number. Use a different phone like your cell or a second line.")
+    } else {
+      setCallbackError('')
+    }
+  }
+
+  // Handle path selection
+  const handleSelectPath = (path: 'A' | 'B') => {
+    setSelectedPath(path)
+    setSaveError('')
+    setSaved(false)
+    // Show switch warning if switching from A to B
+    if (originalPath === 'A' && path === 'B') {
+      setSwitchWarning(true)
+    } else {
+      setSwitchWarning(false)
+    }
+  }
+
+  // Save
+  const handleSave = async () => {
+    if (!selectedPath || !tid || !token) return
+    if (selectedPath === 'A' && !callbackNumber.trim()) {
+      setCallbackError('Callback number is required for Path A')
+      return
+    }
+    if (callbackError) return
+
+    setSaving(true)
+    setSaveError('')
+    try {
+      const body: Record<string, string> = { call_setup_path: selectedPath }
+      if (selectedPath === 'A' && callbackNumber.trim()) {
+        body.callback_number = callbackNumber.trim()
+      }
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        setOriginalPath(selectedPath)
+        setSwitchWarning(false)
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      } else {
+        const err = await res.json().catch(() => null)
+        setSaveError(err?.detail || 'Failed to save. Please try again.')
+      }
+    } catch {
+      setSaveError('Failed to save. Please try again.')
+    }
+    setSaving(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center" style={{ padding: 60 }}>
+        <div className="animate-spin" style={{ width: 24, height: 24, border: '2.5px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
+      </div>
+    )
+  }
+
+  const canSave = selectedPath !== null && !callbackError && !(selectedPath === 'A' && !callbackNumber.trim())
+  const forwarding = selectedPath ? getForwardingCode(carrierName, selectedPath) : null
+
+  return (
+    <div className="space-y-5">
+      {/* Restaurant Number Banner */}
+      <div style={{ padding: '16px 20px', borderRadius: 14, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span style={{ fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: '#1E0E00', letterSpacing: '0.02em' }}>
+            {formatPhone(phoneNumber)}
+          </span>
+          {carrierLoading ? (
+            <div style={{ width: 80, height: 22, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.06)' }} className="animate-pulse" />
+          ) : carrierName ? (
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#92400E', padding: '3px 10px', borderRadius: 6, backgroundColor: 'rgba(245,158,11,0.12)' }}>
+              {carrierName}{lineType ? ` ${lineType.charAt(0).toUpperCase() + lineType.slice(1)}` : ''}
+            </span>
+          ) : null}
+        </div>
+        <p style={{ fontSize: 13, color: '#92400E', marginTop: 6 }}>
+          Set up forwarding on this phone to route calls through Fono
+        </p>
+      </div>
+
+      {/* Two-Card Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Path A: Full call recording */}
+        <button
+          type="button"
+          onClick={() => handleSelectPath('A')}
+          className="text-left w-full transition-all"
+          style={{
+            borderRadius: 16,
+            padding: '20px 22px',
+            border: selectedPath === 'A' ? '2px solid #D4652C' : '2px solid rgba(0,0,0,0.06)',
+            backgroundColor: selectedPath === 'A' ? '#FFF7F3' : '#FFFFFF',
+            cursor: 'pointer',
+          }}
+        >
+          <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%',
+              border: selectedPath === 'A' ? '6px solid #D4652C' : '2px solid rgba(0,0,0,0.15)',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Full call recording</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', backgroundColor: '#D4652C', padding: '2px 8px', borderRadius: 4 }}>
+              Recommended
+            </span>
+          </div>
+          <div className="space-y-2" style={{ paddingLeft: 32 }}>
+            {[
+              'Every call recorded for quality and training',
+              'Complete call analytics and insights',
+              'Missed call recovery with SMS',
+              'Live kiosk with SLA countdown timers',
+              'One-tap callback management',
+            ].map(item => (
+              <div key={item} className="flex items-start gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.4 }}>{item}</span>
+              </div>
+            ))}
+          </div>
+        </button>
+
+        {/* Path B: Missed call recovery only */}
+        <button
+          type="button"
+          onClick={() => handleSelectPath('B')}
+          className="text-left w-full transition-all"
+          style={{
+            borderRadius: 16,
+            padding: '20px 22px',
+            border: selectedPath === 'B' ? '2px solid #3B82F6' : '2px solid rgba(0,0,0,0.06)',
+            backgroundColor: selectedPath === 'B' ? '#F0F7FF' : '#FFFFFF',
+            cursor: 'pointer',
+          }}
+        >
+          <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%',
+              border: selectedPath === 'B' ? '6px solid #3B82F6' : '2px solid rgba(0,0,0,0.15)',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Missed call recovery only</span>
+          </div>
+          <div className="space-y-2" style={{ paddingLeft: 32 }}>
+            {[
+              { text: 'Missed call detection and alerts', ok: true },
+              { text: 'Automatic SMS to missed callers', ok: true },
+              { text: 'No call recordings', ok: false },
+              { text: 'No call analytics', ok: false },
+            ].map(item => (
+              <div key={item.text} className="flex items-start gap-2">
+                {item.ok ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                )}
+                <span style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.4 }}>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </button>
+      </div>
+
+      {/* Switch Warning (A → B) */}
+      {switchWarning && (
+        <div style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+          <p style={{ fontSize: 13, color: '#92400E', lineHeight: 1.5 }}>
+            <strong>Heads up:</strong> Switching to Path B means you&apos;ll lose these features going forward: full call recordings, complete call analytics, and callback management. Only missed calls will be tracked. Your existing recordings won&apos;t be deleted.
+          </p>
+        </div>
+      )}
+
+      {/* Path A: Callback Number Input */}
+      {selectedPath === 'A' && (
+        <div style={{
+          overflow: 'hidden',
+          maxHeight: 300,
+          transition: 'max-height 0.3s ease',
+        }}>
+          <SettingsCard>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>
+              Second phone number (owner&apos;s cell or second line)
+            </label>
+            <input
+              type="tel"
+              value={callbackNumber}
+              onChange={(e) => { setCallbackNumber(e.target.value); if (callbackError) setCallbackError('') }}
+              onBlur={(e) => validateCallback(e.target.value)}
+              placeholder="(555) 123-4567"
+              autoFocus
+              className="w-full bg-white focus:outline-none"
+              style={{
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: callbackError ? '1.5px solid #EF4444' : '1.5px solid rgba(0,0,0,0.08)',
+                fontSize: 14,
+              }}
+              onFocus={(e) => { if (!callbackError) e.currentTarget.style.borderColor = '#E0602A' }}
+            />
+            {callbackError ? (
+              <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{callbackError}</p>
+            ) : (
+              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
+                Fono will ring this number to connect calls to your staff
+              </p>
+            )}
+          </SettingsCard>
+        </div>
+      )}
+
+      {/* Forwarding Instructions */}
+      {selectedPath && forwarding && (
+        <SettingsCard title="Forwarding Instructions">
+          {forwarding.code ? (
+            <div style={{ padding: '12px 16px', borderRadius: 12, backgroundColor: '#F5F0EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#1E0E00', letterSpacing: '0.02em' }}>
+                {forwarding.code}
+              </span>
+              <button
+                onClick={() => navigator.clipboard.writeText(forwarding.code)}
+                style={{ fontSize: 12, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Copy
+              </button>
+            </div>
+          ) : null}
+          <p style={{ fontSize: 12, color: '#8B7355', marginTop: 8 }}>{forwarding.note}</p>
+        </SettingsCard>
+      )}
+
+      {/* Accordion: How does this work? */}
+      {selectedPath === 'A' && (
+        <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
+          <button
+            onClick={() => setOpenAccordion(openAccordion === 'A' ? null : 'A')}
+            className="flex items-center justify-between w-full text-left"
+            style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
+              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'A' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <div style={{ maxHeight: openAccordion === 'A' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <div style={{ padding: '0 22px 20px' }}>
+              <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
+                When a customer calls your restaurant number, the call is forwarded to Fono. Fono answers with a short greeting, then rings your second phone number to connect the customer to your staff. The entire conversation is recorded.
+              </p>
+              <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: '#F5F0EB' }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#8B7355', marginBottom: 6 }}>Friday night rush</p>
+                <p style={{ fontSize: 12, color: '#5C3D22', lineHeight: 1.6 }}>
+                  A customer calls to order biryani. You&apos;re busy at the counter. Fono picks up, greets them, and rings your cell phone. You answer, take the order, and the call is recorded. If you can&apos;t answer, Fono texts the customer: &quot;Sorry we missed your call! We&apos;ll call back within 15 minutes.&quot;
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedPath === 'B' && (
+        <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
+          <button
+            onClick={() => setOpenAccordion(openAccordion === 'B' ? null : 'B')}
+            className="flex items-center justify-between w-full text-left"
+            style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
+              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'B' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <div style={{ maxHeight: openAccordion === 'B' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <div style={{ padding: '0 22px 20px' }}>
+              <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
+                Your restaurant phone rings normally. If nobody picks up after a few rings, the call forwards to Fono. Fono records the missed call and texts the customer with your callback promise. Calls that your staff answers go directly to them and are not recorded by Fono.
+              </p>
+              <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: '#F5F0EB' }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#8B7355', marginBottom: 6 }}>Friday night rush</p>
+                <p style={{ fontSize: 12, color: '#5C3D22', lineHeight: 1.6 }}>
+                  A customer calls. Your staff is busy and can&apos;t pick up after 4 rings. The call forwards to Fono, which logs it and texts the customer: &quot;Sorry we missed your call! We&apos;ll call back within 15 minutes.&quot; The missed call shows on your kiosk. Calls your staff answers go through normally without Fono.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Button */}
+      <div className="flex items-center justify-end gap-3">
+        {saveError && (
+          <span style={{ fontSize: 13, color: '#EF4444' }}>{saveError}</span>
+        )}
+        {saved && (
+          <span style={{ fontSize: 13, color: '#22C55E', fontWeight: 600 }}>Saved &#10003;</span>
+        )}
+        <button
+          onClick={handleSave}
+          disabled={!canSave || saving}
+          className="bg-terra text-white transition-colors hover:bg-terra-dark"
+          style={{
+            padding: '10px 24px',
+            borderRadius: 12,
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: canSave && !saving ? 'pointer' : 'not-allowed',
+            opacity: canSave && !saving ? 1 : 0.5,
+          }}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 3: Notifications
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function NotificationsTab() {
