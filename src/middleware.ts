@@ -24,14 +24,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Authenticated with 0 tenants → redirect protected routes to signup
+  // Authenticated with 0 tenants → redirect protected routes to landing page signup
   if (token && isProtected) {
     const tenants = (token.tenants as unknown[]) ?? []
     if (tenants.length === 0) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/signup'
-      url.searchParams.set('step', 'restaurant')
-      return NextResponse.redirect(url)
+      return NextResponse.redirect(new URL('https://fono.services'))
     }
   }
 
