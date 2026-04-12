@@ -1290,10 +1290,16 @@ const GREETING_VOICES: { id: string; label: string; accent: string }[] = [
 const DEFAULT_TEMPLATE = (name: string) =>
   `Namaste, thanks for calling ${name}. Your call is being recorded for quality assurance. Please hold while we connect you.`
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function GreetingTab() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
-  const tid = isAll ? tenantId : current.id
+  // Resolve tenant id defensively: if state hands us a short/invalid id (has
+  // happened in practice on first render), fall back to the env-configured
+  // tenant UUID so the request never hits the backend with "ef29".
+  const rawTid = isAll ? tenantId : current.id
+  const tid = rawTid && UUID_RE.test(rawTid) ? rawTid : config.tenantId
   const restaurantName = isAll ? 'your restaurant' : current.name
 
   const [text, setText] = useState(DEFAULT_TEMPLATE(restaurantName))
