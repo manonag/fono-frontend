@@ -125,6 +125,54 @@ export async function fetchCombinedCallLog(
   }
 }
 
+export interface TenantStats {
+  total_calls: number
+  completed_calls: number
+  missed_calls: number
+  avg_duration_seconds: number
+  sla_breach_count: number
+  recovery_rate: number
+  calls_today: number
+  calls_this_week: number
+}
+
+export async function fetchTenantStats(
+  tenantId: string,
+  days?: number,
+  token?: string
+): Promise<TenantStats> {
+  const params = new URLSearchParams()
+  if (days) params.set('days', days.toString())
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/stats${qs}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch tenant stats: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchCombinedStats(
+  tenantIds: string[],
+  days?: number,
+  token?: string
+): Promise<TenantStats> {
+  const results = await Promise.all(tenantIds.map(id => fetchTenantStats(id, days, token)))
+  const totalMissed = results.reduce((s, r) => s + r.missed_calls, 0)
+  const totalRecoveredWeighted = results.reduce((s, r) => s + (r.recovery_rate * r.missed_calls / 100), 0)
+  return {
+    total_calls: results.reduce((s, r) => s + r.total_calls, 0),
+    completed_calls: results.reduce((s, r) => s + r.completed_calls, 0),
+    missed_calls: totalMissed,
+    avg_duration_seconds: results.length > 0
+      ? results.reduce((s, r) => s + r.avg_duration_seconds, 0) / results.length
+      : 0,
+    sla_breach_count: results.reduce((s, r) => s + r.sla_breach_count, 0),
+    recovery_rate: totalMissed > 0 ? Math.round((totalRecoveredWeighted / totalMissed) * 100) : 100,
+    calls_today: results.reduce((s, r) => s + r.calls_today, 0),
+    calls_this_week: results.reduce((s, r) => s + r.calls_this_week, 0),
+  }
+}
+
 function getDateRange(period: DateFilter): { start: Date; end: Date } {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())

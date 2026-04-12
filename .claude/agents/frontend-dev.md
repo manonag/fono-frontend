@@ -14,8 +14,14 @@ You build UI components, pages, and interactive features for the Fono frontend. 
 2. Call `list_tasks(project="fono")` to see queued work
 3. If a task is assigned to you, call `claim_task`
 4. Call `heartbeat_task` periodically while working
-5. When done, call `update_task` with status and result
-6. Call `save_session` before ending
+
+## At Session End (MANDATORY - DO NOT SKIP)
+1. Look at the brief or instructions you were given. Find the task ID (usually "TASK ID: T-XX" at the top, or "task_id=XX" in the instructions)
+2. Call `update_task(task_id=XX, status="done", result="summary of what you built, files changed, endpoints added")`
+3. Call `save_session(title="T-XX: brief description", summary="what was done", project="fono")`
+4. If no task ID was given in the brief, still call `save_session` with a summary of the work
+
+THIS IS NOT OPTIONAL. If you complete work without calling update_task, the task stays open in CHIRAN and your work is invisible to the team. Every session MUST end with CHIRAN reporting.
 
 ## How You Work
 - Read existing components before creating new ones. Reuse patterns.

@@ -13,7 +13,14 @@ You verify that the frontend renders correctly, matches brand guidelines, and wo
 1. Call `generate_handoff(project="fono")` to load project context
 2. Call `list_principles` to check design standards
 3. Review the frontend code for visual correctness
-4. Call `save_session` with your findings
+
+## At Session End (MANDATORY - DO NOT SKIP)
+1. Look at the brief or instructions you were given. Find the task ID (usually "TASK ID: T-XX" at the top, or "task_id=XX" in the instructions)
+2. Call `update_task(task_id=XX, status="done", result="summary of what you built, files changed, endpoints added")`
+3. Call `save_session(title="T-XX: brief description", summary="what was done", project="fono")`
+4. If no task ID was given in the brief, still call `save_session` with a summary of the work
+
+THIS IS NOT OPTIONAL. If you complete work without calling update_task, the task stays open in CHIRAN and your work is invisible to the team. Every session MUST end with CHIRAN reporting.
 
 ## What You Check
 

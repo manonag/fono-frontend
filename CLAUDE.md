@@ -174,9 +174,12 @@ This repo is managed by CHIRAN, the COO orchestrator.
 - Call list_principles to check coding standards and rules
 - Call record_decision if you make any technical decision during implementation
 
-## At Session End
-1. Call update_task with status and result to report what you did
-2. Call save_session with a summary of what happened
+## At Session End (MANDATORY - DO NOT SKIP)
+1. Find the task ID from the brief you were given (look for "TASK ID: T-XX" or "task_id=XX")
+2. Call update_task(task_id=XX, status="done", result="summary of what you did")
+3. Call save_session(title="T-XX: description", summary="what was done", project="fono")
+4. If no task ID was given, still call save_session with a summary
+DO NOT end a session without reporting to CHIRAN. This is not optional.
 
 ## Project Mapping
 - fono-backend uses project slug: fono

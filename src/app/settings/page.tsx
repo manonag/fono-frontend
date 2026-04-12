@@ -14,12 +14,13 @@ import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
-type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'plan'
+type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'greeting' | 'plan'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
   { id: 'call-setup', label: 'Call Setup' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'forwarding', label: 'Call Forwarding' },
+  { id: 'greeting', label: 'Greeting' },
   { id: 'plan', label: 'Plan' },
 ]
 
@@ -65,6 +66,7 @@ function SettingsContent() {
       {activeTab === 'call-setup' && <CallSetupTab />}
       {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'forwarding' && <ForwardingTab />}
+      {activeTab === 'greeting' && <GreetingTab />}
       {activeTab === 'plan' && <PlanTab isMobile={isMobile} />}
     </div>
   )
@@ -1272,6 +1274,191 @@ function PlanTab({ isMobile }: { isMobile: boolean }) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Shared Components
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab: Greeting (self-service TTS)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const GREETING_VOICES: { id: string; label: string; accent: string }[] = [
+  { id: 'hf_alpha', label: 'Ananya', accent: 'Hindi female' },
+  { id: 'hf_beta', label: 'Bhavna', accent: 'Hindi female' },
+  { id: 'af_heart', label: 'Heart', accent: 'American English' },
+  { id: 'af_bella', label: 'Bella', accent: 'American English' },
+  { id: 'af_sarah', label: 'Sarah', accent: 'American English' },
+]
+
+const DEFAULT_TEMPLATE = (name: string) =>
+  `Namaste, thanks for calling ${name}. Your call is being recorded for quality assurance. Please hold while we connect you.`
+
+function GreetingTab() {
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+  const tid = isAll ? tenantId : current.id
+  const restaurantName = isAll ? 'your restaurant' : current.name
+
+  const [text, setText] = useState(DEFAULT_TEMPLATE(restaurantName))
+  const [voice, setVoice] = useState<string>('af_heart')
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [previewing, setPreviewing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!tid || tid === 'all' || !token) return
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          if (data.greeting_text) setText(data.greeting_text)
+          else setText(DEFAULT_TEMPLATE(data.name || restaurantName))
+          if (data.greeting_voice) setVoice(data.greeting_voice)
+          setCurrentUrl(data.greeting_audio_url || null)
+        }
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tid, token])
+
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }
+  }, [previewUrl])
+
+  const handlePreview = async () => {
+    if (!tid || tid === 'all' || !token) return
+    setPreviewing(true); setError(null)
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/greeting/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice }),
+      })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg || `Preview failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      const url = URL.createObjectURL(blob)
+      setPreviewUrl(url)
+      new Audio(url).play().catch(() => {})
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Preview failed')
+    }
+    setPreviewing(false)
+  }
+
+  const handleSave = async () => {
+    if (!tid || tid === 'all' || !token) return
+    setSaving(true); setError(null)
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/greeting/save`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice }),
+      })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg || `Save failed (${res.status})`)
+      }
+      const data = await res.json()
+      setCurrentUrl(data.greeting_audio_url)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    }
+    setSaving(false)
+  }
+
+  if (loading) {
+    return <div style={{ fontSize: 14, color: '#8B7355' }}>Loading...</div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <SettingsCard title="Call Greeting">
+        <p style={{ fontSize: 13, color: '#5C3D22', marginBottom: 16 }}>
+          This is what callers hear the moment they reach your Fono number. Required by California two-party consent law ·
+          pick a voice, edit the text, preview, then save.
+        </p>
+
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Greeting text</label>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          rows={4}
+          maxLength={1200}
+          style={{
+            width: '100%', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit',
+            color: '#1E0E00', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 10,
+            resize: 'vertical', outline: 'none', background: '#fff',
+          }}
+        />
+        <div style={{ fontSize: 11, color: '#B0A090', marginTop: 4, textAlign: 'right' }}>{text.length} / 1200</div>
+
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginTop: 16, marginBottom: 6 }}>Voice</label>
+        <select
+          value={voice}
+          onChange={e => setVoice(e.target.value)}
+          style={{
+            width: '100%', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit',
+            color: '#1E0E00', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 10,
+            background: '#fff', outline: 'none',
+          }}
+        >
+          {GREETING_VOICES.map(v => (
+            <option key={v.id} value={v.id}>{v.label} · {v.accent}</option>
+          ))}
+        </select>
+
+        <div className="flex items-center" style={{ gap: 10, marginTop: 20 }}>
+          <button
+            onClick={handlePreview}
+            disabled={previewing || saving}
+            style={{
+              padding: '10px 18px', fontSize: 14, fontWeight: 600,
+              color: '#E0602A', background: '#fff',
+              border: '1px solid #E0602A', borderRadius: 10,
+              cursor: previewing ? 'wait' : 'pointer',
+              opacity: previewing ? 0.6 : 1,
+            }}
+          >
+            {previewing ? 'Generating...' : 'Preview'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || previewing}
+            style={{
+              padding: '10px 18px', fontSize: 14, fontWeight: 600,
+              color: '#fff', background: saved ? '#22C55E' : '#E0602A',
+              border: 'none', borderRadius: 10,
+              cursor: saving ? 'wait' : 'pointer',
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {saving ? 'Saving...' : saved ? 'Saved ✓' : 'Save greeting'}
+          </button>
+          {error && <span style={{ fontSize: 13, color: '#EF4444' }}>{error}</span>}
+        </div>
+      </SettingsCard>
+
+      {currentUrl && (
+        <SettingsCard title="Current greeting" badge="Live on inbound calls">
+          <audio controls src={currentUrl} style={{ width: '100%' }} />
+          <p style={{ fontSize: 12, color: '#B0A090', marginTop: 8 }}>
+            Played via Twilio &lt;Play&gt; at the start of every inbound call. Save a new greeting to replace it.
+          </p>
+        </SettingsCard>
+      )}
+    </div>
+  )
+}
 
 function SettingsCard({ title, badge, children }: { title?: string; badge?: string; children: React.ReactNode }) {
   return (

@@ -9,7 +9,8 @@ import { Badge } from '@/components/badge'
 import { AudioPlayer } from '@/components/audio-player'
 import { useCallEvents } from '@/hooks/use-call-events'
 import { useMediaQuery } from '@/hooks/use-media-query'
-import { fetchDashboardSummary, fetchCallLog, fetchChartData, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
+import { fetchDashboardSummary, fetchCallLog, fetchChartData, fetchCombinedSummary, fetchCombinedCallLog, fetchTenantStats, fetchCombinedStats } from '@/lib/api'
+import type { TenantStats } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { config } from '@/lib/config'
@@ -33,6 +34,7 @@ export default function DashboardPage() {
   const [calls, setCalls] = useState<CallRecord[]>([])
   const [allCalls, setAllCalls] = useState<CallRecord[]>([])
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
+  const [stats, setStats] = useState<TenantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(true)
 
@@ -58,23 +60,27 @@ export default function DashboardPage() {
     try {
       const { dateFrom, dateTo, days } = getDateRangeForFilter(dateFilter, customRange)
       if (isAll) {
-        const [summaryData, callData, allCallData] = await Promise.all([
+        const [summaryData, callData, allCallData, statsData] = await Promise.all([
           fetchCombinedSummary(allTenantIds, days, token),
           fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
           fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
+          fetchCombinedStats(allTenantIds, days, token).catch(() => null),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
         setAllCalls(allCallData.calls)
+        setStats(statsData)
       } else {
-        const [summaryData, callData, allCallData] = await Promise.all([
+        const [summaryData, callData, allCallData, statsData] = await Promise.all([
           fetchDashboardSummary(tenantId, days, token),
           fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
           fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
+          fetchTenantStats(tenantId, days, token).catch(() => null),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
         setAllCalls(allCallData.calls)
+        setStats(statsData)
       }
     } catch {
       // silently fail
@@ -123,7 +129,7 @@ export default function DashboardPage() {
     }
   }, [chartData])
 
-  // Compute insight box data
+  // Compute insight box data (use server stats when available, fallback to client-side)
   const insights = useMemo(() => {
     const peakHour = chartData.reduce<ChartDataPoint | null>((best, d) => {
       const total = d.answered + d.missed + d.recovered
@@ -133,21 +139,27 @@ export default function DashboardPage() {
     const peakLabel = peakHour ? peakHour.label : '—'
     const peakCount = peakHour ? peakHour.answered + peakHour.missed + peakHour.recovered : 0
 
-    const recoveryRate = totalCallsNum > 0 && missedCalls > 0
-      ? Math.round((recoveredCalls / missedCalls) * 100)
-      : totalCallsNum > 0 ? 100 : 0
+    const recoveryRate = stats
+      ? Math.round(stats.recovery_rate)
+      : totalCallsNum > 0 && missedCalls > 0
+        ? Math.round((recoveredCalls / missedCalls) * 100)
+        : totalCallsNum > 0 ? 100 : 0
 
-    const avgDuration = safeNum(summary?.total_duration_seconds)
-    const answeredCalls = safeNum(summary?.answered_calls)
-    const avgCallSecs = answeredCalls > 0 ? Math.round(avgDuration / answeredCalls) : 0
+    const avgCallSecs = stats
+      ? Math.round(stats.avg_duration_seconds)
+      : (() => {
+          const avgDuration = safeNum(summary?.total_duration_seconds)
+          const answeredCalls = safeNum(summary?.answered_calls)
+          return answeredCalls > 0 ? Math.round(avgDuration / answeredCalls) : 0
+        })()
 
-    // Repeat callers
+    // Repeat callers (still client-side, not in stats endpoint)
     const callerCounts = new Map<string, number>()
     allCalls.forEach(c => callerCounts.set(c.caller_number, (callerCounts.get(c.caller_number) || 0) + 1))
     const repeatCallers = Array.from(callerCounts.values()).filter(c => c > 1).length
 
     return { peakLabel, peakCount, recoveryRate, avgCallSecs, repeatCallers }
-  }, [chartData, summary, totalCallsNum, missedCalls, recoveredCalls, allCalls])
+  }, [chartData, stats, summary, totalCallsNum, missedCalls, recoveredCalls, allCalls])
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MOBILE LAYOUT
