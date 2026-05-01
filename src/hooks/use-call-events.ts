@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { config } from '@/lib/config'
+import { useFonoToken } from '@/hooks/use-fono-token'
 import type { CallEvent } from '@/types'
 
 interface UseCallEventsOptions {
@@ -14,6 +15,7 @@ export function useCallEvents({ onEvent }: UseCallEventsOptions = {}) {
   const retryCount = useRef(0)
   const eventSourceRef = useRef<EventSource | null>(null)
   const onEventRef = useRef(onEvent)
+  const token = useFonoToken()
 
   // Keep callback ref current without causing reconnects
   useEffect(() => {
@@ -22,8 +24,10 @@ export function useCallEvents({ onEvent }: UseCallEventsOptions = {}) {
 
   const connect = useCallback(() => {
     if (typeof window === 'undefined') return
+    if (!token) return
 
-    const es = new EventSource(`${config.apiUrl}/api/v1/events/calls?tenant_id=${config.tenantId}`)
+    const url = `${config.apiUrl}/api/v1/events/calls?tenant_id=${config.tenantId}&token=${encodeURIComponent(token)}`
+    const es = new EventSource(url)
     eventSourceRef.current = es
 
     es.onopen = () => {
@@ -48,7 +52,7 @@ export function useCallEvents({ onEvent }: UseCallEventsOptions = {}) {
       retryCount.current++
       setTimeout(connect, delay)
     }
-  }, [])
+  }, [token])
 
   useEffect(() => {
     connect()
