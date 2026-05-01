@@ -14,14 +14,6 @@ import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
-function formatPhone(p?: string | null): string {
-  if (!p) return '—'
-  const d = p.replace(/\D/g, '')
-  if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
-  return p
-}
-
 type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'greeting' | 'plan'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
@@ -457,7 +449,8 @@ function getForwardingCode(carrierName: string | null, path: 'A' | 'B'): { code:
   return { code, note: `Dial from your restaurant phone.${fallback}` }
 }
 
-function formatPhone(phone: string): string {
+function formatPhone(phone?: string | null): string {
+  if (!phone) return '—'
   const digits = phone.replace(/\D/g, '')
   if (digits.length === 11 && digits.startsWith('1')) {
     return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
