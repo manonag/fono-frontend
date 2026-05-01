@@ -14,6 +14,14 @@ import { useRestaurant } from '@/lib/restaurant-context'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
+function formatPhone(p?: string | null): string {
+  if (!p) return '—'
+  const d = p.replace(/\D/g, '')
+  if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+  return p
+}
+
 type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'greeting' | 'plan'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
@@ -120,9 +128,14 @@ function RestaurantTab() {
   const [slaLoading, setSlaLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [tenantInfo, setTenantInfo] = useState<{name?: string; phone_number?: string} | null>(null)
+
+  // Hidden until backend exposes hours data — T-188 followup
+  const SHOW_OPERATING_HOURS = false
 
   useEffect(() => {
     const tid = isAll ? tenantId : current.id
+    setTenantInfo(null)
     if (!tid || tid === 'all' || !token) return
     fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -132,6 +145,7 @@ function RestaurantTab() {
         if (data) {
           setSlaMinutes(data.sla_minutes || 15)
           setOrderUrl(data.online_order_url || '')
+          setTenantInfo({ name: data.name, phone_number: data.phone_number })
         }
         setSlaLoading(false)
       })
@@ -159,41 +173,40 @@ function RestaurantTab() {
   return (
     <div className="space-y-6">
       {/* Restaurant Info */}
-      <SettingsCard title="Restaurant Info" badge="Synced from Google Places">
+      <SettingsCard title="Restaurant Info" badge="From your account">
         <div className="space-y-3">
-          <ReadOnlyField label="Name" value="Spice Garden" />
-          <ReadOnlyField label="Address" value="2900 Glendale Ave, Tracy, CA 95377" />
-          <ReadOnlyField label="Phone" value="(209) 834-9800" />
-          <ReadOnlyField label="Cuisine" value="Indian" />
+          <ReadOnlyField label="Name" value={tenantInfo?.name ?? current.name} />
+          <ReadOnlyField label="Address" value="—" />
+          <ReadOnlyField label="Phone" value={formatPhone(tenantInfo?.phone_number)} />
+          <ReadOnlyField label="Cuisine" value="—" />
         </div>
-        <p style={{ fontSize: 12, color: '#B0A090', marginTop: 12 }}>
-          Info synced from your Google Business listing
-        </p>
       </SettingsCard>
 
-      {/* Operating Hours */}
-      <SettingsCard title="Operating Hours" badge="Synced from Google Places">
-        <div className="space-y-0">
-          {[
-            { day: 'Monday', open: '11:00 AM', close: '10:00 PM' },
-            { day: 'Tuesday', open: '11:00 AM', close: '10:00 PM' },
-            { day: 'Wednesday', open: '11:00 AM', close: '10:00 PM' },
-            { day: 'Thursday', open: '11:00 AM', close: '10:00 PM' },
-            { day: 'Friday', open: '11:00 AM', close: '11:00 PM' },
-            { day: 'Saturday', open: '11:00 AM', close: '11:00 PM' },
-            { day: 'Sunday', open: '', close: '' },
-          ].map(h => (
-            <div key={h.day} className="flex items-center justify-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#1E0E00', width: 100 }}>{h.day}</span>
-              {h.open ? (
-                <span style={{ fontSize: 13, color: '#5C3D22' }}>{h.open} — {h.close}</span>
-              ) : (
-                <span style={{ fontSize: 13, color: '#EF4444', fontWeight: 600 }}>Closed</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </SettingsCard>
+      {/* Operating Hours: hidden until backend exposes hours data */}
+      {SHOW_OPERATING_HOURS && (
+        <SettingsCard title="Operating Hours" badge="From your account">
+          <div className="space-y-0">
+            {[
+              { day: 'Monday', open: '11:00 AM', close: '10:00 PM' },
+              { day: 'Tuesday', open: '11:00 AM', close: '10:00 PM' },
+              { day: 'Wednesday', open: '11:00 AM', close: '10:00 PM' },
+              { day: 'Thursday', open: '11:00 AM', close: '10:00 PM' },
+              { day: 'Friday', open: '11:00 AM', close: '11:00 PM' },
+              { day: 'Saturday', open: '11:00 AM', close: '11:00 PM' },
+              { day: 'Sunday', open: '', close: '' },
+            ].map(h => (
+              <div key={h.day} className="flex items-center justify-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#1E0E00', width: 100 }}>{h.day}</span>
+                {h.open ? (
+                  <span style={{ fontSize: 13, color: '#5C3D22' }}>{h.open} — {h.close}</span>
+                ) : (
+                  <span style={{ fontSize: 13, color: '#EF4444', fontWeight: 600 }}>Closed</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
+      )}
 
       {/* Call Recording */}
       <SettingsCard title="Call Recording">
