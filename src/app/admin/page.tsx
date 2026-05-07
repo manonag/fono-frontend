@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlarmBell } from '@/components/admin/AlarmBell'
+import { PlatformVitals } from '@/components/admin/PlatformVitals'
 import { Tooltip } from '@/components/admin/Tooltip'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
@@ -274,7 +276,7 @@ export default function AdminPage() {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-xl font-bold">Fono Admin</h1>
-            <p className="text-xs text-cream/70">Day 1 (Section 1: Tenant Health Table)</p>
+            <p className="text-xs text-cream/70">Sections 1-3: Tenant Health, Alarm Bell, Platform Vitals</p>
           </div>
           <div className="text-xs text-cream/70">
             Auto-refreshing every 30s
@@ -287,6 +289,7 @@ export default function AdminPage() {
       </header>
 
       <section className="p-6 overflow-x-auto">
+        <h2 className="text-lg font-bold mb-3">Section 1: Tenant Health</h2>
         {error && (
           <div className="mb-4 p-3 rounded bg-red-100 text-red-800 text-sm">{error}</div>
         )}
@@ -400,6 +403,9 @@ export default function AdminPage() {
           </table>
         )}
       </section>
+
+      {token && <AlarmBell token={token} />}
+      {token && <PlatformVitals token={token} />}
     </main>
   )
 }
