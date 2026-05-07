@@ -9,6 +9,7 @@ type Severity = 'red' | 'yellow' | 'green'
 interface TenantBreakdown {
   tenant_id: string
   tenant_name: string
+  is_demo: boolean
   count_for_tenant: number
 }
 
@@ -31,6 +32,7 @@ interface AlarmsResponse {
 
 interface AlarmBellProps {
   token: string
+  includeDemo: boolean
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { red: 3, yellow: 2, green: 1 }
@@ -42,7 +44,7 @@ function rowClasses(severity: Severity, dormant: boolean): string {
   return 'bg-green-50 border-green-200 text-green-900'
 }
 
-export function AlarmBell({ token }: AlarmBellProps) {
+export function AlarmBell({ token, includeDemo }: AlarmBellProps) {
   const [data, setData] = useState<AlarmsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,9 +53,10 @@ export function AlarmBell({ token }: AlarmBellProps) {
     let cancelled = false
     const load = async () => {
       try {
-        const res = await fetch(`${config.apiUrl}/api/v1/admin/alarms`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await fetch(
+          `${config.apiUrl}/api/v1/admin/alarms?include_demo=${includeDemo}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        )
         if (!res.ok) {
           if (!cancelled) setError(`Failed to load alarms: HTTP ${res.status}`)
           return
@@ -74,7 +77,7 @@ export function AlarmBell({ token }: AlarmBellProps) {
       cancelled = true
       clearInterval(id)
     }
-  }, [token])
+  }, [token, includeDemo])
 
   const { active, dormant } = useMemo(() => {
     if (!data) return { active: [] as Alarm[], dormant: [] as Alarm[] }
@@ -119,10 +122,18 @@ export function AlarmBell({ token }: AlarmBellProps) {
                 <div className="text-sm font-bold">{alarm.count}</div>
               </div>
               {alarm.tenants.length > 0 && (
-                <div className="text-xs mt-1 opacity-80">
-                  {alarm.tenants
-                    .map((t) => `${t.tenant_name} (${t.count_for_tenant})`)
-                    .join(', ')}
+                <div className="text-xs mt-1 opacity-80 flex flex-wrap gap-x-2 gap-y-1">
+                  {alarm.tenants.map((t, i) => (
+                    <span key={t.tenant_id}>
+                      {t.tenant_name}
+                      {t.is_demo && (
+                        <span className="ml-1 inline-block px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-gray-200 text-gray-600 rounded">
+                          demo
+                        </span>
+                      )}
+                      {' '}({t.count_for_tenant}){i < alarm.tenants.length - 1 ? ',' : ''}
+                    </span>
+                  ))}
                 </div>
               )}
             </li>

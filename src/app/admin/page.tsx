@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlarmBell } from '@/components/admin/AlarmBell'
+import { DemoBadge } from '@/components/admin/DemoBadge'
+import { DemoToggle, DEMO_TOGGLE_STORAGE_KEY } from '@/components/admin/DemoToggle'
 import { PlatformVitals } from '@/components/admin/PlatformVitals'
 import { TenantSelector } from '@/components/admin/TenantSelector'
 import { Tooltip } from '@/components/admin/Tooltip'
@@ -33,6 +35,7 @@ interface TenantHealthRow {
   tenant_id: string
   tenant_name: string
   owner_email: string | null
+  is_demo: boolean
   forwarding_verified: boolean
   last_call_at: string | null
   calls_24h: number
@@ -107,10 +110,10 @@ const FLAG_TOOLTIPS: Record<number, string> = {
   12: "Recordings whose stored URL is past the 24h presigned expiry window. Dashboard 'Listen' button will return 403. Files exist in R2; URLs need regeneration. Mitigated when T-190 ships.",
 }
 
-function rowBg(severity: Severity): string {
-  if (severity === 'red') return 'bg-red-50'
-  if (severity === 'yellow') return 'bg-yellow-50'
-  return ''
+function rowBg(severity: Severity, isDemo: boolean): string {
+  const sevClass =
+    severity === 'red' ? 'bg-red-50' : severity === 'yellow' ? 'bg-yellow-50' : ''
+  return isDemo ? `${sevClass} opacity-75 italic` : sevClass
 }
 
 function formatTime(iso: string | null): string {
@@ -164,6 +167,20 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshLabel, setLastRefreshLabel] = useState<string>('')
   const [sort, setSort] = useState<SortState>({ key: 'row_severity', direction: 'desc' })
+  const [showDemo, setShowDemo] = useState<boolean>(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.localStorage.getItem(DEMO_TOGGLE_STORAGE_KEY)
+    if (stored !== null) setShowDemo(stored === 'true')
+  }, [])
+
+  const handleToggleDemo = useCallback((next: boolean) => {
+    setShowDemo(next)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DEMO_TOGGLE_STORAGE_KEY, String(next))
+    }
+  }, [])
 
   useEffect(() => {
     if (token === undefined) return
@@ -192,9 +209,10 @@ export default function AdminPage() {
   const loadHealth = useCallback(async () => {
     if (!token) return
     try {
-      const res = await fetch(`${config.apiUrl}/api/v1/admin/tenants/health`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await fetch(
+        `${config.apiUrl}/api/v1/admin/tenants/health?include_demo=${showDemo}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
       if (!res.ok) {
         setError(`Failed to load: HTTP ${res.status}`)
         return
@@ -206,7 +224,7 @@ export default function AdminPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     }
-  }, [token])
+  }, [token, showDemo])
 
   useEffect(() => {
     if (authState !== 'allowed') return
@@ -278,22 +296,25 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-cream text-ink font-sans">
       <header className="bg-ink text-cream px-6 py-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-xl font-bold">Fono Admin</h1>
             <p className="text-xs text-cream/70">Sections 1-3: Tenant Health, Alarm Bell, Platform Vitals</p>
           </div>
-          <div className="text-xs text-cream/70">
-            Auto-refreshing every 30s
-            {lastRefreshLabel && <> &middot; Last refresh: {lastRefreshLabel}</>}
-            {data && (
-              <> &middot; {data.tenants.length} tenants &middot; {data.elapsed_ms}ms</>
-            )}
+          <div className="flex items-center gap-4 flex-wrap">
+            <DemoToggle value={showDemo} onChange={handleToggleDemo} />
+            <div className="text-xs text-cream/70">
+              Auto-refreshing every 30s
+              {lastRefreshLabel && <> &middot; Last refresh: {lastRefreshLabel}</>}
+              {data && (
+                <> &middot; {data.tenants.length} tenants &middot; {data.elapsed_ms}ms</>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {token && <TenantSelector token={token} />}
+      {token && <TenantSelector token={token} includeDemo={showDemo} />}
 
       <section className="p-6 overflow-x-auto">
         <h2 className="text-lg font-bold mb-3">Section 1: Tenant Health</h2>
@@ -348,10 +369,13 @@ export default function AdminPage() {
                 return (
                   <tr
                     key={row.tenant_id}
-                    className={`border-t border-ink/10 ${rowBg(row.row_severity)}`}
+                    className={`border-t border-ink/10 ${rowBg(row.row_severity, row.is_demo)}`}
                   >
                     <td className="p-2 font-bold uppercase text-xs">{row.row_severity}</td>
-                    <td className="p-2 font-semibold">{row.tenant_name}</td>
+                    <td className="p-2 font-semibold">
+                      {row.tenant_name}
+                      {row.is_demo && <DemoBadge />}
+                    </td>
                     <td className="p-2 text-brown">{row.owner_email || '—'}</td>
                     <td className="p-2">
                       {row.forwarding_verified ? (
@@ -411,7 +435,7 @@ export default function AdminPage() {
         )}
       </section>
 
-      {token && <AlarmBell token={token} />}
+      {token && <AlarmBell token={token} includeDemo={showDemo} />}
       {token && <PlatformVitals token={token} />}
     </main>
   )

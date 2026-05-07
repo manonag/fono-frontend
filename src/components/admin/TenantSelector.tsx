@@ -8,14 +8,20 @@ export interface AdminTenantOption {
   tenant_id: string
   tenant_name: string
   owner_email: string | null
+  is_demo: boolean
 }
 
 interface TenantSelectorProps {
   token: string
+  includeDemo: boolean
   onTenantsLoaded?: (tenants: AdminTenantOption[]) => void
 }
 
-export function TenantSelector({ token, onTenantsLoaded }: TenantSelectorProps) {
+export function TenantSelector({
+  token,
+  includeDemo,
+  onTenantsLoaded,
+}: TenantSelectorProps) {
   const [tenants, setTenants] = useState<AdminTenantOption[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +29,7 @@ export function TenantSelector({ token, onTenantsLoaded }: TenantSelectorProps) 
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    fetch(`${config.apiUrl}/api/v1/admin/tenants`, {
+    fetch(`${config.apiUrl}/api/v1/admin/tenants?include_demo=${includeDemo}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
@@ -42,7 +48,7 @@ export function TenantSelector({ token, onTenantsLoaded }: TenantSelectorProps) 
     return () => {
       cancelled = true
     }
-  }, [token, onTenantsLoaded])
+  }, [token, includeDemo, onTenantsLoaded])
 
   return (
     <section className="px-6 py-3 border-b border-ink/10 bg-white">
@@ -60,6 +66,7 @@ export function TenantSelector({ token, onTenantsLoaded }: TenantSelectorProps) 
           {tenants.map((t) => (
             <option key={t.tenant_id} value={t.tenant_id}>
               {t.tenant_name}
+              {t.is_demo ? ' [demo]' : ''}
               {t.owner_email ? ` (${t.owner_email})` : ''}
             </option>
           ))}

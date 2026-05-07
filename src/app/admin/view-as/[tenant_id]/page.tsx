@@ -64,6 +64,7 @@ interface SettingsPayload {
   greeting_voice: string | null
   call_forwarding_verified: boolean
   is_active: boolean
+  is_demo: boolean
 }
 
 function authHeaders(token: string): HeadersInit {
@@ -92,6 +93,7 @@ export default function ViewAsTenantPage() {
   const token = useFonoToken()
   const [authState, setAuthState] = useState<'loading' | 'allowed' | 'denied' | 'unauthenticated'>('loading')
   const [tenantName, setTenantName] = useState<string>('')
+  const [tenantIsDemo, setTenantIsDemo] = useState<boolean>(false)
 
   useEffect(() => {
     if (token === undefined) return
@@ -118,7 +120,7 @@ export default function ViewAsTenantPage() {
   useEffect(() => {
     if (authState !== 'allowed' || !token) return
     let cancelled = false
-    fetch(`${config.apiUrl}/api/v1/admin/tenants`, {
+    fetch(`${config.apiUrl}/api/v1/admin/tenants?include_demo=true`, {
       headers: authHeaders(token),
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
@@ -126,6 +128,7 @@ export default function ViewAsTenantPage() {
         if (cancelled) return
         const match = json.tenants.find((t) => t.tenant_id === tenantId)
         setTenantName(match?.tenant_name ?? 'Unknown tenant')
+        setTenantIsDemo(match?.is_demo ?? false)
       })
       .catch(() => {
         if (!cancelled) setTenantName('Unknown tenant')
@@ -171,7 +174,13 @@ export default function ViewAsTenantPage() {
     <main className="min-h-screen bg-cream text-ink font-sans">
       <div className="sticky top-0 z-40 bg-yellow-100 border-b border-yellow-300 text-yellow-900 px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="font-semibold">
-          ⚠ Viewing as {tenantName || tenantId} &mdash; read-only mirror
+          ⚠ Viewing as {tenantName || tenantId}
+          {tenantIsDemo && (
+            <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-gray-200 text-gray-700 rounded">
+              demo
+            </span>
+          )}
+          {' '}&mdash; read-only mirror
         </div>
         <Link href="/admin" className="text-sm underline hover:no-underline">
           exit
