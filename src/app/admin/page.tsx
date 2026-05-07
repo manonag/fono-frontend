@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlarmBell } from '@/components/admin/AlarmBell'
 import { PlatformVitals } from '@/components/admin/PlatformVitals'
+import { TenantSelector } from '@/components/admin/TenantSelector'
 import { Tooltip } from '@/components/admin/Tooltip'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
@@ -287,6 +288,8 @@ export default function AdminPage() {
           </div>
         </div>
       </header>
+
+      {token && <TenantSelector token={token} />}
 
       <section className="p-6 overflow-x-auto">
         <h2 className="text-lg font-bold mb-3">Section 1: Tenant Health</h2>
