@@ -217,7 +217,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.tooltip-trigger')) {
+      const target = e.target as HTMLElement
+      const isFormControl = target.closest(
+        "select, input, textarea, button, [role='combobox'], [role='listbox'], option",
+      )
+      if (!target.closest('.tooltip-trigger') && !isFormControl) {
         ;(document.activeElement as HTMLElement | null)?.blur()
       }
     }
