@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlarmBell } from '@/components/admin/AlarmBell'
+import { BlockersSurface, type Blocker } from '@/components/admin/BlockersSurface'
 import { DemoBadge } from '@/components/admin/DemoBadge'
 import { DemoToggle, DEMO_TOGGLE_STORAGE_KEY } from '@/components/admin/DemoToggle'
 import { PlatformVitals } from '@/components/admin/PlatformVitals'
@@ -168,12 +169,36 @@ export default function AdminPage() {
   const [lastRefreshLabel, setLastRefreshLabel] = useState<string>('')
   const [sort, setSort] = useState<SortState>({ key: 'row_severity', direction: 'desc' })
   const [showDemo, setShowDemo] = useState<boolean>(false)
+  const [blockers, setBlockers] = useState<Blocker[]>([])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const stored = window.localStorage.getItem(DEMO_TOGGLE_STORAGE_KEY)
     if (stored !== null) setShowDemo(stored === 'true')
   }, [])
+
+  useEffect(() => {
+    if (authState !== 'allowed' || !token) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch(`${config.apiUrl}/api/v1/admin/blockers`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const json: { active_blockers: Blocker[] } = await res.json()
+        if (!cancelled) setBlockers(json.active_blockers)
+      } catch {
+        // best-effort: blockers surface stays empty on failure
+      }
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [authState, token])
 
   const handleToggleDemo = useCallback((next: boolean) => {
     setShowDemo(next)
@@ -315,6 +340,8 @@ export default function AdminPage() {
       </header>
 
       {token && <TenantSelector token={token} includeDemo={showDemo} />}
+
+      <BlockersSurface blockers={blockers} />
 
       <section className="p-6 overflow-x-auto">
         <h2 className="text-lg font-bold mb-3">Section 1: Tenant Health</h2>
