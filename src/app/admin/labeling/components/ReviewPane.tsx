@@ -7,7 +7,11 @@ import { VerifiedEditor } from './VerifiedEditor'
 import { TagPanel, type TagPanelValue } from './TagPanel'
 import { SaveControls } from './SaveControls'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
-import type { PatchPayload, RecordingDetail } from '../lib/types'
+import type {
+  PatchPayload,
+  RecordingDetail,
+  VerifiedSegment,
+} from '../lib/types'
 import type { Status } from '../lib/enums'
 
 interface ReviewPaneProps {
@@ -22,26 +26,63 @@ interface ReviewPaneProps {
 }
 
 interface FormState {
-  verified_transcript: string
+  verified_segments: VerifiedSegment[]
   status: Status
   tags: TagPanelValue
 }
 
-function buildInitialState(rec: RecordingDetail): FormState {
+interface InitialSnapshot {
+  verified_segments: VerifiedSegment[]
+  status: Status
+  tags: TagPanelValue
+}
+
+function cloneSegment(s: VerifiedSegment): VerifiedSegment {
   return {
-    verified_transcript: rec.verified_transcript ?? rec.machine.transcript ?? '',
-    status: rec.status,
-    tags: {
-      language_profile_tag: rec.language_profile_tag,
-      call_type_tag: rec.call_type_tag,
-      audio_quality_tag: rec.audio_quality_tag,
-      error_tags: [...rec.error_tags],
-      contains_menu_items: rec.contains_menu_items,
-      contains_prices: rec.contains_prices,
-      contains_phone_numbers: rec.contains_phone_numbers,
-      contains_names: rec.contains_names,
-      is_holdout: rec.is_holdout,
-      reviewer_notes: rec.reviewer_notes ?? '',
+    speaker_id: s.speaker_id,
+    transcript: s.transcript,
+    start_time_seconds: s.start_time_seconds,
+    end_time_seconds: s.end_time_seconds,
+  }
+}
+
+function buildState(rec: RecordingDetail): {
+  form: FormState
+  initial: InitialSnapshot
+} {
+  const serverSegments = rec.verified_segments ?? []
+  let displayedSegments: VerifiedSegment[]
+  if (serverSegments.length > 0) {
+    displayedSegments = serverSegments.map(cloneSegment)
+  } else {
+    const dia = rec.machine.diarization?.entries ?? []
+    displayedSegments = dia.map((e) => ({
+      speaker_id: e.speaker_id,
+      transcript: e.transcript,
+      start_time_seconds: e.start_time_seconds,
+      end_time_seconds: e.end_time_seconds,
+    }))
+  }
+
+  const tags: TagPanelValue = {
+    language_profile_tag: rec.language_profile_tag,
+    call_type_tag: rec.call_type_tag,
+    audio_quality_tag: rec.audio_quality_tag,
+    error_tags: [...rec.error_tags],
+    contains_menu_items: rec.contains_menu_items,
+    contains_prices: rec.contains_prices,
+    contains_phone_numbers: rec.contains_phone_numbers,
+    contains_names: rec.contains_names,
+    is_holdout: rec.is_holdout,
+    reviewer_notes: rec.reviewer_notes ?? '',
+  }
+
+  return {
+    form: { verified_segments: displayedSegments, status: rec.status, tags },
+    initial: {
+      verified_segments: serverSegments.map(cloneSegment),
+      status: rec.status,
+      tags: { ...tags, error_tags: [...tags.error_tags] },
     },
   }
 }
@@ -53,10 +94,25 @@ function arraysEqualUnordered<T>(a: T[], b: T[]): boolean {
   return true
 }
 
-function computeDiff(initial: FormState, current: FormState): PatchPayload {
+function segmentsEqual(a: VerifiedSegment[], b: VerifiedSegment[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].speaker_id !== b[i].speaker_id ||
+      a[i].transcript !== b[i].transcript ||
+      a[i].start_time_seconds !== b[i].start_time_seconds ||
+      a[i].end_time_seconds !== b[i].end_time_seconds
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function computeDiff(initial: InitialSnapshot, current: FormState): PatchPayload {
   const diff: PatchPayload = {}
-  if (initial.verified_transcript !== current.verified_transcript) {
-    diff.verified_transcript = current.verified_transcript
+  if (!segmentsEqual(initial.verified_segments, current.verified_segments)) {
+    diff.verified_segments = current.verified_segments
   }
   if (initial.status !== current.status) diff.status = current.status
   const it = initial.tags
@@ -93,8 +149,10 @@ export function ReviewPane({
   hasNext,
   onSave,
 }: ReviewPaneProps) {
-  const initialRef = useRef<FormState | null>(null)
+  const initialRef = useRef<InitialSnapshot | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const preEditRef = useRef<string>('')
   const [currentTime, setCurrentTime] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -106,13 +164,15 @@ export function ReviewPane({
     if (!recording) {
       initialRef.current = null
       setForm(null)
+      setEditingIndex(null)
       setCurrentTime(0)
       setSaveError(null)
       return
     }
-    const next = buildInitialState(recording)
-    initialRef.current = next
-    setForm(next)
+    const { form: nextForm, initial } = buildState(recording)
+    initialRef.current = initial
+    setForm(nextForm)
+    setEditingIndex(null)
     setCurrentTime(0)
     setSaveError(null)
   }, [recording])
@@ -128,9 +188,58 @@ export function ReviewPane({
     return Object.keys(computeDiff(initialRef.current, form)).length > 0
   }, [form])
 
-  const entries = useMemo(
-    () => recording?.machine.diarization?.entries ?? [],
-    [recording],
+  const segments = useMemo(
+    () => form?.verified_segments ?? [],
+    [form],
+  )
+
+  const derivedVerifiedText = useMemo(
+    () => segments.map((s) => s.transcript).join(' ').trim(),
+    [segments],
+  )
+
+  const updateSegmentTranscript = useCallback((idx: number, transcript: string) => {
+    setForm((f) => {
+      if (!f) return f
+      const next = f.verified_segments.map((s, i) =>
+        i === idx ? { ...s, transcript } : s,
+      )
+      return { ...f, verified_segments: next }
+    })
+  }, [])
+
+  const toggleSegmentSpeaker = useCallback((idx: number) => {
+    setForm((f) => {
+      if (!f) return f
+      const next = f.verified_segments.map((s, i) => {
+        if (i !== idx) return s
+        if (s.speaker_id === 'speaker_0') return { ...s, speaker_id: 'speaker_1' }
+        if (s.speaker_id === 'speaker_1') return { ...s, speaker_id: 'speaker_0' }
+        return s
+      })
+      return { ...f, verified_segments: next }
+    })
+  }, [])
+
+  const handleEditStart = useCallback(
+    (idx: number) => {
+      if (!form) return
+      preEditRef.current = form.verified_segments[idx]?.transcript ?? ''
+      setEditingIndex(idx)
+    },
+    [form],
+  )
+
+  const handleEditCommit = useCallback(() => {
+    setEditingIndex(null)
+  }, [])
+
+  const handleEditCancel = useCallback(
+    (idx: number) => {
+      updateSegmentTranscript(idx, preEditRef.current)
+      setEditingIndex(null)
+    },
+    [updateSegmentTranscript],
   )
 
   const doSave = useCallback(
@@ -185,21 +294,23 @@ export function ReviewPane({
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
         const t = audio.getCurrentTime()
-        const prev = [...entries].reverse().find((en) => en.start_time_seconds < t - 0.25)
+        const prev = [...segments]
+          .reverse()
+          .find((en) => en.start_time_seconds < t - 0.25)
         if (prev) audio.seekTo(prev.start_time_seconds)
         return
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault()
         const t = audio.getCurrentTime()
-        const nxt = entries.find((en) => en.start_time_seconds > t + 0.05)
+        const nxt = segments.find((en) => en.start_time_seconds > t + 0.05)
         if (nxt) audio.seekTo(nxt.start_time_seconds)
         return
       }
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         const t = audio.getCurrentTime()
-        const cur = entries.find(
+        const cur = segments.find(
           (en) => t >= en.start_time_seconds && t < en.end_time_seconds,
         )
         if (cur) {
@@ -223,7 +334,7 @@ export function ReviewPane({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doSave, entries, textFocused])
+  }, [doSave, segments, textFocused])
 
   if (loading && !recording) {
     return (
@@ -288,20 +399,20 @@ export function ReviewPane({
             Karaoke Transcript
           </h3>
           <KaraokeTranscript
-            entries={entries}
+            segments={segments}
             fallbackTranscript={recording.machine.transcript}
             currentTime={currentTime}
+            editingIndex={editingIndex}
             onSeek={handleKaraokeSeek}
+            onEditStart={handleEditStart}
+            onEditChange={updateSegmentTranscript}
+            onEditCommit={handleEditCommit}
+            onEditCancel={handleEditCancel}
+            onSpeakerToggle={toggleSegmentSpeaker}
           />
         </section>
         <hr className="border-ink/10" />
-        <VerifiedEditor
-          value={form.verified_transcript}
-          onChange={(v) =>
-            setForm((f) => (f ? { ...f, verified_transcript: v } : f))
-          }
-          onFocusChange={setTextFocused}
-        />
+        <VerifiedEditor value={derivedVerifiedText} />
         <hr className="border-ink/10" />
         <TagPanel
           value={form.tags}

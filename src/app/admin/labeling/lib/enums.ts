@@ -60,6 +60,7 @@ export const CALL_TYPE_LABELS: Record<CallType, string> = {
 export const ERROR_TAGS = [
   'missed_word',
   'wrong_language_tag',
+  'speaker_misattributed',
   'substituted_word',
   'hallucinated_word',
   'missed_codeswitch_boundary',
@@ -74,6 +75,7 @@ export type ErrorTag = (typeof ERROR_TAGS)[number]
 export const ERROR_TAG_LABELS: Record<ErrorTag, string> = {
   missed_word: 'Missed word',
   wrong_language_tag: 'Wrong language tag',
+  speaker_misattributed: 'Speaker misattributed',
   substituted_word: 'Substituted word',
   hallucinated_word: 'Hallucinated word',
   missed_codeswitch_boundary: 'Missed codeswitch boundary',

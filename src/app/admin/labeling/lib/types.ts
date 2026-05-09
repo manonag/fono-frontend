@@ -34,6 +34,13 @@ export interface DiarizationEntry {
   end_time_seconds: number
 }
 
+export interface VerifiedSegment {
+  speaker_id: string
+  transcript: string
+  start_time_seconds: number
+  end_time_seconds: number
+}
+
 export interface RecordingDetail {
   recording_id: string
   review_id: string
@@ -70,6 +77,7 @@ export interface RecordingDetail {
     labeled_at: string | null
   }
   verified_transcript: string | null
+  verified_segments: VerifiedSegment[]
   verified_at: string | null
   verified_by: string | null
   error_tags: ErrorTag[]
@@ -90,6 +98,7 @@ export interface RecordingDetail {
 
 export interface PatchPayload {
   verified_transcript?: string
+  verified_segments?: VerifiedSegment[]
   error_tags?: ErrorTag[]
   audio_quality_tag?: AudioQualityTag | null
   language_profile_tag?: LanguageProfile | null
