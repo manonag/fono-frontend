@@ -1,0 +1,323 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { config } from '@/lib/config'
+import { useFonoToken } from '@/hooks/use-fono-token'
+import { QueuePane } from './components/QueuePane'
+import { ReviewPane } from './components/ReviewPane'
+import { StatsHeader } from './components/StatsHeader'
+import {
+  LabelingApiError,
+  fetchQueue,
+  fetchRecording,
+  fetchStats,
+  patchRecording,
+} from './lib/api'
+import type {
+  PatchPayload,
+  QueueFilter,
+  QueueItem,
+  RecordingDetail,
+  StatsResponse,
+} from './lib/types'
+
+type AuthState = 'loading' | 'allowed' | 'denied' | 'unauthenticated'
+
+const MIN_VIEWPORT_PX = 1280
+
+function useMinViewport(min: number): boolean {
+  const [ok, setOk] = useState(true)
+  useEffect(() => {
+    const check = () => setOk(window.innerWidth >= min)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [min])
+  return ok
+}
+
+export default function LabelingPage() {
+  const token = useFonoToken()
+  const [authState, setAuthState] = useState<AuthState>('loading')
+  const viewportOk = useMinViewport(MIN_VIEWPORT_PX)
+
+  const [filter, setFilter] = useState<QueueFilter>('auto_labeled')
+  const [queue, setQueue] = useState<QueueItem[]>([])
+  const [queueTotal, setQueueTotal] = useState(0)
+  const [queueLoading, setQueueLoading] = useState(false)
+  const [queueError, setQueueError] = useState<string | null>(null)
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [recording, setRecording] = useState<RecordingDetail | null>(null)
+  const [recordingLoading, setRecordingLoading] = useState(false)
+  const [recordingError, setRecordingError] = useState<string | null>(null)
+
+  const [stats, setStats] = useState<StatsResponse | null>(null)
+  const [statsRefreshing, setStatsRefreshing] = useState(false)
+
+  const [queueComplete, setQueueComplete] = useState(false)
+
+  const initialAutoSelectDone = useRef(false)
+
+  useEffect(() => {
+    if (token === undefined) return
+    if (!token) {
+      setAuthState('unauthenticated')
+      return
+    }
+    let cancelled = false
+    fetch(`${config.apiUrl}/api/v1/admin/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (cancelled) return
+        if (r.status === 200) setAuthState('allowed')
+        else if (r.status === 403) setAuthState('denied')
+        else setAuthState('unauthenticated')
+      })
+      .catch(() => {
+        if (!cancelled) setAuthState('denied')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  const loadQueue = useCallback(
+    async (opts?: { keepSelection?: boolean }) => {
+      if (!token) return
+      setQueueLoading(true)
+      setQueueError(null)
+      try {
+        const res = await fetchQueue(token, { filter, sort: 'duration_desc', limit: 100 })
+        setQueue(res.items)
+        setQueueTotal(res.total)
+        if (!opts?.keepSelection && !initialAutoSelectDone.current && res.items.length > 0) {
+          setSelectedId(res.items[0].recording_id)
+          initialAutoSelectDone.current = true
+        }
+      } catch (err) {
+        const msg = err instanceof LabelingApiError ? err.detail : 'Failed to load queue'
+        setQueueError(msg)
+      } finally {
+        setQueueLoading(false)
+      }
+    },
+    [token, filter],
+  )
+
+  const loadStats = useCallback(async () => {
+    if (!token) return
+    setStatsRefreshing(true)
+    try {
+      const res = await fetchStats(token)
+      setStats(res)
+    } catch {
+      // best-effort
+    } finally {
+      setStatsRefreshing(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (authState !== 'allowed') return
+    initialAutoSelectDone.current = false
+    void loadQueue()
+    void loadStats()
+  }, [authState, loadQueue, loadStats])
+
+  useEffect(() => {
+    if (authState !== 'allowed' || !token || !selectedId) {
+      setRecording(null)
+      return
+    }
+    let cancelled = false
+    setRecordingLoading(true)
+    setRecordingError(null)
+    fetchRecording(token, selectedId)
+      .then((rec) => {
+        if (cancelled) return
+        setRecording(rec)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        const msg =
+          err instanceof LabelingApiError ? err.detail : 'Failed to load recording'
+        setRecordingError(msg)
+      })
+      .finally(() => {
+        if (!cancelled) setRecordingLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authState, token, selectedId])
+
+  const handleFilterChange = useCallback((next: QueueFilter) => {
+    setFilter(next)
+    initialAutoSelectDone.current = false
+    setQueueComplete(false)
+  }, [])
+
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id)
+    setQueueComplete(false)
+  }, [])
+
+  const findNextAutoLabeled = useCallback(
+    (currentId: string | null, items: QueueItem[]): string | null => {
+      if (!currentId) {
+        const first = items.find((i) => i.status === 'auto_labeled')
+        return first?.recording_id ?? null
+      }
+      const idx = items.findIndex((i) => i.recording_id === currentId)
+      const search = idx === -1 ? items : items.slice(idx + 1)
+      const next = search.find((i) => i.status === 'auto_labeled')
+      if (next) return next.recording_id
+      const wrap = items.find(
+        (i) => i.status === 'auto_labeled' && i.recording_id !== currentId,
+      )
+      return wrap?.recording_id ?? null
+    },
+    [],
+  )
+
+  const hasNext = useMemo(() => {
+    return findNextAutoLabeled(selectedId, queue) !== null
+  }, [findNextAutoLabeled, selectedId, queue])
+
+  const handleSave = useCallback(
+    async (
+      payload: PatchPayload,
+      options: { advanceAfter: boolean },
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!token || !selectedId) return { ok: false, error: 'Not authenticated' }
+      try {
+        const updated =
+          Object.keys(payload).length > 0
+            ? await patchRecording(token, selectedId, payload)
+            : null
+        if (updated) setRecording(updated)
+        const queueRes = await fetchQueue(token, {
+          filter,
+          sort: 'duration_desc',
+          limit: 100,
+        })
+        setQueue(queueRes.items)
+        setQueueTotal(queueRes.total)
+        void loadStats()
+        if (options.advanceAfter) {
+          const next = findNextAutoLabeled(selectedId, queueRes.items)
+          if (next) {
+            setSelectedId(next)
+          } else {
+            setQueueComplete(true)
+          }
+        }
+        return { ok: true }
+      } catch (err) {
+        if (err instanceof LabelingApiError) {
+          return { ok: false, error: `${err.status}: ${err.detail}` }
+        }
+        return { ok: false, error: 'Network error. Form state preserved.' }
+      }
+    },
+    [token, selectedId, filter, loadStats, findNextAutoLabeled],
+  )
+
+  if (!viewportOk) {
+    return (
+      <main className="min-h-screen bg-cream text-ink p-8 font-sans flex items-center justify-center">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-bold mb-2">Wider viewport needed</h1>
+          <p className="text-brown">
+            The labeling dashboard requires at least {MIN_VIEWPORT_PX}px width. Resize your
+            window or use a larger display.
+          </p>
+        </div>
+      </main>
+    )
+  }
+
+  if (authState === 'loading') {
+    return (
+      <main className="min-h-screen bg-cream text-ink p-8 font-sans">
+        <p className="text-brown">Checking access…</p>
+      </main>
+    )
+  }
+  if (authState === 'unauthenticated') {
+    return (
+      <main className="min-h-screen bg-cream text-ink p-8 font-sans">
+        <p>You need to sign in to view this page.</p>
+      </main>
+    )
+  }
+  if (authState === 'denied') {
+    return (
+      <main className="min-h-screen bg-cream text-ink p-8 font-sans">
+        <h1 className="text-2xl font-bold mb-2">No admin access</h1>
+        <p className="text-brown">
+          Your account does not have access to the Fono admin dashboard. If you believe
+          this is wrong, contact Mano.
+        </p>
+      </main>
+    )
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-cream text-ink font-sans overflow-hidden">
+      <header className="bg-ink text-cream px-6 py-3 flex-none">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-bold">Labeling Queue</h1>
+            <p className="text-xs text-cream/70">
+              T-199 Phase A · Sarvam transcript verification
+            </p>
+          </div>
+          <a
+            href="/admin"
+            className="text-xs text-cream/70 hover:text-cream underline"
+          >
+            ← Admin home
+          </a>
+        </div>
+      </header>
+      <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
+      <div className="flex-1 flex min-h-0">
+        <QueuePane
+          items={queue}
+          total={queueTotal}
+          loading={queueLoading}
+          error={queueError}
+          filter={filter}
+          selectedId={selectedId}
+          onFilterChange={handleFilterChange}
+          onSelect={handleSelect}
+        />
+        <ReviewPane
+          recording={recording}
+          loading={recordingLoading}
+          error={recordingError}
+          hasNext={hasNext}
+          onSave={handleSave}
+        />
+      </div>
+      {queueComplete && (
+        <div className="fixed inset-x-0 bottom-6 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto bg-ink text-cream px-6 py-3 rounded shadow-lg flex items-center gap-3">
+            <span className="text-2xl">🎉</span>
+            <span className="font-semibold">Queue complete!</span>
+            <button
+              type="button"
+              onClick={() => setQueueComplete(false)}
+              className="text-cream/70 hover:text-cream text-sm ml-2"
+            >
+              dismiss
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

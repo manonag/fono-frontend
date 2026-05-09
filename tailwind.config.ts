@@ -15,7 +15,15 @@ const config: Config = {
         brown: '#8B7355',
       },
       fontFamily: {
-        sans: ['var(--font-jakarta)', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+        sans: [
+          'var(--font-jakarta)',
+          'Plus Jakarta Sans',
+          'var(--font-noto-devanagari)',
+          'var(--font-noto-telugu)',
+          'var(--font-noto-gurmukhi)',
+          'system-ui',
+          'sans-serif',
+        ],
       },
       keyframes: {
         'fade-in': {
