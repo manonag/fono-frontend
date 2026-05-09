@@ -19,6 +19,12 @@ export interface QueueItem {
   is_holdout: boolean
   error_count: number
   verified_at: string | null
+  // T-204: lock-aware fields. Owners see locks held by anyone; labelers
+  // never see rows locked by another user (filtered server-side), so the
+  // only non-null lock_holder_user_id a labeler ever sees is their own.
+  lock_holder_user_id: string | null
+  lock_holder_name: string | null
+  lock_expires_at: string | null
 }
 
 export interface QueueResponse {
@@ -94,6 +100,14 @@ export interface RecordingDetail {
   reviewer_notes: string | null
   created_at: string
   updated_at: string
+  // T-204
+  lock_holder_user_id: string | null
+  lock_holder_name: string | null
+  lock_acquired_at: string | null
+  lock_expires_at: string | null
+  labeler_user_id: string | null
+  reviewed_by_user_id: string | null
+  reviewer_notes_for_labeler: string | null
 }
 
 export interface PatchPayload {
@@ -110,6 +124,31 @@ export interface PatchPayload {
   is_holdout?: boolean
   reviewer_notes?: string | null
   status?: Status
+  // T-204 owner review actions. review_action='approve' flips an
+  // in_review row to verified; 'reject' flips it back to auto_labeled
+  // with reviewer_notes_for_labeler stored on the row.
+  review_action?: 'approve' | 'reject'
+  reviewer_notes_for_labeler?: string | null
+}
+
+export interface LabelerCounts {
+  verified: number
+  in_review: number
+  rejected: number
+  total: number
+}
+
+export interface LabelerSummary {
+  id: string
+  email: string
+  name: string
+  role: 'owner' | 'labeler'
+  active: boolean
+  created_at: string | null
+  last_login_at: string | null
+  created_by_user_id: string | null
+  counts: LabelerCounts
+  last_active_at: string | null
 }
 
 export interface StatsResponse {
@@ -122,10 +161,58 @@ export interface StatsResponse {
     tenant_name: string
     by_status: Partial<Record<Status, number>>
   }>
+  by_labeler: LabelerSummary[]
   mean_words_machine: number | null
   mean_words_verified: number | null
   total_reviews: number
   total_recordings_with_audio: number
+  fetched_at: string
+}
+
+export interface MeResponse {
+  user_id: string
+  email: string
+  name: string | null
+  role: 'owner' | 'labeler'
+  active: boolean
+  is_admin: boolean
+}
+
+export interface ActiveLabeler {
+  user_id: string
+  name: string | null
+  email: string
+  role: 'owner' | 'labeler'
+  last_activity_at: string
+}
+
+export interface ActiveLabelersResponse {
+  items: ActiveLabeler[]
+}
+
+export interface ReviewQueueItem {
+  recording_id: string
+  tenant_id: string
+  tenant_name: string
+  call_started_at: string | null
+  duration_seconds: number | null
+  machine_transcript_preview: string
+  verified_transcript_preview: string
+  language_profile_tag: LanguageProfile | null
+  call_type_tag: CallType | null
+  status: Status
+  labeler_user_id: string | null
+  labeler_name: string | null
+  labeler_email: string | null
+  in_review_since: string | null
+  error_count: number
+}
+
+export interface ReviewQueueResponse {
+  items: ReviewQueueItem[]
+  total: number
+  limit: number
+  offset: number
   fetched_at: string
 }
 

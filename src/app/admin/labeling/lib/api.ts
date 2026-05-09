@@ -1,14 +1,18 @@
 import { config } from '@/lib/config'
 import type {
+  ActiveLabelersResponse,
+  MeResponse,
   PatchPayload,
   QueueFilter,
   QueueResponse,
   RecordingDetail,
+  ReviewQueueResponse,
   SortKey,
   StatsResponse,
 } from './types'
 
 const BASE = `${config.apiUrl}/api/v1/admin/labeling`
+const ADMIN_BASE = `${config.apiUrl}/api/v1/admin`
 
 function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` }
@@ -60,8 +64,13 @@ export async function fetchRecording(
   token: string,
   recordingId: string,
   signal?: AbortSignal,
+  opts: { acquireLock?: boolean } = {},
 ): Promise<RecordingDetail> {
-  const res = await fetch(`${BASE}/${recordingId}`, {
+  const url =
+    opts.acquireLock === false
+      ? `${BASE}/${recordingId}?acquire_lock=false`
+      : `${BASE}/${recordingId}`
+  const res = await fetch(url, {
     headers: authHeaders(token),
     signal,
   })
@@ -88,6 +97,54 @@ export async function fetchStats(
   signal?: AbortSignal,
 ): Promise<StatsResponse> {
   const res = await fetch(`${BASE}/stats`, {
+    headers: authHeaders(token),
+    signal,
+  })
+  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  return res.json()
+}
+
+export async function fetchMe(
+  token: string,
+  signal?: AbortSignal,
+): Promise<MeResponse> {
+  const res = await fetch(`${ADMIN_BASE}/me`, {
+    headers: authHeaders(token),
+    signal,
+  })
+  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  return res.json()
+}
+
+export async function fetchActiveLabelers(
+  token: string,
+  signal?: AbortSignal,
+): Promise<ActiveLabelersResponse> {
+  const res = await fetch(`${BASE}/active-labelers`, {
+    headers: authHeaders(token),
+    signal,
+  })
+  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  return res.json()
+}
+
+export async function postHeartbeat(token: string): Promise<void> {
+  const res = await fetch(`${ADMIN_BASE}/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+}
+
+export async function fetchReviewQueue(
+  token: string,
+  opts: { limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<ReviewQueueResponse> {
+  const params = new URLSearchParams()
+  params.set('limit', String(opts.limit ?? 100))
+  params.set('offset', String(opts.offset ?? 0))
+  const res = await fetch(`${BASE}/review-queue?${params.toString()}`, {
     headers: authHeaders(token),
     signal,
   })

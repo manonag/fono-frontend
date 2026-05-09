@@ -1,19 +1,24 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
+import { useHeartbeat } from '@/hooks/use-heartbeat'
+import { LabelerHeader, deriveMyCounts } from './components/LabelerHeader'
 import { QueuePane } from './components/QueuePane'
 import { ReviewPane } from './components/ReviewPane'
 import { StatsHeader } from './components/StatsHeader'
 import {
   LabelingApiError,
+  fetchActiveLabelers,
+  fetchMe,
   fetchQueue,
   fetchRecording,
   fetchStats,
   patchRecording,
 } from './lib/api'
 import type {
+  ActiveLabeler,
+  MeResponse,
   PatchPayload,
   QueueFilter,
   QueueItem,
@@ -55,6 +60,9 @@ export default function LabelingPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [statsRefreshing, setStatsRefreshing] = useState(false)
 
+  const [me, setMe] = useState<MeResponse | null>(null)
+  const [activeLabelers, setActiveLabelers] = useState<ActiveLabeler[]>([])
+
   const [queueComplete, setQueueComplete] = useState(false)
 
   const initialAutoSelectDone = useRef(false)
@@ -66,22 +74,46 @@ export default function LabelingPage() {
       return
     }
     let cancelled = false
-    fetch(`${config.apiUrl}/api/v1/admin/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
+    fetchMe(token)
+      .then((data) => {
         if (cancelled) return
-        if (r.status === 200) setAuthState('allowed')
-        else if (r.status === 403) setAuthState('denied')
-        else setAuthState('unauthenticated')
+        setMe(data)
+        setAuthState('allowed')
       })
-      .catch(() => {
-        if (!cancelled) setAuthState('denied')
+      .catch((err: unknown) => {
+        if (cancelled) return
+        if (err instanceof LabelingApiError && err.status === 403) {
+          setAuthState('denied')
+        } else {
+          setAuthState('unauthenticated')
+        }
       })
     return () => {
       cancelled = true
     }
   }, [token])
+
+  useHeartbeat(token, authState === 'allowed')
+
+  useEffect(() => {
+    if (authState !== 'allowed' || !token) return
+    let cancelled = false
+    const load = () => {
+      void fetchActiveLabelers(token)
+        .then((res) => {
+          if (!cancelled) setActiveLabelers(res.items)
+        })
+        .catch(() => {
+          // best-effort: pill stays at the prior value
+        })
+    }
+    load()
+    const id = window.setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [authState, token])
 
   const loadQueue = useCallback(
     async (opts?: { keepSelection?: boolean }) => {
@@ -283,6 +315,11 @@ export default function LabelingPage() {
           </a>
         </div>
       </header>
+      <LabelerHeader
+        me={me}
+        myCounts={deriveMyCounts(me, stats?.by_labeler)}
+        activeLabelers={activeLabelers}
+      />
       <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
       <div className="flex-1 flex min-h-0">
         <QueuePane
@@ -292,6 +329,7 @@ export default function LabelingPage() {
           error={queueError}
           filter={filter}
           selectedId={selectedId}
+          currentUserId={me?.user_id ?? null}
           onFilterChange={handleFilterChange}
           onSelect={handleSelect}
         />

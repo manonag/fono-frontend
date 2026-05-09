@@ -12,6 +12,7 @@ interface QueuePaneProps {
   error: string | null
   filter: QueueFilter
   selectedId: string | null
+  currentUserId: string | null
   onFilterChange: (filter: QueueFilter) => void
   onSelect: (recordingId: string) => void
 }
@@ -45,6 +46,7 @@ export function QueuePane({
   error,
   filter,
   selectedId,
+  currentUserId,
   onFilterChange,
   onSelect,
 }: QueuePaneProps) {
@@ -98,16 +100,27 @@ export function QueuePane({
         <ul>
           {items.map((item, idx) => {
             const selected = item.recording_id === selectedId
+            const lockedByOther =
+              item.lock_holder_user_id !== null &&
+              item.lock_holder_user_id !== currentUserId
             return (
               <li key={item.recording_id}>
                 <button
                   ref={selected ? selectedRowRef : undefined}
                   type="button"
                   onClick={() => onSelect(item.recording_id)}
+                  disabled={lockedByOther}
+                  title={
+                    lockedByOther
+                      ? `Locked by ${item.lock_holder_name ?? 'another labeler'}`
+                      : undefined
+                  }
                   className={
                     selected
                       ? 'w-full text-left px-4 py-3 border-l-4 border-terra bg-cream'
-                      : 'w-full text-left px-4 py-3 border-l-4 border-transparent hover:bg-ink/5'
+                      : lockedByOther
+                        ? 'w-full text-left px-4 py-3 border-l-4 border-transparent opacity-60 cursor-not-allowed'
+                        : 'w-full text-left px-4 py-3 border-l-4 border-transparent hover:bg-ink/5'
                   }
                 >
                   <div className="flex items-center gap-2 text-xs text-brown mb-1">
@@ -120,7 +133,7 @@ export function QueuePane({
                       <span className="ml-auto text-purple-700" title="Holdout candidate">★</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                         STATUS_BADGE_CLS[item.status]
@@ -136,6 +149,11 @@ export function QueuePane({
                     {item.error_count > 0 && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800">
                         {item.error_count} err
+                      </span>
+                    )}
+                    {lockedByOther && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                        🔒 {item.lock_holder_name ?? 'someone'} is labeling
                       </span>
                     )}
                   </div>
