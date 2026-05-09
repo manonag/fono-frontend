@@ -78,11 +78,21 @@ export async function fetchRecording(
   return res.json()
 }
 
+export interface PatchRecordingResult {
+  recording_id: string
+  status_before: string
+  status_after: string
+  fields_updated: string[]
+  verified_at: string | null
+  verified_by: string | null
+  updated_at: string | null
+}
+
 export async function patchRecording(
   token: string,
   recordingId: string,
   payload: PatchPayload,
-): Promise<RecordingDetail> {
+): Promise<PatchRecordingResult> {
   const res = await fetch(`${BASE}/${recordingId}`, {
     method: 'PATCH',
     headers: { ...authHeaders(token), 'Content-Type': 'application/json' },

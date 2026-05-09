@@ -225,11 +225,19 @@ export default function LabelingPage() {
     ): Promise<{ ok: boolean; error?: string }> => {
       if (!token || !selectedId) return { ok: false, error: 'Not authenticated' }
       try {
-        const updated =
+        const result =
           Object.keys(payload).length > 0
             ? await patchRecording(token, selectedId, payload)
             : null
-        if (updated) setRecording(updated)
+        if (result) {
+          // PATCH returns a summary, not RecordingDetail. Re-fetch to refresh
+          // recording state without re-acquiring the lock (labeler save
+          // already released it; owner doesn't need to claim).
+          const fresh = await fetchRecording(token, selectedId, undefined, {
+            acquireLock: false,
+          })
+          if (fresh) setRecording(fresh)
+        }
         const queueRes = await fetchQueue(token, {
           filter,
           sort: 'duration_desc',

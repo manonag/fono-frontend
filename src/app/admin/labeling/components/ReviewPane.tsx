@@ -46,6 +46,13 @@ function cloneSegment(s: VerifiedSegment): VerifiedSegment {
   }
 }
 
+// Sarvam emits `speaker_id` as bare digit strings ("0", "1") in
+// diarized_transcript. Rest of the UI (isToggleable, toggleSegmentSpeaker,
+// styling) keys off the `speaker_<n>` form, so normalize at this boundary.
+function normalizeSpeakerId(rawId: string): string {
+  return /^\d+$/.test(rawId) ? `speaker_${rawId}` : rawId
+}
+
 function buildState(rec: RecordingDetail): {
   form: FormState
   initial: InitialSnapshot
@@ -53,11 +60,14 @@ function buildState(rec: RecordingDetail): {
   const serverSegments = rec.verified_segments ?? []
   let displayedSegments: VerifiedSegment[]
   if (serverSegments.length > 0) {
-    displayedSegments = serverSegments.map(cloneSegment)
+    displayedSegments = serverSegments.map((s) => ({
+      ...cloneSegment(s),
+      speaker_id: normalizeSpeakerId(s.speaker_id),
+    }))
   } else {
     const dia = rec.machine.diarization?.entries ?? []
     displayedSegments = dia.map((e) => ({
-      speaker_id: e.speaker_id,
+      speaker_id: normalizeSpeakerId(e.speaker_id),
       transcript: e.transcript,
       start_time_seconds: e.start_time_seconds,
       end_time_seconds: e.end_time_seconds,
@@ -80,7 +90,12 @@ function buildState(rec: RecordingDetail): {
   return {
     form: { verified_segments: displayedSegments, status: rec.status, tags },
     initial: {
-      verified_segments: serverSegments.map(cloneSegment),
+      // Initial mirrors the displayed (normalized) form so computeDiff
+      // doesn't see "0" vs "speaker_0" as a spurious change.
+      verified_segments: serverSegments.map((s) => ({
+        ...cloneSegment(s),
+        speaker_id: normalizeSpeakerId(s.speaker_id),
+      })),
       status: rec.status,
       tags: { ...tags, error_tags: [...tags.error_tags] },
     },
