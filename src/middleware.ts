@@ -5,14 +5,26 @@ import type { NextRequest } from 'next/server'
 const PROTECTED_PATHS = ['/dashboard', '/analytics', '/calls', '/settings', '/kiosk']
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  const { pathname, searchParams } = request.nextUrl
 
   const isProtected = PROTECTED_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + '/')
   )
+
+  // T-228 View as Tenant: iframe requests carry ?impersonation=1. The
+  // actual JWT lives in the URL hash (client-only), so the middleware
+  // cannot validate it server-side. Skip the next-auth checks and let
+  // the page render; ImpersonationProvider on the client picks up the
+  // token from the hash, and the backend 403s any write attempts via
+  // _require_writable. This bypass only applies to protected routes;
+  // it does not weaken any other route's protection.
+  if (isProtected && searchParams.get('impersonation') === '1') {
+    return NextResponse.next()
+  }
+
   const token = await getToken({ req: request })
 
-  // Not authenticated → redirect protected routes to login
+  // Not authenticated. Redirect protected routes to login.
   if (!token && isProtected) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -24,7 +36,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Authenticated with 0 tenants → redirect protected routes to landing page signup
+  // Authenticated with 0 tenants. Redirect protected routes to landing
+  // page signup.
   if (token && isProtected) {
     const tenants = (token.tenants as unknown[]) ?? []
     if (tenants.length === 0) {

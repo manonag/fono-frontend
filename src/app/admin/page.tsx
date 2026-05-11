@@ -7,6 +7,7 @@ import { DemoBadge } from '@/components/admin/DemoBadge'
 import { DemoToggle, DEMO_TOGGLE_STORAGE_KEY } from '@/components/admin/DemoToggle'
 import { PlatformVitals } from '@/components/admin/PlatformVitals'
 import { TenantSelector } from '@/components/admin/TenantSelector'
+import { ViewAsTenantPanel } from '@/components/admin/ViewAsTenantPanel'
 import { Tooltip } from '@/components/admin/Tooltip'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
@@ -164,6 +165,7 @@ function sortValue(row: TenantHealthRow, key: SortKey): number | string {
 export default function AdminPage() {
   const token = useFonoToken()
   const [authState, setAuthState] = useState<'loading' | 'allowed' | 'denied' | 'unauthenticated'>('loading')
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [data, setData] = useState<HealthResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshLabel, setLastRefreshLabel] = useState<string>('')
@@ -217,10 +219,17 @@ export default function AdminPage() {
     fetch(`${config.apiUrl}/api/v1/admin/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => {
+      .then(async (r) => {
         if (cancelled) return
-        if (r.status === 200) setAuthState('allowed')
-        else if (r.status === 403) setAuthState('denied')
+        if (r.status === 200) {
+          setAuthState('allowed')
+          try {
+            const body = (await r.json()) as { role?: string }
+            setUserRole(body.role ?? null)
+          } catch {
+            setUserRole(null)
+          }
+        } else if (r.status === 403) setAuthState('denied')
         else setAuthState('unauthenticated')
       })
       .catch(() => {
@@ -340,6 +349,12 @@ export default function AdminPage() {
       </header>
 
       {token && <TenantSelector token={token} includeDemo={showDemo} />}
+
+      {token && userRole === 'owner' ? (
+        <div className="mt-6">
+          <ViewAsTenantPanel token={token} includeDemo={showDemo} />
+        </div>
+      ) : null}
 
       <BlockersSurface blockers={blockers} />
 
