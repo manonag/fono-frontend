@@ -76,10 +76,19 @@ function KioskContent() {
   const searchParams = useSearchParams()
   const urlTenantId = searchParams.get('tenant')
   const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
-  const tenantId = urlTenantId && userTenants.some(t => t.id === urlTenantId)
-    ? urlTenantId
-    : userTenants[0]?.id
-  const tenantName = userTenants.find(t => t.id === tenantId)?.name || ''
+  // Under impersonation, the impersonation JWT scopes us to imp.tenantId
+  // which is NOT present in session.tenants (session is the admin's). Resolve
+  // tenant info from the impersonation context to match what the backend will
+  // accept on per-tenant fetches. Matches the pattern RestaurantProvider uses
+  // for the same reason (see lib/restaurant-context.tsx).
+  const tenantId = imp.readOnly
+    ? imp.tenantId
+    : (urlTenantId && userTenants.some(t => t.id === urlTenantId)
+        ? urlTenantId
+        : userTenants[0]?.id)
+  const tenantName = imp.readOnly
+    ? (imp.tenantName ?? '')
+    : (userTenants.find(t => t.id === tenantId)?.name || '')
   const [dark, setDark] = useState(true)
   const [activeTab, setActiveTab] = useState<KioskTab>('missed')
 

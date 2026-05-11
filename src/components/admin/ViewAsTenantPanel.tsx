@@ -56,6 +56,9 @@ const DEVICES: DeviceSpec[] = [
 
 const IFRAME_HEIGHT_CSS = 'min(80vh, 1024px)'
 const IFRAME_TARGET_PATH = '/dashboard'
+const KIOSK_IFRAME_TARGET_PATH = '/kiosk'
+const KIOSK_DEVICE_WIDTH_PX = 768
+const STACK_BREAKPOINT_PX = 1180
 
 interface ViewAsTenantPanelProps {
   token: string
@@ -70,7 +73,12 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
   const [session, setSession] = useState<StartSessionResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [kioskVisible, setKioskVisible] = useState(true)
+  const [stacked, setStacked] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
+  const prevKioskVisibleRef = useRef(false)
+  const prevSessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!token) return
@@ -187,17 +195,58 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
     return () => window.removeEventListener('beforeunload', onUnload)
   }, [session])
 
-  const iframeSrc = useMemo(() => {
+  // T-437f21f4 Q2: stack the two iframes vertically when panel inner width
+  // is below the breakpoint. ResizeObserver on the panel section root,
+  // not viewport, so this works correctly regardless of sidebar width or
+  // surrounding chrome. Tailwind container-queries plugin is not installed
+  // (verified Phase 2); inline ResizeObserver is the zero-dep alternative.
+  useEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) setStacked(entry.contentRect.width < STACK_BREAKPOINT_PX)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // T-437f21f4 Q4: when the kiosk iframe first becomes visible during a
+  // session (or a fresh session starts with kiosk visible), default the
+  // dashboard device toggle to Mobile (380px). 380 + 768 + gap fits the
+  // 1180px breakpoint comfortably. After the default, the toggle is fully
+  // user-controllable; this effect only fires on transitions, never
+  // mid-session within a single show. Dev-mode HMR may remount and
+  // re-fire (harmless; refs reset).
+  useEffect(() => {
+    const currentSessionId = session?.session_id ?? null
+    const kioskShowEvent = kioskVisible && !prevKioskVisibleRef.current
+    const sessionStartEvent =
+      currentSessionId !== null && currentSessionId !== prevSessionIdRef.current
+
+    if (kioskVisible && session && (kioskShowEvent || sessionStartEvent)) {
+      setDeviceMode('mobile')
+    }
+    prevKioskVisibleRef.current = kioskVisible
+    prevSessionIdRef.current = currentSessionId
+  }, [kioskVisible, session])
+
+  // Shared URL hash params for both iframes. Same impersonation_session_id
+  // means both iframes ride the same backend session (one audit row pair,
+  // one TTL clock). See Q1 in T-437f21f4 PR description for rationale.
+  const hashParams = useMemo(() => {
     if (!session) return ''
-    const params = new URLSearchParams({
+    return new URLSearchParams({
       impersonation_token: session.token,
       session_id: session.session_id,
       admin_email: session.admin_email,
       tenant_id: session.tenant_id,
       tenant_name: encodeURIComponent(session.tenant_name),
     }).toString()
-    return `${IFRAME_TARGET_PATH}?impersonation=1#${params}`
   }, [session])
+
+  const dashboardSrc = session ? `${IFRAME_TARGET_PATH}?impersonation=1#${hashParams}` : ''
+  const kioskSrc = session ? `${KIOSK_IFRAME_TARGET_PATH}?impersonation=1#${hashParams}` : ''
 
   const activeDevice = DEVICES.find((d) => d.mode === deviceMode) ?? DEVICES[0]
   const iframeWidth = activeDevice.pixelWidth
@@ -205,7 +254,7 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
     : '100%'
 
   return (
-    <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
+    <section ref={panelRef} className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
       <header className="mb-4 flex items-baseline justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-ink">View as Tenant</h2>
@@ -217,9 +266,20 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
           <div className="flex items-center gap-3 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow">
             <span>
               Impersonating: <strong>{session.tenant_name}</strong>
-              {' · '}
+              {' · Dashboard '}
               {activeDevice.label} ({activeDevice.pixelLabel})
+              {kioskVisible ? ' + Kiosk 768px' : ''}
             </span>
+            {!kioskVisible ? (
+              <button
+                type="button"
+                onClick={() => setKioskVisible(true)}
+                className="rounded-md bg-white/15 px-2 py-1 text-xs font-bold hover:bg-white/25"
+                data-testid="kiosk-pane-show"
+              >
+                Show Kiosk
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={handleExit}
@@ -297,11 +357,18 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
       ) : null}
 
       {session ? (
-        <div className="mt-2 flex justify-center overflow-auto rounded-xl bg-black/5 p-3">
+        <div
+          className={
+            'mt-2 overflow-auto rounded-xl bg-black/5 p-3 ' +
+            (stacked
+              ? 'flex flex-col items-center gap-3'
+              : 'flex flex-row justify-center gap-3')
+          }
+        >
           <iframe
             ref={iframeRef}
-            src={iframeSrc}
-            title={`View as ${session.tenant_name}`}
+            src={dashboardSrc}
+            title={`View as ${session.tenant_name} - Dashboard`}
             className="rounded-lg border border-black/10 bg-white shadow-inner"
             style={{
               width: iframeWidth,
@@ -310,6 +377,34 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
               transition: 'width 120ms ease',
             }}
           />
+          {kioskVisible ? (
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between rounded-t-lg border border-b-0 border-black/10 bg-white/80 px-2 py-1">
+                <span className="text-xs font-semibold text-brown">
+                  Kiosk · 768px
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setKioskVisible(false)}
+                  className="rounded p-1 text-xs text-brown hover:bg-black/5"
+                  aria-label="Hide kiosk pane"
+                  data-testid="kiosk-pane-hide"
+                >
+                  ✕
+                </button>
+              </div>
+              <iframe
+                src={kioskSrc}
+                title={`View as ${session.tenant_name} - Kiosk`}
+                className="rounded-b-lg border border-black/10 bg-white shadow-inner"
+                style={{
+                  width: `${KIOSK_DEVICE_WIDTH_PX}px`,
+                  maxWidth: '100%',
+                  height: IFRAME_HEIGHT_CSS,
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       ) : (
         selectedTenant ? (
