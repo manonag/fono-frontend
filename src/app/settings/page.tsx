@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { config } from '@/lib/config'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { useRestaurant } from '@/lib/restaurant-context'
+import { useImpersonation } from '@/lib/impersonation'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
@@ -115,6 +116,7 @@ function RestaurantTab() {
   // Missed Call Recovery state
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
+  const imp = useImpersonation()
   const [slaMinutes, setSlaMinutes] = useState(15)
   const [orderUrl, setOrderUrl] = useState('')
   const [slaLoading, setSlaLoading] = useState(true)
@@ -145,6 +147,8 @@ function RestaurantTab() {
   }, [isAll, tenantId, current.id, token])
 
   const handleSaveSla = async () => {
+    if (imp.readOnly) return
+
     const tid = isAll ? tenantId : current.id
     if (!tid || tid === 'all' || !token) return
     setSaving(true)
@@ -464,6 +468,7 @@ function formatPhone(phone?: string | null): string {
 function CallSetupTab() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
+  const imp = useImpersonation()
 
   // State
   const [loading, setLoading] = useState(true)
@@ -543,6 +548,8 @@ function CallSetupTab() {
 
   // Handle path selection
   const handleSelectPath = (path: 'A' | 'B') => {
+    if (imp.readOnly) return
+
     setSelectedPath(path)
     setSaveError('')
     setSaved(false)
@@ -556,6 +563,7 @@ function CallSetupTab() {
 
   // Save
   const handleSave = async () => {
+    if (imp.readOnly) return
     if (!selectedPath || !tid || !token) return
     if (selectedPath === 'A' && !callbackNumber.trim()) {
       setCallbackError('Callback number is required for Path A')
@@ -1301,6 +1309,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function GreetingTab() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
+  const imp = useImpersonation()
   // Resolve tenant id defensively: if state hands us a short/invalid id (has
   // happened in practice on first render), fall back to the env-configured
   // tenant UUID so the request never hits the backend with "ef29".
@@ -1342,6 +1351,7 @@ function GreetingTab() {
   }, [previewUrl])
 
   const handlePreview = async () => {
+    if (imp.readOnly) return
     if (!tid || tid === 'all' || !token) return
     setPreviewing(true); setError(null)
     try {
@@ -1366,6 +1376,7 @@ function GreetingTab() {
   }
 
   const handleSave = async () => {
+    if (imp.readOnly) return
     if (!tid || tid === 'all' || !token) return
     setSaving(true); setError(null)
     try {

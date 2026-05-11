@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
+import { useImpersonation } from '@/lib/impersonation'
 
 interface Restaurant {
   id: string
@@ -39,6 +40,7 @@ const RestaurantContext = createContext<RestaurantContextType | null>(null)
 export function RestaurantProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession()
   const sessionTenants = session?.tenants
+  const imp = useImpersonation()
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>(FALLBACK_RESTAURANTS)
   const [current, setCurrent] = useState<Restaurant>(FALLBACK_RESTAURANTS[0])
@@ -54,6 +56,44 @@ export function RestaurantProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [sessionTenants]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-228: when this iframe is loaded as an impersonation session, the
+  // admin's next-auth session may not contain the target tenant in
+  // session.tenants. Synthesize a single-tenant restaurant list from
+  // the impersonation hash so useRestaurant returns the right tenantId
+  // transparently to all consumer pages.
+  if (imp.readOnly && imp.tenantId) {
+    const impName = imp.tenantName ?? 'Tenant'
+    const impRestaurant: Restaurant = {
+      id: imp.tenantId,
+      name: impName,
+      location: '',
+      initials: impName
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase(),
+    }
+    return (
+      <RestaurantContext.Provider
+        value={{
+          current: impRestaurant,
+          restaurants: [impRestaurant],
+          // Impersonation is read-only and single-tenant; setCurrent
+          // and setAll are no-ops to prevent any UI from breaking out
+          // of the scoped session.
+          setCurrent: () => undefined,
+          isAll: false,
+          setAll: () => undefined,
+          tenantId: impRestaurant.id,
+          allTenantIds: [impRestaurant.id],
+        }}
+      >
+        {children}
+      </RestaurantContext.Provider>
+    )
+  }
 
   return (
     <RestaurantContext.Provider value={{

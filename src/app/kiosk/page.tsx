@@ -9,6 +9,8 @@ import { CallTabs, type KioskTab } from './components/call-tabs'
 import { CallCard, type KioskCall } from './components/call-card'
 import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
+import { useFonoToken } from '@/hooks/use-fono-token'
+import { useImpersonation } from '@/lib/impersonation'
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,8 @@ function deduplicateByCaller(calls: KioskCall[]): KioskCall[] {
 
 function KioskContent() {
   const { data: session } = useSession()
+  const token = useFonoToken()
+  const imp = useImpersonation()
   const searchParams = useSearchParams()
   const urlTenantId = searchParams.get('tenant')
   const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
@@ -94,22 +98,22 @@ function KioskContent() {
 
   // Fetch calls for a given tab
   const fetchTab = useCallback(async (tab: string): Promise<KioskCall[]> => {
-    if (!tenantId || !session?.fonoToken) return []
+    if (!tenantId || !token) return []
     try {
       const res = await fetch(
         `${config.apiUrl}/api/v1/tenants/${tenantId}/kiosk/calls?tab=${tab}`,
-        { headers: { Authorization: `Bearer ${session.fonoToken}` } }
+        { headers: { Authorization: `Bearer ${token}` } }
       )
       if (!res.ok) return []
       return await res.json()
     } catch {
       return []
     }
-  }, [tenantId, session?.fonoToken])
+  }, [tenantId, token])
 
   // Fetch all tabs
   const fetchAllTabs = useCallback(async () => {
-    if (!tenantId || !session?.fonoToken) return
+    if (!tenantId || !token) return
     setLoading(true)
     const [missed, recovered, ignored] = await Promise.all([
       fetchTab('missed'),
@@ -120,7 +124,7 @@ function KioskContent() {
     setRecoveredCalls(recovered)
     setIgnoredCalls(ignored)
     setLoading(false)
-  }, [tenantId, session?.fonoToken, fetchTab])
+  }, [tenantId, token, fetchTab])
 
   // Initial fetch + poll every 30 seconds
   useEffect(() => {
@@ -196,7 +200,8 @@ function KioskContent() {
   }, [])
 
   const handleConfirmCallback = useCallback(async () => {
-    if (!confirmCall || !session?.fonoToken) return
+    if (imp.readOnly) return
+    if (!confirmCall || !token) return
     setCallbackLoading(true)
     const callToAct = confirmCall
     setConfirmCall(null)
@@ -207,7 +212,7 @@ function KioskContent() {
         `${config.apiUrl}/api/v1/calls/${callToAct.id}/callback?action=call`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${session.fonoToken}` },
+          headers: { Authorization: `Bearer ${token}` },
         }
       )
 
@@ -236,14 +241,15 @@ function KioskContent() {
   }, [confirmCall, session, showToast])
 
   const handleIgnore = useCallback(async (call: KioskCall) => {
-    if (!session?.fonoToken) return
+    if (imp.readOnly) return
+    if (!token) return
 
     try {
       const res = await fetch(
         `${config.apiUrl}/api/v1/calls/${call.id}/callback?action=ignore`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${session.fonoToken}` },
+          headers: { Authorization: `Bearer ${token}` },
         }
       )
       if (!res.ok) {

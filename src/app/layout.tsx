@@ -7,7 +7,9 @@ import {
   Noto_Sans_Gurmukhi,
 } from 'next/font/google'
 import { Providers } from './providers'
+import { ImpersonationProvider } from '@/lib/impersonation'
 import { RestaurantProvider } from '@/lib/restaurant-context'
+import { ImpersonationBanner } from '@/components/impersonation-banner'
 import './globals.css'
 
 const jakarta = Plus_Jakarta_Sans({
@@ -62,7 +64,12 @@ export default function RootLayout({
     >
       <body className="font-sans bg-cream text-ink antialiased">
         <Providers>
-          <RestaurantProvider>{children}</RestaurantProvider>
+          <ImpersonationProvider>
+            <RestaurantProvider>
+              <ImpersonationBanner />
+              {children}
+            </RestaurantProvider>
+          </ImpersonationProvider>
         </Providers>
       </body>
     </html>
