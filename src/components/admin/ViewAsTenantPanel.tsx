@@ -54,7 +54,7 @@ const DEVICES: DeviceSpec[] = [
   { mode: 'mobile', label: 'Mobile', pixelWidth: 380, pixelLabel: '380px' },
 ]
 
-const IFRAME_HEIGHT_PX = 800
+const IFRAME_HEIGHT_CSS = 'min(80vh, 1024px)'
 const IFRAME_TARGET_PATH = '/dashboard'
 
 interface ViewAsTenantPanelProps {
@@ -306,7 +306,7 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
             style={{
               width: iframeWidth,
               maxWidth: '100%',
-              height: `${IFRAME_HEIGHT_PX}px`,
+              height: IFRAME_HEIGHT_CSS,
               transition: 'width 120ms ease',
             }}
           />
