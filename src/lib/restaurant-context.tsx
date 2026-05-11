@@ -82,10 +82,20 @@ export function RestaurantProvider({ children }: { children: ReactNode }) {
           restaurants: [impRestaurant],
           // Impersonation is read-only and single-tenant; setCurrent
           // and setAll are no-ops to prevent any UI from breaking out
-          // of the scoped session.
-          setCurrent: () => undefined,
+          // of the scoped session. The warn fires if any future code
+          // path calls these under impersonation so we notice the
+          // silent ignore in dev console.
+          setCurrent: () => {
+            console.warn(
+              'RestaurantProvider: setCurrent called in impersonation mode, ignored.',
+            )
+          },
           isAll: false,
-          setAll: () => undefined,
+          setAll: () => {
+            console.warn(
+              'RestaurantProvider: setAll called in impersonation mode, ignored.',
+            )
+          },
           tenantId: impRestaurant.id,
           allTenantIds: [impRestaurant.id],
         }}
