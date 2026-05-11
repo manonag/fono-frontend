@@ -213,6 +213,7 @@ function RestaurantTab() {
           </div>
           <ToggleSwitch
             on={recordingOn}
+            disabled={imp.readOnly}
             onChange={(val) => {
               if (!val) {
                 setShowWarning(true)
@@ -279,9 +280,10 @@ function RestaurantTab() {
                   max={60}
                   value={slaMinutes}
                   onChange={(e) => setSlaMinutes(Math.max(5, Math.min(60, Number(e.target.value) || 5)))}
-                  className="bg-white focus:outline-none text-center"
+                  readOnly={imp.readOnly}
+                  className="bg-white focus:outline-none text-center read-only:bg-gray-50 read-only:cursor-not-allowed"
                   style={{ width: 80, padding: '10px 14px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14, fontWeight: 600 }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
                 />
                 <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
@@ -298,9 +300,10 @@ function RestaurantTab() {
                 value={orderUrl}
                 onChange={(e) => setOrderUrl(e.target.value)}
                 placeholder="https://your-restaurant.com/order"
-                className="w-full bg-white focus:outline-none"
+                readOnly={imp.readOnly}
+                className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
                 style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
               />
               <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
@@ -344,9 +347,10 @@ function RestaurantTab() {
                   type="text"
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
-                  className="w-full bg-white focus:outline-none"
+                  readOnly={imp.readOnly}
+                  className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
                   style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
                 />
               </div>
@@ -356,9 +360,10 @@ function RestaurantTab() {
                   type="email"
                   value={ownerEmail}
                   onChange={(e) => setOwnerEmail(e.target.value)}
-                  className="w-full bg-white focus:outline-none"
+                  readOnly={imp.readOnly}
+                  className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
                   style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
                 />
               </div>
@@ -636,13 +641,14 @@ function CallSetupTab() {
         <button
           type="button"
           onClick={() => handleSelectPath('A')}
-          className="text-left w-full transition-all"
+          disabled={imp.readOnly}
+          className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             borderRadius: 16,
             padding: '20px 22px',
             border: selectedPath === 'A' ? '2px solid #D4652C' : '2px solid rgba(0,0,0,0.06)',
             backgroundColor: selectedPath === 'A' ? '#FFF7F3' : '#FFFFFF',
-            cursor: 'pointer',
+            cursor: imp.readOnly ? 'not-allowed' : 'pointer',
           }}
         >
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
@@ -678,13 +684,14 @@ function CallSetupTab() {
         <button
           type="button"
           onClick={() => handleSelectPath('B')}
-          className="text-left w-full transition-all"
+          disabled={imp.readOnly}
+          className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             borderRadius: 16,
             padding: '20px 22px',
             border: selectedPath === 'B' ? '2px solid #3B82F6' : '2px solid rgba(0,0,0,0.06)',
             backgroundColor: selectedPath === 'B' ? '#F0F7FF' : '#FFFFFF',
-            cursor: 'pointer',
+            cursor: imp.readOnly ? 'not-allowed' : 'pointer',
           }}
         >
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
@@ -745,15 +752,16 @@ function CallSetupTab() {
               onChange={(e) => { setCallbackNumber(e.target.value); if (callbackError) setCallbackError('') }}
               onBlur={(e) => validateCallback(e.target.value)}
               placeholder="(555) 123-4567"
-              autoFocus
-              className="w-full bg-white focus:outline-none"
+              autoFocus={!imp.readOnly}
+              readOnly={imp.readOnly}
+              className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
               style={{
                 padding: '12px 16px',
                 borderRadius: 12,
                 border: callbackError ? '1.5px solid #EF4444' : '1.5px solid rgba(0,0,0,0.08)',
                 fontSize: 14,
               }}
-              onFocus={(e) => { if (!callbackError) e.currentTarget.style.borderColor = '#E0602A' }}
+              onFocus={(e) => { if (!callbackError && !imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
             />
             {callbackError ? (
               <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{callbackError}</p>
@@ -878,6 +886,7 @@ function CallSetupTab() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function NotificationsTab() {
+  const imp = useImpersonation()
   const [whatsapp, setWhatsapp] = useState(true)
   const [dailyEmail, setDailyEmail] = useState(true)
   const [weeklyReport, setWeeklyReport] = useState(true)
@@ -893,7 +902,7 @@ function NotificationsTab() {
             <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>WhatsApp missed call alerts</p>
             <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified instantly when you miss a call</p>
           </div>
-          <ToggleSwitch on={whatsapp} onChange={setWhatsapp} />
+          <ToggleSwitch on={whatsapp} onChange={setWhatsapp} disabled={imp.readOnly} />
         </div>
         {whatsapp && (
           <div style={{ marginTop: 12 }}>
@@ -901,10 +910,11 @@ function NotificationsTab() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full bg-white focus:outline-none"
+              readOnly={imp.readOnly}
+              className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
               style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 13 }}
               placeholder="WhatsApp number"
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
               onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
             />
           </div>
@@ -917,7 +927,7 @@ function NotificationsTab() {
             <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Daily email summary</p>
             <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Receive a daily recap of all calls</p>
           </div>
-          <ToggleSwitch on={dailyEmail} onChange={setDailyEmail} />
+          <ToggleSwitch on={dailyEmail} onChange={setDailyEmail} disabled={imp.readOnly} />
         </div>
       </SettingsCard>
 
@@ -927,7 +937,7 @@ function NotificationsTab() {
             <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Weekly performance report</p>
             <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Trends and insights every Monday</p>
           </div>
-          <ToggleSwitch on={weeklyReport} onChange={setWeeklyReport} />
+          <ToggleSwitch on={weeklyReport} onChange={setWeeklyReport} disabled={imp.readOnly} />
         </div>
       </SettingsCard>
 
@@ -937,7 +947,7 @@ function NotificationsTab() {
             <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Alert for long calls</p>
             <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified when calls exceed a duration</p>
           </div>
-          <ToggleSwitch on={longCallAlert} onChange={setLongCallAlert} />
+          <ToggleSwitch on={longCallAlert} onChange={setLongCallAlert} disabled={imp.readOnly} />
         </div>
         {longCallAlert && (
           <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
@@ -948,7 +958,8 @@ function NotificationsTab() {
               max={60}
               value={alertMinutes}
               onChange={(e) => setAlertMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
-              className="bg-white focus:outline-none text-center"
+              readOnly={imp.readOnly}
+              className="bg-white focus:outline-none text-center read-only:bg-gray-50 read-only:cursor-not-allowed"
               style={{
                 width: 60,
                 padding: '8px 10px',
@@ -957,7 +968,7 @@ function NotificationsTab() {
                 fontSize: 14,
                 fontWeight: 600,
               }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#E0602A' }}
+              onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
               onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
             />
             <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
@@ -1417,6 +1428,8 @@ function GreetingTab() {
           onChange={e => setText(e.target.value)}
           rows={4}
           maxLength={1200}
+          readOnly={imp.readOnly}
+          className="read-only:bg-gray-50 read-only:cursor-not-allowed"
           style={{
             width: '100%', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit',
             color: '#1E0E00', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 10,
@@ -1429,6 +1442,8 @@ function GreetingTab() {
         <select
           value={voice}
           onChange={e => setVoice(e.target.value)}
+          disabled={imp.readOnly}
+          className="disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-50"
           style={{
             width: '100%', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit',
             color: '#1E0E00', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 10,
@@ -1522,12 +1537,17 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ToggleSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function ToggleSwitch({ on, onChange, disabled = false }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
-      onClick={() => onChange(!on)}
-      className={cn('relative transition-colors flex-shrink-0', on ? 'bg-green-500' : 'bg-gray-300')}
-      style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', border: 'none' }}
+      onClick={() => { if (disabled) return; onChange(!on) }}
+      disabled={disabled}
+      className={cn(
+        'relative transition-colors flex-shrink-0',
+        on ? 'bg-green-500' : 'bg-gray-300',
+        disabled && 'opacity-50 cursor-not-allowed',
+      )}
+      style={{ width: 44, height: 24, borderRadius: 12, cursor: disabled ? 'not-allowed' : 'pointer', border: 'none' }}
     >
       <div
         className="absolute bg-white rounded-full transition-transform shadow-sm"

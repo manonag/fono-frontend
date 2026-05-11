@@ -383,8 +383,8 @@ function KioskContent() {
                 variant={activeTab}
                 selected={selectedCardId === call.id}
                 onSelect={activeTab === 'missed' ? handleSelectCard : undefined}
-                onCallBack={activeTab === 'missed' ? handleCallBack : undefined}
-                onIgnore={activeTab === 'missed' ? handleIgnore : undefined}
+                onCallBack={activeTab === 'missed' && !imp.readOnly ? handleCallBack : undefined}
+                onIgnore={activeTab === 'missed' && !imp.readOnly ? handleIgnore : undefined}
                 animateOut={animatingOut === call.id}
               />
             ))}
@@ -500,7 +500,7 @@ function KioskContent() {
               </button>
               <button
                 onClick={handleConfirmCallback}
-                disabled={callbackLoading}
+                disabled={callbackLoading || imp.readOnly}
                 style={{
                   flex: 1,
                   height: 48,
@@ -510,8 +510,8 @@ function KioskContent() {
                   color: '#fff',
                   fontSize: 15,
                   fontWeight: 700,
-                  cursor: callbackLoading ? 'not-allowed' : 'pointer',
-                  opacity: callbackLoading ? 0.7 : 1,
+                  cursor: (callbackLoading || imp.readOnly) ? 'not-allowed' : 'pointer',
+                  opacity: (callbackLoading || imp.readOnly) ? 0.7 : 1,
                 }}
               >
                 {callbackLoading ? 'Calling...' : 'Call Now'}
