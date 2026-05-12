@@ -12,6 +12,7 @@ export interface QueueItem {
   tenant_name: string
   call_started_at: string | null
   machine_transcript_preview: string | null
+  verified_transcript_preview: string | null
   sarvam_language_code: string | null
   language_profile_tag: LanguageProfile | null
   call_type_tag: CallType | null

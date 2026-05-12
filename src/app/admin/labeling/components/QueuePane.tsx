@@ -195,7 +195,22 @@ export function QueuePane({
                     )}
                   </div>
                   <p className="text-sm text-ink leading-snug line-clamp-2">
-                    {truncate(item.machine_transcript_preview, 120) || (
+                    {/* T-2d16e333 followup: show verified-edited preview
+                        when available so labeler/owner work is visible
+                        in the queue list. auto_labeled rows always show
+                        machine output (the verified text from a prior
+                        verification stays in the DB after Send back to
+                        Pending, but the row is back to needing work, so
+                        the machine snippet is the right anchor). in_review
+                        rows DO surface the labeler-edited preview: their
+                        work is what's relevant in the list, not the
+                        machine output it replaced. */}
+                    {truncate(
+                      item.status === 'auto_labeled' || !item.verified_transcript_preview
+                        ? item.machine_transcript_preview
+                        : item.verified_transcript_preview,
+                      120,
+                    ) || (
                       <span className="text-brown italic">no transcript</span>
                     )}
                   </p>
