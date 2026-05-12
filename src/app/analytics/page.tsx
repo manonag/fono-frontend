@@ -88,6 +88,19 @@ export default function AnalyticsPage() {
     })
   }, [calls, resolvedWindow])
 
+  // TEMP DEBUG (T-f96b9613 missed-call definition investigation) — remove with the fix commit
+  useEffect(() => {
+    if (filteredCalls.length === 0) return
+    const breakdown = filteredCalls.reduce((acc, c) => {
+      const runtime = c as unknown as Record<string, unknown>
+      const key = `status=${String(runtime.status ?? 'undef')} | call_status=${String(runtime.call_status ?? 'undef')} | callback_status=${String(runtime.callback_status ?? 'undef')}`
+      acc[key] = (acc[key] ?? 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    // eslint-disable-next-line no-console
+    console.log('[T-f96b9613 DEBUG] status breakdown:', breakdown, 'sample call object:', filteredCalls[0])
+  }, [filteredCalls])
+
   // Heatmap: 7 days × 24 hours
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
