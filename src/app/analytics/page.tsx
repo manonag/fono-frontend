@@ -224,7 +224,7 @@ export default function AnalyticsPage() {
 
           {/* Donut + Trend */}
           <div className={isMobile ? 'flex flex-col gap-5' : 'grid grid-cols-2 gap-5'} style={{ marginBottom: 20 }}>
-            <Card title="Call Distribution">
+            <Card title="Call Distribution" style={{ paddingBottom: 40 }}>
               <DonutChart data={donutData} />
             </Card>
             <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
@@ -500,7 +500,6 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
   const toY = (v: number) => pad.top + innerH - (v / maxVal) * innerH
 
   const totalPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.total)}`).join(' ')
-  const missedPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.missed)}`).join(' ')
 
   const fmtDay = (d: Date) =>
     d.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })
@@ -517,7 +516,7 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
     if (!pos) return
     setTooltip({
       ...pos,
-      content: `${fmtDay(d.date)}: ${d.total} call${d.total !== 1 ? 's' : ''}`,
+      content: `${fmtDay(d.date)}: ${d.total} total, ${d.missed} missed`,
     })
   }
 
@@ -533,10 +532,8 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
             stroke="rgba(0,0,0,0.05)" strokeWidth="1"
           />
         ))}
-        {/* Total line */}
+        {/* Total line. Missed counts are surfaced in the per-point tooltip. */}
         <path d={totalPath} fill="none" stroke="#E0602A" strokeWidth="2" strokeLinejoin="round" />
-        {/* Missed dashed line */}
-        <path d={missedPath} fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
         {/* Hover hit zones: invisible larger circle per point, plus a visible dot for clarity */}
         {data.map((d, i) => (
           <g key={i}>
@@ -565,8 +562,6 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
         {/* Legend */}
         <circle cx={pad.left + 10} cy={h - 18} r="3" fill="#E0602A" />
         <text x={pad.left + 18} y={h - 15} fill="#5C3D22" fontSize="9">Total</text>
-        <circle cx={pad.left + 60} cy={h - 18} r="3" fill="#EF4444" />
-        <text x={pad.left + 68} y={h - 15} fill="#5C3D22" fontSize="9">Missed</text>
       </svg>
       <ChartTooltip state={tooltip} />
     </div>
