@@ -9,9 +9,12 @@ import { useCallEvents } from '@/hooks/use-call-events'
 import { fetchDashboardSummary, fetchCallLog, fetchPeakHours, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
-import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
+import { DateFilterBar } from '@/components/date-filter'
+import { resolveFilterWindow } from '@/lib/analytics-filter'
 import { formatDuration } from '@/lib/utils'
 import type { CallRecord, DateFilter } from '@/types'
+
+const DEFAULT_TIMEZONE = 'America/Los_Angeles'
 
 function safeNum(n: unknown): number {
   const num = Number(n)
@@ -26,7 +29,7 @@ export default function AnalyticsPage() {
   const [customRange, setCustomRange] = useState<CustomDateRange | undefined>()
   const [summary, setSummary] = useState<{ total_calls: number; missed_calls: number; answered_calls: number; total_duration_seconds: number } | null>(null)
   const [calls, setCalls] = useState<CallRecord[]>([])
-  const [peakHoursData, setPeakHoursData] = useState<number[]>(Array(24).fill(0))
+  const [tenantTimezone, setTenantTimezone] = useState<string>(DEFAULT_TIMEZONE)
   const [loading, setLoading] = useState(true)
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
   const token = useFonoToken()
@@ -54,18 +57,8 @@ export default function AnalyticsPage() {
       setSummary(summaryData)
       setCalls(allCalls)
 
-      // Convert UTC peak hours to local time
-      if (peakData?.peak_hours) {
-        const hours = Array(24).fill(0)
-        const tz = peakData.timezone || 'America/Los_Angeles'
-        peakData.peak_hours.forEach(ph => {
-          // Convert UTC hour to local hour using the tenant's timezone
-          const utcDate = new Date()
-          utcDate.setUTCHours(ph.hour_utc, 0, 0, 0)
-          const localHour = parseInt(utcDate.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }))
-          hours[localHour] = (hours[localHour] || 0) + ph.call_count
-        })
-        setPeakHoursData(hours)
+      if (peakData?.timezone) {
+        setTenantTimezone(peakData.timezone)
       }
     } catch {
       // silently fail
@@ -78,17 +71,21 @@ export default function AnalyticsPage() {
 
   const { connected } = useCallEvents({ onEvent: loadData })
 
+  const resolvedWindow = useMemo(
+    () => resolveFilterWindow(dateFilter, customRange, tenantTimezone),
+    [dateFilter, customRange, tenantTimezone]
+  )
+
   // Filter calls by date range
   const filteredCalls = useMemo(() => {
-    const { dateFrom, dateTo } = getDateRangeForFilter(dateFilter, customRange)
-    const from = new Date(dateFrom)
-    const to = new Date(dateTo)
+    const from = resolvedWindow.startDate
+    const to = resolvedWindow.endDate
 
     return calls.filter(call => {
       const d = new Date(call.created_at)
       return d >= from && d <= to
     })
-  }, [calls, dateFilter, customRange])
+  }, [calls, resolvedWindow])
 
   // Heatmap: 7 days × 24 hours
   const heatmapData = useMemo(() => {
@@ -117,15 +114,13 @@ export default function AnalyticsPage() {
     return { completed, missed, recovered, total: completed + missed + recovered }
   }, [filteredCalls])
 
-  // Daily trend (last 30 days)
+  // Daily trend — bucket calls into the resolved window's day list
   const dailyTrend = useMemo(() => {
     const days = new Map<string, { total: number; missed: number }>()
-    const now = new Date()
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+    resolvedWindow.daysInRange.forEach(d => {
       const key = d.toISOString().split('T')[0]
       days.set(key, { total: 0, missed: 0 })
-    }
+    })
     filteredCalls.forEach(call => {
       const key = new Date(call.created_at).toISOString().split('T')[0]
       const entry = days.get(key)
@@ -135,16 +130,24 @@ export default function AnalyticsPage() {
       }
     })
     return Array.from(days.entries()).map(([date, data]) => ({ date, ...data }))
-  }, [filteredCalls])
+  }, [filteredCalls, resolvedWindow])
 
-  // Peak hours — use real API data if available, else compute from calls
+  // Peak hours — bucket calls into 24 hours using the tenant timezone
   const hourlyData = useMemo(() => {
-    const hasApiData = peakHoursData.some(h => h > 0)
-    if (hasApiData) return peakHoursData
     const hours = Array(24).fill(0)
-    filteredCalls.forEach(c => { hours[new Date(c.created_at).getHours()]++ })
+    filteredCalls.forEach(c => {
+      const d = new Date(c.created_at)
+      const localHour = parseInt(
+        d.toLocaleString('en-US', { timeZone: tenantTimezone, hour: 'numeric', hour12: false }),
+        10
+      )
+      const bucket = Number.isFinite(localHour) ? localHour % 24 : d.getHours()
+      hours[bucket] = (hours[bucket] || 0) + 1
+    })
     return hours as number[]
-  }, [filteredCalls, peakHoursData])
+  }, [filteredCalls, tenantTimezone])
+
+  const isSingleDayTrend = resolvedWindow.daysInRange.length <= 1
 
   // Stats
   const stats = useMemo(() => {
@@ -208,13 +211,17 @@ export default function AnalyticsPage() {
             <Card title="Call Distribution">
               <DonutChart data={donutData} />
             </Card>
-            <Card title="Daily Trend (30 days)">
-              <TrendLine data={dailyTrend} />
+            <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
+              {isSingleDayTrend ? (
+                <SingleDayTrendPlaceholder />
+              ) : (
+                <TrendLine data={dailyTrend} />
+              )}
             </Card>
           </div>
 
           {/* Peak Hours */}
-          <Card title="Peak Hours" style={{ marginBottom: 20 }}>
+          <Card title={`Peak Hours (${resolvedWindow.shortLabel})`} style={{ marginBottom: 20 }}>
             <PeakHoursChart data={hourlyData} />
           </Card>
 
@@ -408,6 +415,19 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Trend Line (SVG)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function SingleDayTrendPlaceholder() {
+  return (
+    <div
+      className="flex flex-col items-center justify-center text-center"
+      style={{ padding: '32px 16px', minHeight: 180 }}
+    >
+      <p style={{ fontSize: 14, color: '#8B7355', maxWidth: 280, lineHeight: 1.4 }}>
+        Single day view. See Peak Hours below for the hourly distribution.
+      </p>
+    </div>
+  )
+}
 
 function TrendLine({ data }: { data: { date: string; total: number; missed: number }[] }) {
   const w = 400

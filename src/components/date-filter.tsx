@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { DateFilter } from '@/types'
+import { resolveFilterWindow } from '@/lib/analytics-filter'
 
 interface DateRange {
   from: string
@@ -24,39 +25,11 @@ const PILLS: { id: DateFilter; label: string }[] = [
 ]
 
 export function getDateRangeForFilter(filter: DateFilter, customRange?: DateRange): { dateFrom: string; dateTo: string; days: number } {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
-  switch (filter) {
-    case 'today':
-      return { dateFrom: today.toISOString(), dateTo: now.toISOString(), days: 1 }
-    case 'yesterday': {
-      const yStart = new Date(today.getTime() - 86400000)
-      const yEnd = new Date(today.getTime() - 1)
-      return { dateFrom: yStart.toISOString(), dateTo: yEnd.toISOString(), days: 1 }
-    }
-    case 'week': {
-      const day = today.getDay()
-      const mondayOffset = day === 0 ? 6 : day - 1
-      const monday = new Date(today.getTime() - mondayOffset * 86400000)
-      return { dateFrom: monday.toISOString(), dateTo: now.toISOString(), days: 7 }
-    }
-    case 'month': {
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-      return { dateFrom: monthStart.toISOString(), dateTo: now.toISOString(), days: 30 }
-    }
-    case 'custom': {
-      if (customRange) {
-        const from = new Date(customRange.from)
-        const to = new Date(customRange.to)
-        to.setHours(23, 59, 59, 999)
-        const diffDays = Math.ceil((to.getTime() - from.getTime()) / 86400000) || 1
-        return { dateFrom: from.toISOString(), dateTo: to.toISOString(), days: diffDays }
-      }
-      return { dateFrom: today.toISOString(), dateTo: now.toISOString(), days: 1 }
-    }
-    default:
-      return { dateFrom: today.toISOString(), dateTo: now.toISOString(), days: 1 }
+  const window = resolveFilterWindow(filter, customRange)
+  return {
+    dateFrom: window.startDate.toISOString(),
+    dateTo: window.endDate.toISOString(),
+    days: window.daysInRange.length,
   }
 }
 
