@@ -10,9 +10,10 @@ interface HeaderProps {
   restaurantLocation?: string
   connected?: boolean
   isMobile?: boolean
+  userMenu?: React.ReactNode
 }
 
-export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, CA', connected = false, isMobile = false }: HeaderProps) {
+export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, CA', connected = false, isMobile = false, userMenu }: HeaderProps) {
   if (variant === 'signup') {
     return (
       <header className="bg-cream py-4 px-6 flex justify-center">
@@ -64,7 +65,10 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
             </div>
           </div>
         </div>
-        <LiveBadge connected={connected} compact />
+        <div className="flex items-center gap-3">
+          <LiveBadge connected={connected} compact />
+          {userMenu}
+        </div>
       </header>
     )
   }
@@ -90,7 +94,10 @@ export function Header({ variant, restaurantName, restaurantLocation = 'Tracy, C
           </>
         )}
       </div>
-      <LiveBadge connected={connected} />
+      <div className="flex items-center gap-3">
+        <LiveBadge connected={connected} />
+        {userMenu}
+      </div>
     </header>
   )
 }

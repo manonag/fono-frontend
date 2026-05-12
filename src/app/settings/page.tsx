@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
+import { UserMenu } from '@/components/user-menu'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { cn } from '@/lib/utils'
@@ -75,7 +76,7 @@ function SettingsContent() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col">
-        <Header variant="dashboard" restaurantName={restaurantName} connected={false} isMobile />
+        <Header variant="dashboard" restaurantName={restaurantName} connected={false} isMobile userMenu={<UserMenu />} />
         <main className="flex-1">{content}</main>
         <MobileNav />
       </div>
@@ -84,7 +85,7 @@ function SettingsContent() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName={restaurantName} connected={false} />
+      <Header variant="dashboard" restaurantName={restaurantName} connected={false} userMenu={<UserMenu />} />
       <div className="flex flex-1">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">{content}</main>

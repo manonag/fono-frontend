@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
+import { UserMenu } from '@/components/user-menu'
 import { Badge } from '@/components/badge'
 import { AudioPlayer } from '@/components/audio-player'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -242,7 +243,7 @@ function CallsContent() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col" style={{ paddingBottom: 64 }}>
-        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
+        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile userMenu={<UserMenu />} />
         <main className="flex-1 px-4 pt-5 pb-4">
           <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00', marginBottom: 16 }}>
             All Calls
@@ -256,7 +257,7 @@ function CallsContent() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} />
+      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} userMenu={<UserMenu />} />
       <div className="flex flex-1">
         <Sidebar missedCount={missedCalls} />
         <main className="flex-1 overflow-y-auto flex" style={{ padding: '36px 40px' }}>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
+import { UserMenu } from '@/components/user-menu'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useCallEvents } from '@/hooks/use-call-events'
 import { fetchDashboardSummary, fetchCallLog, fetchPeakHours, fetchCombinedSummary, fetchCombinedCallLog } from '@/lib/api'
@@ -274,7 +275,7 @@ export default function AnalyticsPage() {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-cream flex flex-col">
-        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile />
+        <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile userMenu={<UserMenu />} />
         <main className="flex-1">{content}</main>
         <MobileNav missedCount={missedCalls} />
       </div>
@@ -283,7 +284,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
-      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} />
+      <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} userMenu={<UserMenu />} />
       <div className="flex flex-1">
         <Sidebar missedCount={missedCalls} />
         <main className="flex-1 overflow-y-auto">{content}</main>
