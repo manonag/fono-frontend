@@ -265,6 +265,56 @@ export default function LabelingPage() {
     [token, selectedId, filter, loadStats, findNextAutoLabeled],
   )
 
+  // T-2d16e333: recovery demote. Sends a status-only PATCH for the given
+  // recording_id, then refreshes the queue, stats, and (if it's the
+  // currently-selected row) the loaded recording so the form rebuilds.
+  // Independent of form save flow; existing unsaved edits in the form
+  // are untouched in the UI but will be overwritten when the recording
+  // refresh swaps the form state.
+  const handleDemote = useCallback(
+    async (
+      recordingId: string,
+      target: 'auto_labeled' | 'verified',
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!token) return { ok: false, error: 'Not authenticated' }
+      try {
+        await patchRecording(token, recordingId, { status: target })
+        const queueRes = await fetchQueue(token, {
+          filter,
+          sort: 'duration_desc',
+          limit: 100,
+        })
+        setQueue(queueRes.items)
+        setQueueTotal(queueRes.total)
+        void loadStats()
+        if (recordingId === selectedId) {
+          const fresh = await fetchRecording(token, selectedId, undefined, {
+            acquireLock: false,
+          })
+          if (fresh) setRecording(fresh)
+        }
+        return { ok: true }
+      } catch (err) {
+        if (err instanceof LabelingApiError) {
+          return { ok: false, error: `${err.status}: ${err.detail}` }
+        }
+        return { ok: false, error: 'Network error. Demote not applied.' }
+      }
+    },
+    [token, filter, loadStats, selectedId],
+  )
+
+  // ReviewPane's demote button operates on the currently selected row.
+  const handlePaneDemote = useCallback(
+    (target: 'auto_labeled' | 'verified') => {
+      if (!selectedId) {
+        return Promise.resolve({ ok: false, error: 'No row selected' })
+      }
+      return handleDemote(selectedId, target)
+    },
+    [handleDemote, selectedId],
+  )
+
   if (!viewportOk) {
     return (
       <main className="min-h-screen bg-cream text-ink p-8 font-sans flex items-center justify-center">
@@ -340,6 +390,7 @@ export default function LabelingPage() {
           currentUserId={me?.user_id ?? null}
           onFilterChange={handleFilterChange}
           onSelect={handleSelect}
+          onDemote={handleDemote}
         />
         <ReviewPane
           recording={recording}
@@ -347,6 +398,7 @@ export default function LabelingPage() {
           error={recordingError}
           hasNext={hasNext}
           onSave={handleSave}
+          onDemote={handlePaneDemote}
         />
       </div>
       {queueComplete && (

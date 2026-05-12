@@ -1,6 +1,6 @@
 'use client'
 
-import { STATUSES, STATUS_LABELS, STATUS_RANK } from '../lib/enums'
+import { STATUSES, STATUS_LABELS, canTransition } from '../lib/enums'
 import type { Status } from '../lib/enums'
 
 interface SaveControlsProps {
@@ -13,6 +13,11 @@ interface SaveControlsProps {
   onSave: () => void
   onSaveAndNext: () => void
   hasNext: boolean
+  // T-2d16e333: secondary recovery actions. Fires an independent PATCH;
+  // does not depend on or alter form dirty state. Parent decides when
+  // to surface (verified -> show send-back, gold -> show demote).
+  onDemote?: (target: 'auto_labeled' | 'verified') => void
+  demoting?: boolean
 }
 
 export function SaveControls({
@@ -25,9 +30,17 @@ export function SaveControls({
   onSave,
   onSaveAndNext,
   hasNext,
+  onDemote,
+  demoting = false,
 }: SaveControlsProps) {
-  const minRank = STATUS_RANK[initialStatus]
-  const allowed = STATUSES.filter((s) => STATUS_RANK[s] >= minRank)
+  const allowed = STATUSES.filter((s) => canTransition(initialStatus, s))
+
+  // T-2d16e333: secondary action visibility is keyed off the PERSISTED
+  // status (initialStatus), not the dropdown selection. That way the
+  // recovery button stays available even if the user has the dropdown
+  // mid-change. The action operates on persisted state.
+  const canSendBackToPending = initialStatus === 'verified'
+  const canDemoteToVerified = initialStatus === 'gold'
 
   return (
     <div className="px-4 py-3 border-t border-ink/10 bg-white sticky bottom-0">
@@ -46,6 +59,28 @@ export function SaveControls({
             ))}
           </select>
         </label>
+        {canSendBackToPending && onDemote && (
+          <button
+            type="button"
+            onClick={() => onDemote('auto_labeled')}
+            disabled={demoting || saving}
+            className="text-xs text-brown hover:text-ink underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Reverts this row to Pending. Clears verified_at and verified_by. Lock released if held."
+          >
+            {demoting ? 'Sending back...' : 'Send back to Pending'}
+          </button>
+        )}
+        {canDemoteToVerified && onDemote && (
+          <button
+            type="button"
+            onClick={() => onDemote('verified')}
+            disabled={demoting || saving}
+            className="text-xs text-brown hover:text-ink underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Steps this row back from Gold to Verified. Original verification stays valid."
+          >
+            {demoting ? 'Demoting...' : 'Demote to Verified'}
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"

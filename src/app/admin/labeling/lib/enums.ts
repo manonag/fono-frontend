@@ -15,6 +15,21 @@ export const STATUS_RANK: Record<Status, number> = {
   gold: 3,
 }
 
+// T-2d16e333: explicit allowlist of backwards transitions for recovery
+// actions. Mirrors backend admin_labeling_enums.ALLOWED_BACKWARD_TRANSITIONS.
+// Keep in sync; backend is source of truth for what the API accepts.
+export const ALLOWED_BACKWARD_TRANSITIONS: ReadonlyArray<readonly [Status, Status]> = [
+  ['verified', 'auto_labeled'],
+  ['gold', 'verified'],
+] as const
+
+export function canTransition(from: Status, to: Status): boolean {
+  if (STATUS_RANK[to] >= STATUS_RANK[from]) return true
+  return ALLOWED_BACKWARD_TRANSITIONS.some(
+    ([f, t]) => f === from && t === to,
+  )
+}
+
 export const LANGUAGE_PROFILES = [
   'english_dominant',
   'indian_dominant',

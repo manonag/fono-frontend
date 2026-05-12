@@ -23,6 +23,12 @@ interface ReviewPaneProps {
     payload: PatchPayload,
     options: { advanceAfter: boolean },
   ) => Promise<{ ok: boolean; error?: string }>
+  // T-2d16e333: recovery demote action. Parent issues an independent
+  // PATCH on the currently-selected row. Returns ok / error so the
+  // pane can surface a toast or inline error.
+  onDemote: (
+    target: 'auto_labeled' | 'verified',
+  ) => Promise<{ ok: boolean; error?: string }>
 }
 
 interface FormState {
@@ -87,8 +93,17 @@ function buildState(rec: RecordingDetail): {
     reviewer_notes: rec.reviewer_notes ?? '',
   }
 
+  // T-2d16e333: auto-promote-on-save. When a row arrives as auto_labeled,
+  // the form's status pre-selects 'verified' so that the default Save
+  // action promotes it in one click. initial.status keeps the persisted
+  // 'auto_labeled' value, so computeDiff sees status as changed and the
+  // Save button enables on open. The user can still pick a different
+  // target from the dropdown before saving.
+  const defaultFormStatus: Status =
+    rec.status === 'auto_labeled' ? 'verified' : rec.status
+
   return {
-    form: { verified_segments: displayedSegments, status: rec.status, tags },
+    form: { verified_segments: displayedSegments, status: defaultFormStatus, tags },
     initial: {
       // Initial mirrors the displayed (normalized) form so computeDiff
       // doesn't see "0" vs "speaker_0" as a spurious change.
@@ -163,6 +178,7 @@ export function ReviewPane({
   error,
   hasNext,
   onSave,
+  onDemote,
 }: ReviewPaneProps) {
   const initialRef = useRef<InitialSnapshot | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
@@ -170,6 +186,7 @@ export function ReviewPane({
   const preEditRef = useRef<string>('')
   const [currentTime, setCurrentTime] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [demoting, setDemoting] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [textFocused, setTextFocused] = useState(false)
@@ -447,6 +464,23 @@ export function ReviewPane({
         onSave={() => void doSave(false)}
         onSaveAndNext={() => void doSave(true)}
         hasNext={hasNext}
+        demoting={demoting}
+        onDemote={(target) => {
+          // T-2d16e333: recovery demote. Independent of form save flow.
+          // Form state stays as-is in the UI; parent refetches the
+          // recording after the PATCH lands, which rebuilds the form
+          // via the recording-loaded effect.
+          setDemoting(true)
+          setSaveError(null)
+          void onDemote(target).then((result) => {
+            setDemoting(false)
+            if (result.ok) {
+              setToast(target === 'auto_labeled' ? 'Sent back to Pending' : 'Demoted to Verified')
+            } else {
+              setSaveError(result.error ?? 'Demote failed')
+            }
+          })
+        }}
       />
       {toast && (
         <div className="absolute bottom-20 right-6 px-3 py-2 rounded bg-ink text-cream text-sm shadow-lg">

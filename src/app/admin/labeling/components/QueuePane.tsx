@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatMmSs, truncate } from '../lib/formatters'
 import type { QueueFilter, QueueItem } from '../lib/types'
 import type { Status } from '../lib/enums'
@@ -15,6 +15,14 @@ interface QueuePaneProps {
   currentUserId: string | null
   onFilterChange: (filter: QueueFilter) => void
   onSelect: (recordingId: string) => void
+  // T-2d16e333: per-row recovery demote action. Parent issues a PATCH
+  // scoped to the given recording_id, independent of the currently
+  // selected row. Demote target depends on row status: verified ->
+  // auto_labeled (Send back to Pending), gold -> verified (Demote).
+  onDemote: (
+    recordingId: string,
+    target: 'auto_labeled' | 'verified',
+  ) => Promise<{ ok: boolean; error?: string }>
 }
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
@@ -49,14 +57,30 @@ export function QueuePane({
   currentUserId,
   onFilterChange,
   onSelect,
+  onDemote,
 }: QueuePaneProps) {
   const selectedRowRef = useRef<HTMLButtonElement | null>(null)
+  // T-2d16e333: id of the row whose overflow menu is open (null = none).
+  // Click-elsewhere on the document closes the menu.
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [demotingId, setDemotingId] = useState<string | null>(null)
+  const menuContainerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (selectedRowRef.current) {
       selectedRowRef.current.scrollIntoView({ block: 'nearest' })
     }
   }, [selectedId])
+
+  useEffect(() => {
+    if (openMenuId === null) return
+    const onDocClick = (e: MouseEvent) => {
+      const el = menuContainerRef.current
+      if (el && !el.contains(e.target as Node)) setOpenMenuId(null)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [openMenuId])
 
   return (
     <aside className="w-1/3 border-r border-ink/10 bg-white flex flex-col min-h-0">
@@ -103,8 +127,21 @@ export function QueuePane({
             const lockedByOther =
               item.lock_holder_user_id !== null &&
               item.lock_holder_user_id !== currentUserId
+            // T-2d16e333: recovery action available on verified / gold rows.
+            const demoteTarget: 'auto_labeled' | 'verified' | null =
+              item.status === 'verified'
+                ? 'auto_labeled'
+                : item.status === 'gold'
+                  ? 'verified'
+                  : null
+            const demoteLabel =
+              demoteTarget === 'auto_labeled'
+                ? 'Send back to Pending'
+                : 'Demote to Verified'
+            const menuOpen = openMenuId === item.recording_id
+            const rowDemoting = demotingId === item.recording_id
             return (
-              <li key={item.recording_id}>
+              <li key={item.recording_id} className="relative group">
                 <button
                   ref={selected ? selectedRowRef : undefined}
                   type="button"
@@ -163,6 +200,54 @@ export function QueuePane({
                     )}
                   </p>
                 </button>
+                {demoteTarget && !lockedByOther && (
+                  <div
+                    ref={menuOpen ? menuContainerRef : null}
+                    className={
+                      menuOpen
+                        ? 'absolute top-2 right-2 visible'
+                        : 'absolute top-2 right-2 invisible group-hover:visible'
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenMenuId(menuOpen ? null : item.recording_id)
+                      }}
+                      disabled={rowDemoting}
+                      className="px-1.5 py-0.5 rounded text-ink/60 hover:bg-ink/10 hover:text-ink text-base leading-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      aria-label="Row actions"
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      title="Row actions"
+                    >
+                      {rowDemoting ? '...' : '⋯'}
+                    </button>
+                    {menuOpen && (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-1 w-44 rounded border border-ink/15 bg-white shadow-lg z-10"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOpenMenuId(null)
+                            setDemotingId(item.recording_id)
+                            void onDemote(item.recording_id, demoteTarget).finally(
+                              () => setDemotingId(null),
+                            )
+                          }}
+                          className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
+                        >
+                          {demoteLabel}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </li>
             )
           })}
