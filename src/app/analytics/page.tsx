@@ -137,8 +137,35 @@ export default function AnalyticsPage() {
         if (call.status === 'missed' || call.status === 'no-answer') entry.missed++
       }
     })
+
+    // TEMP DEBUG (T-f96b9613 Commit 2.2 Phase 1) — remove before fix commit
+    const totalMissedInFiltered = filteredCalls.filter(
+      c => c.status === 'missed' || c.status === 'no-answer'
+    ).length
+    const totalMissedInTrend = buckets.reduce((a, b) => a + b.missed, 0)
+    const missedCallsByKey = filteredCalls
+      .filter(c => c.status === 'missed' || c.status === 'no-answer')
+      .map(c => ({
+        id: c.id,
+        status: c.status,
+        created_at: c.created_at,
+        local_iso: new Date(c.created_at).toLocaleString('en-US', { timeZone: tenantTimezone }),
+        bucket_key: new Date(c.created_at).toISOString().split('T')[0],
+      }))
+    // eslint-disable-next-line no-console
+    console.log('[T-f96b9613 DEBUG] dailyTrend:', buckets.map(b => ({
+      key: b.date.toISOString().split('T')[0],
+      date_local: b.date.toLocaleDateString('en-US', { timeZone: tenantTimezone, month: 'short', day: 'numeric' }),
+      total: b.total,
+      missed: b.missed,
+    })))
+    // eslint-disable-next-line no-console
+    console.log('[T-f96b9613 DEBUG] filteredCalls count:', filteredCalls.length, 'missed-in-filtered:', totalMissedInFiltered, 'missed-summed-in-trend:', totalMissedInTrend)
+    // eslint-disable-next-line no-console
+    console.log('[T-f96b9613 DEBUG] missed calls per call (original UTC vs bucket key):', missedCallsByKey)
+
     return buckets
-  }, [filteredCalls, resolvedWindow])
+  }, [filteredCalls, resolvedWindow, tenantTimezone])
 
   // Peak hours: bucket calls into 24 hours using the tenant timezone
   const hourlyData = useMemo(() => {
@@ -514,6 +541,9 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
   const showPoint = (e: React.SyntheticEvent<SVGCircleElement>, d: { date: Date; total: number; missed: number }) => {
     const pos = positionTooltip(e.currentTarget, containerRef.current)
     if (!pos) return
+    // TEMP DEBUG (T-f96b9613 Commit 2.2 Phase 1) — remove before fix commit
+    // eslint-disable-next-line no-console
+    console.log('[T-f96b9613 DEBUG] tooltip point:', { date: d.date.toISOString(), total: d.total, missed: d.missed })
     setTooltip({
       ...pos,
       content: `${fmtDay(d.date)}: ${d.total} total, ${d.missed} missed`,
