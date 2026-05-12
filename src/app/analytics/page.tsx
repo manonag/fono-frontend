@@ -224,14 +224,25 @@ export default function AnalyticsPage() {
             <Heatmap data={heatmapData} max={heatmapMax} isMobile={isMobile} />
           </Card>
 
-          {/* Donut + Trend, stacked vertically at all viewports so the donut
-              legend never aligns with the trend X-axis row. The kiosk-context
-              banner sits between them when there are missed calls in the
-              window, framing what the chart numbers mean operationally. */}
+          {/* Donut + Trend side-by-side on tablet/desktop, stacked on mobile.
+              Default grid stretch matches the two card heights so the donut
+              card's legend sits inside its own card boundary, separated from
+              the trend's X-axis row by gap-5. Donut Card uses flex-column so
+              the SVG can grow into any extra vertical room.
+              Kiosk banner moves below the row at full width when missed > 0. */}
           <div className="flex flex-col gap-5" style={{ marginBottom: 20 }}>
-            <Card title="Call Distribution">
-              <DonutChart data={donutData} />
-            </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <Card title="Call Distribution" style={{ display: 'flex', flexDirection: 'column' }}>
+                <DonutChart data={donutData} />
+              </Card>
+              <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
+                {isSingleDayTrend ? (
+                  <SingleDayTrendPlaceholder />
+                ) : (
+                  <TrendLine data={dailyTrend} timezone={tenantTimezone} />
+                )}
+              </Card>
+            </div>
             {donutData.missed > 0 && (
               <Card title="Here's how the kiosk helps">
                 <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.6 }}>
@@ -239,13 +250,6 @@ export default function AnalyticsPage() {
                 </p>
               </Card>
             )}
-            <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
-              {isSingleDayTrend ? (
-                <SingleDayTrendPlaceholder />
-              ) : (
-                <TrendLine data={dailyTrend} timezone={tenantTimezone} />
-              )}
-            </Card>
           </div>
 
           {/* Peak Hours */}
@@ -408,7 +412,7 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
   const segments = [
     { value: completed, color: '#E0602A', label: 'Completed' },
     { value: recovered, color: '#22C55E', label: 'Recovered' },
-    { value: missed, color: '#EF4444', label: 'Missed' },
+    { value: missed, color: '#DC2626', label: 'Missed' },
   ].filter(s => s.value > 0)
 
   let offset = 0
@@ -439,30 +443,32 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
   }
 
   return (
-    <div ref={containerRef} className="relative flex flex-col items-center gap-4">
-      <div className="relative" style={{ width: 200, height: 200 }}>
-        <svg width="200" height="200" viewBox="0 0 200 200">
-          {arcs.map((arc, i) => (
-            <circle
-              key={i}
-              cx="100" cy="100" r={r}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth={stroke}
-              strokeDasharray={arc.dasharray}
-              strokeDashoffset={arc.dashoffset}
-              strokeLinecap="round"
-              transform="rotate(-90 100 100)"
-              style={{ cursor: 'pointer' }}
-              onMouseEnter={(e) => showSegment(e, arc)}
-              onMouseLeave={() => setTooltip(null)}
-              onTouchStart={(e) => showSegment(e, arc)}
-            />
-          ))}
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span style={{ fontSize: 32, fontWeight: 800, color: '#1E0E00' }}>{total}</span>
-          <span style={{ fontSize: 12, color: '#8B7355' }}>total</span>
+    <div ref={containerRef} className="relative flex flex-col items-center gap-4 flex-1 min-h-0">
+      <div className="flex-1 w-full flex items-center justify-center" style={{ minHeight: 200 }}>
+        <div className="relative" style={{ width: '100%', maxWidth: 280, aspectRatio: '1 / 1' }}>
+          <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block' }}>
+            {arcs.map((arc, i) => (
+              <circle
+                key={i}
+                cx="100" cy="100" r={r}
+                fill="none"
+                stroke={arc.color}
+                strokeWidth={stroke}
+                strokeDasharray={arc.dasharray}
+                strokeDashoffset={arc.dashoffset}
+                strokeLinecap="round"
+                transform="rotate(-90 100 100)"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={(e) => showSegment(e, arc)}
+                onMouseLeave={() => setTooltip(null)}
+                onTouchStart={(e) => showSegment(e, arc)}
+              />
+            ))}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span style={{ fontSize: 32, fontWeight: 800, color: '#1E0E00' }}>{total}</span>
+            <span style={{ fontSize: 12, color: '#8B7355' }}>total</span>
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
@@ -535,6 +541,19 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
 
   return (
     <div ref={containerRef} className="relative">
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-1"
+        style={{ marginBottom: 8, fontSize: 12, color: '#5C3D22' }}
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#E0602A', display: 'inline-block' }} />
+          Total
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#DC2626', display: 'inline-block' }} />
+          Missed
+        </span>
+      </div>
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 220 }}>
         {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map(pct => (
@@ -549,7 +568,7 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
             data point so zero-value days read as on-the-axis dots instead
             of being interpolated through by the connecting line. */}
         <path d={totalPath} fill="none" stroke="#E0602A" strokeWidth="2" strokeLinejoin="round" />
-        <path d={missedPath} fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
+        <path d={missedPath} fill="none" stroke="#DC2626" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
         {/* Total dots: visible 2.5px marker + 10px invisible hit zone */}
         {data.map((d, i) => (
           <g key={`t-${i}`}>
@@ -574,7 +593,7 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
           <g key={`m-${i}`}>
             <circle
               cx={toX(i)} cy={toY(d.missed)} r="2.5"
-              fill="#EF4444"
+              fill="#DC2626"
             />
             <circle
               cx={toX(i)} cy={toY(d.missed)} r="10"
@@ -594,11 +613,8 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
         {[0, Math.round(maxVal / 2), maxVal].map((v, idx) => (
           <text key={idx} x={pad.left - 6} y={toY(v) + 4} textAnchor="end" fill="#B0A090" fontSize="10">{v}</text>
         ))}
-        {/* Legend */}
-        <circle cx={pad.left + 10} cy={h - 18} r="3" fill="#E0602A" />
-        <text x={pad.left + 18} y={h - 15} fill="#5C3D22" fontSize="9">Total</text>
-        <circle cx={pad.left + 60} cy={h - 18} r="3" fill="#EF4444" />
-        <text x={pad.left + 68} y={h - 15} fill="#5C3D22" fontSize="9">Missed</text>
+        {/* In-SVG legend removed; series legend now renders as a DOM row
+            above the chart to avoid colliding with the X-axis date labels. */}
       </svg>
       <ChartTooltip state={tooltip} />
     </div>
