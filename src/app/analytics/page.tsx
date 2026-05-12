@@ -137,35 +137,8 @@ export default function AnalyticsPage() {
         if (call.status === 'missed' || call.status === 'no-answer') entry.missed++
       }
     })
-
-    // TEMP DEBUG (T-f96b9613 Commit 2.2 Phase 1) — remove before fix commit
-    const totalMissedInFiltered = filteredCalls.filter(
-      c => c.status === 'missed' || c.status === 'no-answer'
-    ).length
-    const totalMissedInTrend = buckets.reduce((a, b) => a + b.missed, 0)
-    const missedCallsByKey = filteredCalls
-      .filter(c => c.status === 'missed' || c.status === 'no-answer')
-      .map(c => ({
-        id: c.id,
-        status: c.status,
-        created_at: c.created_at,
-        local_iso: new Date(c.created_at).toLocaleString('en-US', { timeZone: tenantTimezone }),
-        bucket_key: new Date(c.created_at).toISOString().split('T')[0],
-      }))
-    // eslint-disable-next-line no-console
-    console.log('[T-f96b9613 DEBUG] dailyTrend:', buckets.map(b => ({
-      key: b.date.toISOString().split('T')[0],
-      date_local: b.date.toLocaleDateString('en-US', { timeZone: tenantTimezone, month: 'short', day: 'numeric' }),
-      total: b.total,
-      missed: b.missed,
-    })))
-    // eslint-disable-next-line no-console
-    console.log('[T-f96b9613 DEBUG] filteredCalls count:', filteredCalls.length, 'missed-in-filtered:', totalMissedInFiltered, 'missed-summed-in-trend:', totalMissedInTrend)
-    // eslint-disable-next-line no-console
-    console.log('[T-f96b9613 DEBUG] missed calls per call (original UTC vs bucket key):', missedCallsByKey)
-
     return buckets
-  }, [filteredCalls, resolvedWindow, tenantTimezone])
+  }, [filteredCalls, resolvedWindow])
 
   // Peak hours: bucket calls into 24 hours using the tenant timezone
   const hourlyData = useMemo(() => {
@@ -249,9 +222,10 @@ export default function AnalyticsPage() {
             <Heatmap data={heatmapData} max={heatmapMax} isMobile={isMobile} />
           </Card>
 
-          {/* Donut + Trend */}
-          <div className={isMobile ? 'flex flex-col gap-5' : 'grid grid-cols-2 gap-5'} style={{ marginBottom: 20 }}>
-            <Card title="Call Distribution" style={{ paddingBottom: 40 }}>
+          {/* Donut + Trend, stacked vertically at all viewports so the donut
+              legend never aligns with the trend X-axis row. */}
+          <div className="flex flex-col gap-5" style={{ marginBottom: 20 }}>
+            <Card title="Call Distribution">
               <DonutChart data={donutData} />
             </Card>
             <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
@@ -527,6 +501,7 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
   const toY = (v: number) => pad.top + innerH - (v / maxVal) * innerH
 
   const totalPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.total)}`).join(' ')
+  const missedPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.missed)}`).join(' ')
 
   const fmtDay = (d: Date) =>
     d.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })
@@ -541,9 +516,6 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
   const showPoint = (e: React.SyntheticEvent<SVGCircleElement>, d: { date: Date; total: number; missed: number }) => {
     const pos = positionTooltip(e.currentTarget, containerRef.current)
     if (!pos) return
-    // TEMP DEBUG (T-f96b9613 Commit 2.2 Phase 1) — remove before fix commit
-    // eslint-disable-next-line no-console
-    console.log('[T-f96b9613 DEBUG] tooltip point:', { date: d.date.toISOString(), total: d.total, missed: d.missed })
     setTooltip({
       ...pos,
       content: `${fmtDay(d.date)}: ${d.total} total, ${d.missed} missed`,
@@ -562,17 +534,39 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
             stroke="rgba(0,0,0,0.05)" strokeWidth="1"
           />
         ))}
-        {/* Total line. Missed counts are surfaced in the per-point tooltip. */}
+        {/* Total (solid) and Missed (dashed) series. Visible dots at each
+            data point so zero-value days read as on-the-axis dots instead
+            of being interpolated through by the connecting line. */}
         <path d={totalPath} fill="none" stroke="#E0602A" strokeWidth="2" strokeLinejoin="round" />
-        {/* Hover hit zones: invisible larger circle per point, plus a visible dot for clarity */}
+        <path d={missedPath} fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
+        {/* Total dots: visible 2.5px marker + 10px invisible hit zone */}
         {data.map((d, i) => (
-          <g key={i}>
+          <g key={`t-${i}`}>
             <circle
               cx={toX(i)} cy={toY(d.total)} r="2.5"
               fill="#E0602A"
             />
             <circle
               cx={toX(i)} cy={toY(d.total)} r="10"
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => showPoint(e, d)}
+              onMouseLeave={() => setTooltip(null)}
+              onTouchStart={(e) => showPoint(e, d)}
+            />
+          </g>
+        ))}
+        {/* Missed dots: visible 2.5px marker + 10px invisible hit zone.
+            Zero-value dots sit on the X-axis to anchor the eye away from
+            the dashed line's geometric interpolation. */}
+        {data.map((d, i) => (
+          <g key={`m-${i}`}>
+            <circle
+              cx={toX(i)} cy={toY(d.missed)} r="2.5"
+              fill="#EF4444"
+            />
+            <circle
+              cx={toX(i)} cy={toY(d.missed)} r="10"
               fill="transparent"
               style={{ cursor: 'pointer' }}
               onMouseEnter={(e) => showPoint(e, d)}
@@ -592,6 +586,8 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
         {/* Legend */}
         <circle cx={pad.left + 10} cy={h - 18} r="3" fill="#E0602A" />
         <text x={pad.left + 18} y={h - 15} fill="#5C3D22" fontSize="9">Total</text>
+        <circle cx={pad.left + 60} cy={h - 18} r="3" fill="#EF4444" />
+        <text x={pad.left + 68} y={h - 15} fill="#5C3D22" fontSize="9">Missed</text>
       </svg>
       <ChartTooltip state={tooltip} />
     </div>
