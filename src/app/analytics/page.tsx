@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
@@ -11,6 +11,7 @@ import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { DateFilterBar } from '@/components/date-filter'
 import { resolveFilterWindow } from '@/lib/analytics-filter'
+import { ChartTooltip, type ChartTooltipState } from '@/components/chart-tooltip'
 import { formatDuration } from '@/lib/utils'
 import type { CallRecord, DateFilter } from '@/types'
 
@@ -114,25 +115,32 @@ export default function AnalyticsPage() {
     return { completed, missed, recovered, total: completed + missed + recovered }
   }, [filteredCalls])
 
-  // Daily trend — bucket calls into the resolved window's day list
+  // Daily trend: bucket calls into the resolved window's day list.
+  // Carries the Date object through so the X-axis label formatter renders
+  // tenant-local dates (parsing "YYYY-MM-DD" via new Date() yields UTC
+  // midnight, which prints as the previous day in negative-offset TZs).
   const dailyTrend = useMemo(() => {
-    const days = new Map<string, { total: number; missed: number }>()
-    resolvedWindow.daysInRange.forEach(d => {
-      const key = d.toISOString().split('T')[0]
-      days.set(key, { total: 0, missed: 0 })
+    const buckets: { date: Date; total: number; missed: number }[] = resolvedWindow.daysInRange.map(d => ({
+      date: new Date(d),
+      total: 0,
+      missed: 0,
+    }))
+    const keyToBucket = new Map<string, { date: Date; total: number; missed: number }>()
+    buckets.forEach(b => {
+      keyToBucket.set(b.date.toISOString().split('T')[0], b)
     })
     filteredCalls.forEach(call => {
       const key = new Date(call.created_at).toISOString().split('T')[0]
-      const entry = days.get(key)
+      const entry = keyToBucket.get(key)
       if (entry) {
         entry.total++
         if (call.status === 'missed' || call.status === 'no-answer') entry.missed++
       }
     })
-    return Array.from(days.entries()).map(([date, data]) => ({ date, ...data }))
+    return buckets
   }, [filteredCalls, resolvedWindow])
 
-  // Peak hours — bucket calls into 24 hours using the tenant timezone
+  // Peak hours: bucket calls into 24 hours using the tenant timezone
   const hourlyData = useMemo(() => {
     const hours = Array(24).fill(0)
     filteredCalls.forEach(c => {
@@ -179,7 +187,7 @@ export default function AnalyticsPage() {
   const content = (
     <div style={{ maxWidth: 960, padding: isMobile ? '20px 16px 80px' : '36px 40px' }}>
       {/* Title + Date pills */}
-      <div className="flex items-center justify-between flex-wrap gap-3" style={{ marginBottom: 24 }}>
+      <div className="flex items-center justify-between flex-wrap gap-3" style={{ marginBottom: 8 }}>
         <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, letterSpacing: '-0.03em', color: '#1E0E00' }}>
           Analytics
         </h1>
@@ -190,6 +198,14 @@ export default function AnalyticsPage() {
           onCustomRange={setCustomRange}
         />
       </div>
+
+      {/* Resolved date range subtitle */}
+      <p
+        className="text-sm"
+        style={{ color: '#8B7355', marginBottom: 20, fontWeight: 500 }}
+      >
+        {resolvedWindow.label}
+      </p>
 
       {loading ? (
         <div className="space-y-5">
@@ -215,7 +231,7 @@ export default function AnalyticsPage() {
               {isSingleDayTrend ? (
                 <SingleDayTrendPlaceholder />
               ) : (
-                <TrendLine data={dailyTrend} />
+                <TrendLine data={dailyTrend} timezone={tenantTimezone} />
               )}
             </Card>
           </div>
@@ -280,13 +296,40 @@ function Card({ title, children, style }: { title: string; children: React.React
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const HOURS_LABELS = ['12a', '', '', '3a', '', '', '6a', '', '', '9a', '', '', '12p', '', '', '3p', '', '', '6p', '', '', '9p', '', '']
 
+function formatHourLabel(hour: number): string {
+  if (hour === 0) return '12 AM'
+  if (hour === 12) return '12 PM'
+  return hour < 12 ? `${hour} AM` : `${hour - 12} PM`
+}
+
+function positionTooltip(target: Element, container: HTMLElement | null): { x: number; y: number } | null {
+  if (!container) return null
+  const targetRect = target.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  return {
+    x: targetRect.left + targetRect.width / 2 - containerRect.left,
+    y: targetRect.top - containerRect.top,
+  }
+}
+
 function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMobile: boolean }) {
-  const [tooltip, setTooltip] = useState<{ day: number; hour: number; count: number } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
   const cellSize = isMobile ? 12 : 28
   const gap = isMobile ? 2 : 3
 
+  const showCell = (e: React.SyntheticEvent<Element>, dayIdx: number, hourIdx: number, count: number) => {
+    if (count <= 0) return
+    const pos = positionTooltip(e.currentTarget, containerRef.current)
+    if (!pos) return
+    setTooltip({
+      ...pos,
+      content: `${DAYS[dayIdx]} ${formatHourLabel(hourIdx)}: ${count} call${count !== 1 ? 's' : ''}`,
+    })
+  }
+
   return (
-    <div className="relative overflow-x-auto">
+    <div ref={containerRef} className="relative overflow-x-auto">
       <div style={{ display: 'inline-flex', flexDirection: 'column', gap }}>
         {/* Hour labels */}
         <div style={{ display: 'flex', gap, paddingLeft: isMobile ? 28 : 40 }}>
@@ -303,6 +346,7 @@ function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMob
             </span>
             {row.map((count, hourIdx) => {
               const intensity = max > 0 ? count / max : 0
+              const hasCalls = count > 0
               return (
                 <div
                   key={hourIdx}
@@ -310,35 +354,21 @@ function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMob
                     width: cellSize,
                     height: cellSize,
                     borderRadius: 6,
-                    backgroundColor: count === 0
+                    backgroundColor: !hasCalls
                       ? 'rgba(0,0,0,0.03)'
                       : `rgba(224,96,42,${Math.max(intensity * 0.9, 0.1)})`,
-                    cursor: 'pointer',
+                    cursor: hasCalls ? 'pointer' : 'default',
                   }}
-                  onMouseEnter={() => setTooltip({ day: dayIdx, hour: hourIdx, count })}
+                  onMouseEnter={(e) => showCell(e, dayIdx, hourIdx, count)}
                   onMouseLeave={() => setTooltip(null)}
+                  onTouchStart={(e) => showCell(e, dayIdx, hourIdx, count)}
                 />
               )
             })}
           </div>
         ))}
       </div>
-      {tooltip && !isMobile && (
-        <div
-          className="absolute z-10 bg-ink text-white"
-          style={{
-            padding: '6px 12px',
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 500,
-            top: 0,
-            right: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {DAYS[tooltip.day]} {tooltip.hour === 0 ? '12' : tooltip.hour > 12 ? tooltip.hour - 12 : tooltip.hour}{tooltip.hour >= 12 ? ' PM' : ' AM'} — {tooltip.count} call{tooltip.count !== 1 ? 's' : ''}
-        </div>
-      )}
+      <ChartTooltip state={tooltip} />
     </div>
   )
 }
@@ -349,6 +379,8 @@ function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMob
 
 function DonutChart({ data }: { data: { completed: number; missed: number; recovered: number; total: number } }) {
   const { completed, missed, recovered, total } = data
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
   const r = 80
   const stroke = 20
   const c = 2 * Math.PI * r
@@ -370,13 +402,32 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
   let offset = 0
   const arcs = segments.map(seg => {
     const pct = seg.value / total
-    const arc = { ...seg, dasharray: `${pct * c} ${(1 - pct) * c}`, dashoffset: -offset }
+    const arc = { ...seg, pct, dasharray: `${pct * c} ${(1 - pct) * c}`, dashoffset: -offset }
     offset += pct * c
     return arc
   })
 
+  // Donut arcs all share the same SVG bounding box, so positionTooltip would
+  // place every tooltip at the donut center. Use cursor position instead.
+  const showSegment = (
+    e: React.MouseEvent<SVGCircleElement> | React.TouchEvent<SVGCircleElement>,
+    arc: { label: string; value: number; pct: number }
+  ) => {
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const point = 'touches' in e ? e.touches[0] : e
+    if (!point) return
+    const pctStr = (arc.pct * 100).toFixed(1)
+    setTooltip({
+      x: point.clientX - rect.left,
+      y: point.clientY - rect.top,
+      content: `${arc.label}: ${arc.value} (${pctStr}%)`,
+    })
+  }
+
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div ref={containerRef} className="relative flex flex-col items-center gap-4">
       <div className="relative" style={{ width: 200, height: 200 }}>
         <svg width="200" height="200" viewBox="0 0 200 200">
           {arcs.map((arc, i) => (
@@ -390,15 +441,19 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
               strokeDashoffset={arc.dashoffset}
               strokeLinecap="round"
               transform="rotate(-90 100 100)"
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => showSegment(e, arc)}
+              onMouseLeave={() => setTooltip(null)}
+              onTouchStart={(e) => showSegment(e, arc)}
             />
           ))}
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span style={{ fontSize: 32, fontWeight: 800, color: '#1E0E00' }}>{total}</span>
           <span style={{ fontSize: 12, color: '#8B7355' }}>total</span>
         </div>
       </div>
-      <div className="flex items-center gap-5">
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
         {segments.map(seg => (
           <div key={seg.label} className="flex items-center gap-2">
             <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: seg.color }} />
@@ -408,6 +463,7 @@ function DonutChart({ data }: { data: { completed: number; missed: number; recov
           </div>
         ))}
       </div>
+      <ChartTooltip state={tooltip} />
     </div>
   )
 }
@@ -429,7 +485,9 @@ function SingleDayTrendPlaceholder() {
   )
 }
 
-function TrendLine({ data }: { data: { date: string; total: number; missed: number }[] }) {
+function TrendLine({ data, timezone }: { data: { date: Date; total: number; missed: number }[]; timezone: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
   const w = 400
   const h = 180
   const pad = { top: 10, right: 10, bottom: 30, left: 30 }
@@ -444,43 +502,74 @@ function TrendLine({ data }: { data: { date: string; total: number; missed: numb
   const totalPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.total)}`).join(' ')
   const missedPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.missed)}`).join(' ')
 
+  const fmtDay = (d: Date) =>
+    d.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })
+
   // X-axis labels (show ~5)
   const xLabels: { i: number; label: string }[] = []
   const step = Math.max(Math.floor(data.length / 5), 1)
   for (let i = 0; i < data.length; i += step) {
-    const d = new Date(data[i].date)
-    xLabels.push({ i, label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })
+    xLabels.push({ i, label: fmtDay(data[i].date) })
+  }
+
+  const showPoint = (e: React.SyntheticEvent<SVGCircleElement>, d: { date: Date; total: number; missed: number }) => {
+    const pos = positionTooltip(e.currentTarget, containerRef.current)
+    if (!pos) return
+    setTooltip({
+      ...pos,
+      content: `${fmtDay(d.date)}: ${d.total} call${d.total !== 1 ? 's' : ''}`,
+    })
   }
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 220 }}>
-      {/* Grid lines */}
-      {[0, 0.25, 0.5, 0.75, 1].map(pct => (
-        <line
-          key={pct}
-          x1={pad.left} x2={w - pad.right}
-          y1={pad.top + innerH * (1 - pct)} y2={pad.top + innerH * (1 - pct)}
-          stroke="rgba(0,0,0,0.05)" strokeWidth="1"
-        />
-      ))}
-      {/* Total line */}
-      <path d={totalPath} fill="none" stroke="#E0602A" strokeWidth="2" strokeLinejoin="round" />
-      {/* Missed dashed line */}
-      <path d={missedPath} fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
-      {/* X labels */}
-      {xLabels.map(({ i, label }) => (
-        <text key={i} x={toX(i)} y={h - 8} textAnchor="middle" fill="#B0A090" fontSize="10">{label}</text>
-      ))}
-      {/* Y labels */}
-      {[0, Math.round(maxVal / 2), maxVal].map((v, idx) => (
-        <text key={idx} x={pad.left - 6} y={toY(v) + 4} textAnchor="end" fill="#B0A090" fontSize="10">{v}</text>
-      ))}
-      {/* Legend */}
-      <circle cx={pad.left + 10} cy={h - 18} r="3" fill="#E0602A" />
-      <text x={pad.left + 18} y={h - 15} fill="#5C3D22" fontSize="9">Total</text>
-      <circle cx={pad.left + 60} cy={h - 18} r="3" fill="#EF4444" />
-      <text x={pad.left + 68} y={h - 15} fill="#5C3D22" fontSize="9">Missed</text>
-    </svg>
+    <div ref={containerRef} className="relative">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 220 }}>
+        {/* Grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map(pct => (
+          <line
+            key={pct}
+            x1={pad.left} x2={w - pad.right}
+            y1={pad.top + innerH * (1 - pct)} y2={pad.top + innerH * (1 - pct)}
+            stroke="rgba(0,0,0,0.05)" strokeWidth="1"
+          />
+        ))}
+        {/* Total line */}
+        <path d={totalPath} fill="none" stroke="#E0602A" strokeWidth="2" strokeLinejoin="round" />
+        {/* Missed dashed line */}
+        <path d={missedPath} fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4,3" strokeLinejoin="round" />
+        {/* Hover hit zones: invisible larger circle per point, plus a visible dot for clarity */}
+        {data.map((d, i) => (
+          <g key={i}>
+            <circle
+              cx={toX(i)} cy={toY(d.total)} r="2.5"
+              fill="#E0602A"
+            />
+            <circle
+              cx={toX(i)} cy={toY(d.total)} r="10"
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => showPoint(e, d)}
+              onMouseLeave={() => setTooltip(null)}
+              onTouchStart={(e) => showPoint(e, d)}
+            />
+          </g>
+        ))}
+        {/* X labels */}
+        {xLabels.map(({ i, label }) => (
+          <text key={i} x={toX(i)} y={h - 8} textAnchor="middle" fill="#B0A090" fontSize="10">{label}</text>
+        ))}
+        {/* Y labels */}
+        {[0, Math.round(maxVal / 2), maxVal].map((v, idx) => (
+          <text key={idx} x={pad.left - 6} y={toY(v) + 4} textAnchor="end" fill="#B0A090" fontSize="10">{v}</text>
+        ))}
+        {/* Legend */}
+        <circle cx={pad.left + 10} cy={h - 18} r="3" fill="#E0602A" />
+        <text x={pad.left + 18} y={h - 15} fill="#5C3D22" fontSize="9">Total</text>
+        <circle cx={pad.left + 60} cy={h - 18} r="3" fill="#EF4444" />
+        <text x={pad.left + 68} y={h - 15} fill="#5C3D22" fontSize="9">Missed</text>
+      </svg>
+      <ChartTooltip state={tooltip} />
+    </div>
   )
 }
 
@@ -489,7 +578,10 @@ function TrendLine({ data }: { data: { date: string; total: number; missed: numb
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function PeakHoursChart({ data }: { data: number[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
   const max = Math.max(...data, 1)
+  const totalInWindow = data.reduce((acc, n) => acc + n, 0)
   // Find top 3 hours
   const sorted = [...data].sort((a, b) => b - a)
   const top3Threshold = sorted[2] || 0
@@ -498,8 +590,18 @@ function PeakHoursChart({ data }: { data: number[] }) {
     i === 0 ? '12a' : i < 12 ? `${i}a` : i === 12 ? '12p' : `${i - 12}p`
   )
 
+  const showBar = (e: React.SyntheticEvent<HTMLDivElement>, hour: number, count: number) => {
+    const pos = positionTooltip(e.currentTarget, containerRef.current)
+    if (!pos) return
+    const pctStr = totalInWindow > 0 ? `${((count / totalInWindow) * 100).toFixed(0)}%` : '0%'
+    setTooltip({
+      ...pos,
+      content: `${formatHourLabel(hour)}: ${count} call${count !== 1 ? 's' : ''} (${pctStr} of window)`,
+    })
+  }
+
   return (
-    <div className="overflow-x-auto">
+    <div ref={containerRef} className="relative overflow-x-auto">
       <div className="flex items-end gap-1" style={{ minWidth: 480, height: 140 }}>
         {data.map((count, i) => {
           const barH = max > 0 ? (count / max) * 120 : 2
@@ -513,13 +615,18 @@ function PeakHoursChart({ data }: { data: number[] }) {
                   borderRadius: '4px 4px 0 0',
                   backgroundColor: isTop ? '#E0602A' : `rgba(224,96,42,${Math.max(count / max * 0.5, 0.08)})`,
                   transition: 'height 300ms ease',
+                  cursor: count > 0 ? 'pointer' : 'default',
                 }}
+                onMouseEnter={(e) => showBar(e, i, count)}
+                onMouseLeave={() => setTooltip(null)}
+                onTouchStart={(e) => showBar(e, i, count)}
               />
               <span style={{ fontSize: 8, color: '#B0A090', fontWeight: 500 }}>{hourLabels[i]}</span>
             </div>
           )
         })}
       </div>
+      <ChartTooltip state={tooltip} />
     </div>
   )
 }
