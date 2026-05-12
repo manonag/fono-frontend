@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
@@ -28,15 +29,25 @@ function safeNum(n: unknown): number {
   return isNaN(num) ? 0 : num
 }
 
-export default function CallsPage() {
+function CallsContent() {
   const isMobile = useMediaQuery('(max-width: 767px)')
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [calls, setCalls] = useState<CallRecord[]>([])
   const [summary, setSummary] = useState<{ missed_calls: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  // T-502756ed: statusFilter is derived from the URL, not local state, so
+  // dashboard card deep-links (/calls?status=missed) pre-select the chip
+  // and chip clicks update the URL for back/forward + bookmarking. Unknown
+  // values silently fall back to 'all' (no redirect, no toast).
+  const rawStatus = searchParams.get('status')
+  const statusFilter: StatusFilter =
+    rawStatus === 'completed' || rawStatus === 'missed' || rawStatus === 'recovered'
+      ? rawStatus
+      : 'all'
   const [search, setSearch] = useState('')
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null)
 
@@ -143,7 +154,19 @@ export default function CallsPage() {
         {STATUS_PILLS.map(pill => (
           <button
             key={pill.id}
-            onClick={() => setStatusFilter(pill.id)}
+            onClick={() => {
+              // Clone existing params so impersonation=1 and any future
+              // query keys survive the chip transition. 'all' clears the
+              // status key entirely so the URL stays clean (/calls).
+              const params = new URLSearchParams(searchParams.toString())
+              if (pill.id === 'all') {
+                params.delete('status')
+              } else {
+                params.set('status', pill.id)
+              }
+              const qs = params.toString()
+              router.push(qs ? `/calls?${qs}` : '/calls')
+            }}
             className="transition-all flex-shrink-0"
             style={{
               padding: '8px 16px',
@@ -274,6 +297,20 @@ export default function CallsPage() {
         </main>
       </div>
     </div>
+  )
+}
+
+// T-502756ed: Suspense wrapper required because CallsContent uses
+// useSearchParams (Next.js App Router demands a Suspense boundary on the
+// consumer or the build fails on /calls). Empty <div /> fallback is fine
+// for v1; flash-of-nothing only on hard refresh of /calls?... since
+// client-side navigation from dashboard cards re-uses an already-mounted
+// tree. Matches the pattern in src/app/kiosk/page.tsx.
+export default function CallsPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <CallsContent />
+    </Suspense>
   )
 }
 
