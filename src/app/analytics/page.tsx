@@ -88,19 +88,6 @@ export default function AnalyticsPage() {
     })
   }, [calls, resolvedWindow])
 
-  // TEMP DEBUG (T-f96b9613 missed-call definition investigation) — remove with the fix commit
-  useEffect(() => {
-    if (filteredCalls.length === 0) return
-    const breakdown = filteredCalls.reduce((acc, c) => {
-      const runtime = c as unknown as Record<string, unknown>
-      const key = `status=${String(runtime.status ?? 'undef')} | call_status=${String(runtime.call_status ?? 'undef')} | callback_status=${String(runtime.callback_status ?? 'undef')}`
-      acc[key] = (acc[key] ?? 0) + 1
-      return acc
-    }, {} as Record<string, number>)
-    // eslint-disable-next-line no-console
-    console.log('[T-f96b9613 DEBUG] status breakdown:', breakdown, 'sample call object:', filteredCalls[0])
-  }, [filteredCalls])
-
   // Heatmap: 7 days × 24 hours
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
@@ -117,12 +104,14 @@ export default function AnalyticsPage() {
 
   const heatmapMax = useMemo(() => Math.max(...heatmapData.flat(), 1), [heatmapData])
 
-  // Donut chart data
+  // Donut chart data. "Missed" includes 'ignored' (calls swept by the
+  // end-of-day auto-ignore cron) so the chart reflects the full missed-call
+  // surface area, not just rows still pending callback.
   const donutData = useMemo(() => {
     let completed = 0, missed = 0, recovered = 0
     filteredCalls.forEach(c => {
       if (c.status === 'completed') completed++
-      else if (c.status === 'missed' || c.status === 'no-answer') missed++
+      else if (c.status === 'missed' || c.status === 'no-answer' || c.status === 'ignored') missed++
       else if (c.status === 'recovered') recovered++
     })
     return { completed, missed, recovered, total: completed + missed + recovered }
@@ -147,7 +136,7 @@ export default function AnalyticsPage() {
       const entry = keyToBucket.get(key)
       if (entry) {
         entry.total++
-        if (call.status === 'missed' || call.status === 'no-answer') entry.missed++
+        if (call.status === 'missed' || call.status === 'no-answer' || call.status === 'ignored') entry.missed++
       }
     })
     return buckets
@@ -236,11 +225,20 @@ export default function AnalyticsPage() {
           </Card>
 
           {/* Donut + Trend, stacked vertically at all viewports so the donut
-              legend never aligns with the trend X-axis row. */}
+              legend never aligns with the trend X-axis row. The kiosk-context
+              banner sits between them when there are missed calls in the
+              window, framing what the chart numbers mean operationally. */}
           <div className="flex flex-col gap-5" style={{ marginBottom: 20 }}>
             <Card title="Call Distribution">
               <DonutChart data={donutData} />
             </Card>
+            {donutData.missed > 0 && (
+              <Card title="Here's how the kiosk helps">
+                <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.6 }}>
+                  When you miss a customer&apos;s call, the kiosk shows it as a missed-call card with their number and an SLA timer. One tap calls them back. Calls you recover this way show up as recovered orders in your reports.
+                </p>
+              </Card>
+            )}
             <Card title={`Daily Trend (${resolvedWindow.shortLabel})`}>
               {isSingleDayTrend ? (
                 <SingleDayTrendPlaceholder />
