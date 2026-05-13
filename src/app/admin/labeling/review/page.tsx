@@ -10,6 +10,7 @@ import {
   patchRecording,
 } from '../lib/api'
 import { AudioPlayer, type AudioPlayerHandle } from '../components/AudioPlayer'
+import { TagPanel, type TagPanelValue } from '../components/TagPanel'
 import { TranscriptColumn } from '../components/TranscriptColumn'
 import { diffSegments } from '../lib/segment-diff'
 import { formatDateTime, formatMmSs, truncate } from '../lib/formatters'
@@ -69,6 +70,13 @@ export default function ReviewQueuePage() {
   const [ownerEditSegments, setOwnerEditSegments] = useState<VerifiedSegment[]>([])
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const preEditRef = useRef<string>('')
+
+  // Owner-editable tag state (Commit 4.5). Initialised on recording load
+  // as a clone of the labeler's selections. On Approve the full payload
+  // includes all tag fields; on Send back tag fields are intentionally
+  // omitted so the labeler's selections survive the round-trip
+  // unchanged (asymmetric Option C semantics).
+  const [ownerTags, setOwnerTags] = useState<TagPanelValue | null>(null)
 
   // Audio player integration. activeSegmentIndex derives from currentTime
   // inside TranscriptColumn per column; clicking a segment seeks the audio.
@@ -166,12 +174,13 @@ export default function ReviewQueuePage() {
     }
   }, [authState, token, selectedId])
 
-  // Reset edit-state and seed owner's column whenever a new recording loads.
+  // Reset edit-state and seed owner's columns whenever a new recording loads.
   useEffect(() => {
     if (!recording) {
       setOwnerEditSegments([])
       setEditingIndex(null)
       setCurrentTime(0)
+      setOwnerTags(null)
       return
     }
     setOwnerEditSegments(
@@ -182,6 +191,18 @@ export default function ReviewQueuePage() {
     )
     setEditingIndex(null)
     setCurrentTime(0)
+    setOwnerTags({
+      language_profile_tag: recording.language_profile_tag,
+      call_type_tag: recording.call_type_tag,
+      audio_quality_tag: recording.audio_quality_tag,
+      error_tags: [...recording.error_tags],
+      contains_menu_items: recording.contains_menu_items,
+      contains_prices: recording.contains_prices,
+      contains_phone_numbers: recording.contains_phone_numbers,
+      contains_names: recording.contains_names,
+      is_holdout: recording.is_holdout,
+      reviewer_notes: recording.reviewer_notes ?? '',
+    })
   }, [recording])
 
   // ── Memoised derived state ─────────────────────────────────────────────
@@ -325,6 +346,22 @@ export default function ReviewQueuePage() {
         verified_segments: ownerEditSegments,
         reviewer_notes_for_labeler: trimmed || null,
       }
+      // Owner-edited tag state (Commit 4.5). Always carried on Approve so
+      // owner's choices overwrite labeler's. ownerTags is non-null
+      // whenever recording is non-null (set in the same load effect), but
+      // gate defensively anyway.
+      if (ownerTags) {
+        payload.error_tags = ownerTags.error_tags
+        payload.language_profile_tag = ownerTags.language_profile_tag
+        payload.call_type_tag = ownerTags.call_type_tag
+        payload.audio_quality_tag = ownerTags.audio_quality_tag
+        payload.contains_menu_items = ownerTags.contains_menu_items
+        payload.contains_prices = ownerTags.contains_prices
+        payload.contains_phone_numbers = ownerTags.contains_phone_numbers
+        payload.contains_names = ownerTags.contains_names
+        payload.is_holdout = ownerTags.is_holdout
+        payload.reviewer_notes = ownerTags.reviewer_notes
+      }
       await patchRecording(token, selectedId, payload)
       await advanceToNext()
     } catch (err) {
@@ -333,7 +370,7 @@ export default function ReviewQueuePage() {
     } finally {
       setActionInFlight(null)
     }
-  }, [token, selectedId, ownerEditSegments, notes, advanceToNext])
+  }, [token, selectedId, ownerEditSegments, ownerTags, notes, advanceToNext])
 
   const onSendBack = useCallback(async () => {
     if (!token || !selectedId) return
@@ -606,19 +643,9 @@ export default function ReviewQueuePage() {
                 </div>
               </div>
 
-              {recording.error_tags.length > 0 && (
-                <div className="flex-none px-4 py-2 border-t border-ink/10 bg-white flex flex-wrap gap-1 items-center">
-                  <span className="text-xs font-semibold text-brown mr-1">
-                    Error tags ({recording.error_tags.length}):
-                  </span>
-                  {recording.error_tags.map((t) => (
-                    <span
-                      key={t}
-                      className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800"
-                    >
-                      {t}
-                    </span>
-                  ))}
+              {ownerTags && (
+                <div className="flex-none max-h-[280px] overflow-y-auto border-t border-ink/10 bg-white">
+                  <TagPanel value={ownerTags} onChange={setOwnerTags} />
                 </div>
               )}
 
