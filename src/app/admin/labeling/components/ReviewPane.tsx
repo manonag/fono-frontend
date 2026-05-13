@@ -93,14 +93,23 @@ function buildState(rec: RecordingDetail): {
     reviewer_notes: rec.reviewer_notes ?? '',
   }
 
-  // T-2d16e333: auto-promote-on-save. When a row arrives as auto_labeled,
-  // the form's status pre-selects 'verified' so that the default Save
-  // action promotes it in one click. initial.status keeps the persisted
-  // 'auto_labeled' value, so computeDiff sees status as changed and the
-  // Save button enables on open. The user can still pick a different
-  // target from the dropdown before saving.
+  // Default the dropdown to the row's current status. For auto_labeled
+  // rows specifically, pre-select 'in_review' instead of the persisted
+  // 'auto_labeled' so:
+  //   1. The default Save promotes the row one step (signals "labeler is
+  //      done, ready for owner review") in one click.
+  //   2. initial.status keeps the persisted 'auto_labeled' value, so
+  //      computeDiff sees status as changed and the Save button enables
+  //      on open even before the labeler edits content.
+  //   3. The visible dropdown matches what the backend actually persists
+  //      for labeler saves. save_review's labeler branch strips status
+  //      from the payload and forces row.status='in_review' regardless,
+  //      so showing 'in_review' eliminates the cosmetic verified-vs-
+  //      in_review mismatch that the previous default produced.
+  // For every other status (in_review, suggestions_pending, verified,
+  // gold), the dropdown reflects rec.status as-is.
   const defaultFormStatus: Status =
-    rec.status === 'auto_labeled' ? 'verified' : rec.status
+    rec.status === 'auto_labeled' ? 'in_review' : rec.status
 
   return {
     form: { verified_segments: displayedSegments, status: defaultFormStatus, tags },
