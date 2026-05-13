@@ -25,13 +25,33 @@ interface TranscriptColumnProps {
   onEditCancel?: (index: number) => void
   onSpeakerToggle?: (index: number) => void
 
-  // Forward-compat optional props for Commits 4 (reviewer view) and 5
-  // (labeler suggestions view). NOT rendered in this commit; declared
-  // now so the new callers compile without type churn.
+  // Optional column header (rendered as a sticky h3 above the segment
+  // list).
   title?: string
+
+  // Optional per-segment diff status from diffSegments(); when provided,
+  // each row gets the diff Tailwind class from diffStatusToTailwindClass.
   diffStatuses?: SegmentDiffStatus[]
-  alternativeSegments?: VerifiedSegment[]
+
+  // Suggesting-mode alternatives. When mode === 'suggesting' and both
+  // alternativeMine / alternativeTheirs are provided, each segment whose
+  // current value differs from the corresponding alternative gets a small
+  // "Use mine" or "Use owner's" text button under the speaker pill. The
+  // button fires onUseSegmentFromAlternative(index, source) and the
+  // parent decides what segment to substitute. In notes-only send-back,
+  // pass undefined for alternativeTheirs to suppress the "Use owner's"
+  // button entirely.
+  alternativeMine?: VerifiedSegment[]
+  alternativeTheirs?: VerifiedSegment[]
   onUseSegmentFromAlternative?: (index: number, source: 'mine' | 'theirs') => void
+}
+
+function segmentsEqualForDiff(
+  a: VerifiedSegment | undefined,
+  b: VerifiedSegment | undefined,
+): boolean {
+  if (!a || !b) return false
+  return a.transcript === b.transcript && a.speaker_id === b.speaker_id
 }
 
 interface SpeakerStyles {
@@ -84,8 +104,13 @@ export function TranscriptColumn({
   onSpeakerToggle,
   title,
   diffStatuses,
+  alternativeMine,
+  alternativeTheirs,
+  onUseSegmentFromAlternative,
 }: TranscriptColumnProps) {
   const isEditable = mode === 'edit' || mode === 'suggesting'
+  const supportsAlternatives =
+    mode === 'suggesting' && Boolean(onUseSegmentFromAlternative)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const entryRefs = useRef<Array<HTMLDivElement | null>>([])
   const editInputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -163,6 +188,24 @@ export function TranscriptColumn({
           ? diffStatusToTailwindClass(diffStatuses[idx])
           : ''
 
+        // Suggesting-mode buttons. "Use mine" appears when the segment
+        // differs from the labeler's previous submission. "Use owner's"
+        // appears when the segment differs from the owner's suggestion.
+        // Both hidden while editing the same row to avoid mis-clicks
+        // while the textarea is active.
+        const mineCandidate = alternativeMine?.[idx]
+        const theirsCandidate = alternativeTheirs?.[idx]
+        const showUseMine =
+          supportsAlternatives &&
+          !isEditing &&
+          Boolean(mineCandidate) &&
+          !segmentsEqualForDiff(segment, mineCandidate)
+        const showUseTheirs =
+          supportsAlternatives &&
+          !isEditing &&
+          Boolean(theirsCandidate) &&
+          !segmentsEqualForDiff(segment, theirsCandidate)
+
         return (
           <div
             key={idx}
@@ -177,36 +220,62 @@ export function TranscriptColumn({
                   : ''
             } ${diffClass}`}
           >
-            <div
-              className={`flex-none flex items-center gap-0.5 rounded-full pl-2 pr-1 py-0.5 transition-colors duration-150 ${styles.pill}`}
-            >
-              <button
-                type="button"
-                onClick={() => onSeek(segment.start_time_seconds)}
-                title="Seek to this segment"
-                aria-label={`Seek to ${speakerLabel(segment.speaker_id)} segment at ${segment.start_time_seconds.toFixed(1)}s`}
-                className="font-bold font-mono text-xs w-7 text-left hover:underline"
+            <div className="flex-none flex flex-col items-start gap-0.5">
+              <div
+                className={`flex items-center gap-0.5 rounded-full pl-2 pr-1 py-0.5 transition-colors duration-150 ${styles.pill}`}
               >
-                {speakerLabel(segment.speaker_id)}
-              </button>
-              {isEditable && onSpeakerToggle ? (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSpeakerToggle(idx)
-                  }}
-                  disabled={!toggleable}
-                  title={
-                    toggleable
-                      ? 'Toggle speaker (S1 to S2)'
-                      : 'Cannot toggle non-standard speaker'
-                  }
-                  aria-label="Toggle speaker for this segment"
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] transition-colors duration-150 ${styles.swap} disabled:opacity-30 disabled:cursor-not-allowed`}
+                  onClick={() => onSeek(segment.start_time_seconds)}
+                  title="Seek to this segment"
+                  aria-label={`Seek to ${speakerLabel(segment.speaker_id)} segment at ${segment.start_time_seconds.toFixed(1)}s`}
+                  className="font-bold font-mono text-xs w-7 text-left hover:underline"
                 >
-                  ⇄
+                  {speakerLabel(segment.speaker_id)}
                 </button>
+                {isEditable && onSpeakerToggle ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSpeakerToggle(idx)
+                    }}
+                    disabled={!toggleable}
+                    title={
+                      toggleable
+                        ? 'Toggle speaker (S1 to S2)'
+                        : 'Cannot toggle non-standard speaker'
+                    }
+                    aria-label="Toggle speaker for this segment"
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] transition-colors duration-150 ${styles.swap} disabled:opacity-30 disabled:cursor-not-allowed`}
+                  >
+                    ⇄
+                  </button>
+                ) : null}
+              </div>
+              {(showUseMine || showUseTheirs) ? (
+                <div className="flex items-center gap-2 pl-1 text-[10px] leading-none">
+                  {showUseMine ? (
+                    <button
+                      type="button"
+                      onClick={() => onUseSegmentFromAlternative?.(idx, 'mine')}
+                      className="underline text-gray-600 hover:text-gray-900"
+                      title="Replace this segment with your previous submission"
+                    >
+                      Use mine
+                    </button>
+                  ) : null}
+                  {showUseTheirs ? (
+                    <button
+                      type="button"
+                      onClick={() => onUseSegmentFromAlternative?.(idx, 'theirs')}
+                      className="underline text-gray-600 hover:text-gray-900"
+                      title="Replace this segment with the owner's suggestion"
+                    >
+                      Use owner&apos;s
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <div className="flex-1 leading-relaxed min-w-0">

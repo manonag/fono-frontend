@@ -6,6 +6,7 @@ import { TranscriptColumn } from './TranscriptColumn'
 import { VerifiedEditor } from './VerifiedEditor'
 import { TagPanel, type TagPanelValue } from './TagPanel'
 import { SaveControls } from './SaveControls'
+import { SuggestionsResolvePane } from './SuggestionsResolvePane'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
 import type {
   PatchPayload,
@@ -396,6 +397,20 @@ export function ReviewPane({
       <main className="flex-1 flex items-center justify-center">
         <p className="text-brown text-sm">Select a recording from the queue.</p>
       </main>
+    )
+  }
+
+  // Branch into the labeler suggestions-handling view when the owner has
+  // sent this row back. The regular labeler workspace below is bypassed;
+  // all the form/save lifecycle still runs (cheap, no observable effects)
+  // but the pane Mourya sees is the three-column resolve view.
+  if (recording.status === 'suggestions_pending') {
+    return (
+      <SuggestionsResolvePane
+        recording={recording}
+        hasNext={hasNext}
+        onSave={onSave}
+      />
     )
   }
 
