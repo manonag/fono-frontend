@@ -29,6 +29,7 @@ const FILTERS: Array<{ key: QueueFilter; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'auto_labeled', label: 'Pending' },
   { key: 'in_review', label: 'In review' },
+  { key: 'suggestions_pending', label: 'Suggestions' },
   { key: 'verified', label: 'Verified' },
   { key: 'gold', label: 'Gold' },
 ]
@@ -36,6 +37,7 @@ const FILTERS: Array<{ key: QueueFilter; label: string }> = [
 const STATUS_BADGE_CLS: Record<Status, string> = {
   auto_labeled: 'bg-brown/15 text-brown',
   in_review: 'bg-amber-100 text-amber-800',
+  suggestions_pending: 'bg-yellow-100 text-yellow-800',
   verified: 'bg-green-100 text-green-800',
   gold: 'bg-purple-100 text-purple-800',
 }
@@ -43,6 +45,7 @@ const STATUS_BADGE_CLS: Record<Status, string> = {
 const STATUS_BADGE_LABEL: Record<Status, string> = {
   auto_labeled: 'pending',
   in_review: 'review',
+  suggestions_pending: 'suggestions',
   verified: 'verified',
   gold: 'gold',
 }

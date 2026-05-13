@@ -33,7 +33,14 @@ export function SaveControls({
   onDemote,
   demoting = false,
 }: SaveControlsProps) {
-  const allowed = STATUSES.filter((s) => canTransition(initialStatus, s))
+  // suggestions_pending is reached via owner review_action='send_back', not
+  // a direct status promotion, so it should not appear in the labeler save
+  // dropdown even though auto_labeled -> suggestions_pending is forward by
+  // rank. The labeler-side suggestions view (Commit 5) renders its own
+  // Resubmit-for-review action separate from this dropdown.
+  const allowed = STATUSES.filter(
+    (s) => s !== 'suggestions_pending' && canTransition(initialStatus, s),
+  )
 
   // T-2d16e333: secondary action visibility is keyed off the PERSISTED
   // status (initialStatus), not the dropdown selection. That way the

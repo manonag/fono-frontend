@@ -3,24 +3,35 @@
 export const STATUSES = [
   'auto_labeled',
   'in_review',
+  'suggestions_pending',
   'verified',
   'gold',
 ] as const
 export type Status = (typeof STATUSES)[number]
 
+// suggestions_pending sits between in_review and verified in rank. The
+// owner reaches it via review_action='send_back' on an in_review row;
+// the labeler returns the row to in_review by resolving with
+// resolved_segments (backward by rank, explicit allowlist below).
 export const STATUS_RANK: Record<Status, number> = {
   auto_labeled: 0,
   in_review: 1,
-  verified: 2,
-  gold: 3,
+  suggestions_pending: 2,
+  verified: 3,
+  gold: 4,
 }
 
 // T-2d16e333: explicit allowlist of backwards transitions for recovery
 // actions. Mirrors backend admin_labeling_enums.ALLOWED_BACKWARD_TRANSITIONS.
 // Keep in sync; backend is source of truth for what the API accepts.
+//
+// in_review -> suggestions_pending is forward by rank (auto-allowed) and
+// intentionally not listed here; this set is strictly about backwards
+// transitions.
 export const ALLOWED_BACKWARD_TRANSITIONS: ReadonlyArray<readonly [Status, Status]> = [
   ['verified', 'auto_labeled'],
   ['gold', 'verified'],
+  ['suggestions_pending', 'in_review'],
 ] as const
 
 export function canTransition(from: Status, to: Status): boolean {
@@ -119,6 +130,7 @@ export const AUDIO_QUALITY_LABELS: Record<AudioQualityTag, string> = {
 export const STATUS_LABELS: Record<Status, string> = {
   auto_labeled: 'Auto-labeled',
   in_review: 'In review',
+  suggestions_pending: 'Suggestions pending',
   verified: 'Verified',
   gold: 'Gold',
 }

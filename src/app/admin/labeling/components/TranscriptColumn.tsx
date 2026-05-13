@@ -2,19 +2,36 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import { speakerLabel } from '../lib/formatters'
+import type { SegmentDiffStatus } from '../lib/segment-diff'
+import { diffStatusToTailwindClass } from '../lib/segment-diff'
 import type { VerifiedSegment } from '../lib/types'
 
-interface KaraokeTranscriptProps {
+export type TranscriptMode = 'edit' | 'readonly' | 'suggesting'
+
+interface TranscriptColumnProps {
   segments: VerifiedSegment[]
+  mode: TranscriptMode
   fallbackTranscript: string | null
   currentTime: number
-  editingIndex: number | null
   onSeek: (seconds: number) => void
-  onEditStart: (index: number) => void
-  onEditChange: (index: number, transcript: string) => void
-  onEditCommit: () => void
-  onEditCancel: (index: number) => void
-  onSpeakerToggle: (index: number) => void
+
+  // Edit-mode props. The existing labeler page wires the same edit
+  // lifecycle hooks that KaraokeTranscript used pre-refactor; they are
+  // optional so a mode='readonly' caller does not have to stub them.
+  editingIndex?: number | null
+  onEditStart?: (index: number) => void
+  onEditChange?: (index: number, transcript: string) => void
+  onEditCommit?: () => void
+  onEditCancel?: (index: number) => void
+  onSpeakerToggle?: (index: number) => void
+
+  // Forward-compat optional props for Commits 4 (reviewer view) and 5
+  // (labeler suggestions view). NOT rendered in this commit; declared
+  // now so the new callers compile without type churn.
+  title?: string
+  diffStatuses?: SegmentDiffStatus[]
+  alternativeSegments?: VerifiedSegment[]
+  onUseSegmentFromAlternative?: (index: number, source: 'mine' | 'theirs') => void
 }
 
 interface SpeakerStyles {
@@ -53,18 +70,22 @@ function isToggleable(speakerId: string): boolean {
   return speakerId === 'speaker_0' || speakerId === 'speaker_1'
 }
 
-export function KaraokeTranscript({
+export function TranscriptColumn({
   segments,
+  mode,
   fallbackTranscript,
   currentTime,
-  editingIndex,
   onSeek,
+  editingIndex = null,
   onEditStart,
   onEditChange,
   onEditCommit,
   onEditCancel,
   onSpeakerToggle,
-}: KaraokeTranscriptProps) {
+  title,
+  diffStatuses,
+}: TranscriptColumnProps) {
+  const isEditable = mode === 'edit' || mode === 'suggesting'
   const containerRef = useRef<HTMLDivElement | null>(null)
   const entryRefs = useRef<Array<HTMLDivElement | null>>([])
   const editInputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -111,8 +132,11 @@ export function KaraokeTranscript({
   if (segments.length === 0) {
     return (
       <div className="px-4 py-3">
+        {title ? (
+          <h3 className="text-sm font-semibold text-ink mb-2">{title}</h3>
+        ) : null}
         <p className="text-xs text-brown mb-2">
-          No diarization available — showing flat machine transcript.
+          No diarization available. Showing flat machine transcript.
         </p>
         <p className="text-ink whitespace-pre-wrap leading-relaxed">
           {fallbackTranscript || (
@@ -125,11 +149,19 @@ export function KaraokeTranscript({
 
   return (
     <div ref={containerRef} className="px-4 py-3 space-y-1.5 overflow-y-auto">
+      {title ? (
+        <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-cream/95 backdrop-blur z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10">
+          {title}
+        </h3>
+      ) : null}
       {segments.map((segment, idx) => {
         const styles = stylesFor(segment.speaker_id)
         const isActive = idx === activeIdx
-        const isEditing = idx === editingIndex
+        const isEditing = isEditable && idx === editingIndex
         const toggleable = isToggleable(segment.speaker_id)
+        const diffClass = diffStatuses?.[idx]
+          ? diffStatusToTailwindClass(diffStatuses[idx])
+          : ''
 
         return (
           <div
@@ -143,7 +175,7 @@ export function KaraokeTranscript({
                 : isActive
                   ? styles.active
                   : ''
-            }`}
+            } ${diffClass}`}
           >
             <div
               className={`flex-none flex items-center gap-0.5 rounded-full pl-2 pr-1 py-0.5 transition-colors duration-150 ${styles.pill}`}
@@ -157,26 +189,28 @@ export function KaraokeTranscript({
               >
                 {speakerLabel(segment.speaker_id)}
               </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSpeakerToggle(idx)
-                }}
-                disabled={!toggleable}
-                title={
-                  toggleable
-                    ? 'Toggle speaker (S1 ↔ S2)'
-                    : 'Cannot toggle non-standard speaker'
-                }
-                aria-label="Toggle speaker for this segment"
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] transition-colors duration-150 ${styles.swap} disabled:opacity-30 disabled:cursor-not-allowed`}
-              >
-                ⇄
-              </button>
+              {isEditable && onSpeakerToggle ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSpeakerToggle(idx)
+                  }}
+                  disabled={!toggleable}
+                  title={
+                    toggleable
+                      ? 'Toggle speaker (S1 to S2)'
+                      : 'Cannot toggle non-standard speaker'
+                  }
+                  aria-label="Toggle speaker for this segment"
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] transition-colors duration-150 ${styles.swap} disabled:opacity-30 disabled:cursor-not-allowed`}
+                >
+                  ⇄
+                </button>
+              ) : null}
             </div>
             <div className="flex-1 leading-relaxed min-w-0">
-              {isEditing ? (
+              {isEditing && onEditChange && onEditCommit && onEditCancel ? (
                 <textarea
                   ref={editInputRef}
                   value={segment.transcript}
@@ -200,7 +234,7 @@ export function KaraokeTranscript({
                   spellCheck={false}
                   className="w-full bg-transparent border-0 outline-none focus:outline-none resize-none text-ink leading-relaxed font-sans p-0"
                 />
-              ) : (
+              ) : isEditable && onEditStart ? (
                 <button
                   type="button"
                   onClick={() => onEditStart(idx)}
@@ -213,6 +247,16 @@ export function KaraokeTranscript({
                     <span className="text-brown italic">… (click to edit)</span>
                   )}
                 </button>
+              ) : (
+                <div
+                  className={`block w-full text-left text-ink px-1 -mx-1 py-0.5 whitespace-pre-wrap ${
+                    isActive ? 'font-semibold' : ''
+                  }`}
+                >
+                  {segment.transcript || (
+                    <span className="text-brown italic">(empty segment)</span>
+                  )}
+                </div>
               )}
             </div>
           </div>

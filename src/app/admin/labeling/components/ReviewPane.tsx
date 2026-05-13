@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
-import { KaraokeTranscript } from './KaraokeTranscript'
+import { TranscriptColumn } from './TranscriptColumn'
 import { VerifiedEditor } from './VerifiedEditor'
 import { TagPanel, type TagPanelValue } from './TagPanel'
 import { SaveControls } from './SaveControls'
@@ -430,7 +430,8 @@ export function ReviewPane({
           <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-brown">
             Karaoke Transcript
           </h3>
-          <KaraokeTranscript
+          <TranscriptColumn
+            mode="edit"
             segments={segments}
             fallbackTranscript={recording.machine.transcript}
             currentTime={currentTime}
