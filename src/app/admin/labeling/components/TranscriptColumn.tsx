@@ -44,6 +44,14 @@ interface TranscriptColumnProps {
   alternativeMine?: VerifiedSegment[]
   alternativeTheirs?: VerifiedSegment[]
   onUseSegmentFromAlternative?: (index: number, source: 'mine' | 'theirs') => void
+
+  // Optional external ref to the scrollable container. Used by
+  // useSyncedColumnScroll on the reviewer + suggestions pages to
+  // listen for scroll events on each column and align siblings by
+  // segment index. When omitted, an internal ref is used (legacy
+  // behavior; the labeler workspace mode='edit' caller does not need
+  // sync). Structural type avoids React.RefObject's readonly current.
+  scrollContainerRef?: { current: HTMLDivElement | null }
 }
 
 function segmentsEqualForDiff(
@@ -107,6 +115,7 @@ export function TranscriptColumn({
   alternativeMine,
   alternativeTheirs,
   onUseSegmentFromAlternative,
+  scrollContainerRef,
 }: TranscriptColumnProps) {
   const isEditable = mode === 'edit' || mode === 'suggesting'
   const supportsAlternatives =
@@ -173,7 +182,13 @@ export function TranscriptColumn({
   }
 
   return (
-    <div ref={containerRef} className="px-4 py-3 space-y-1.5 overflow-y-auto">
+    <div
+      ref={(el) => {
+        containerRef.current = el
+        if (scrollContainerRef) scrollContainerRef.current = el
+      }}
+      className="px-4 py-3 space-y-1.5 overflow-y-auto"
+    >
       {title ? (
         <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-cream/95 backdrop-blur z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10">
           {title}
@@ -212,6 +227,7 @@ export function TranscriptColumn({
             ref={(el) => {
               entryRefs.current[idx] = el
             }}
+            data-segment-index={idx}
             className={`flex items-start gap-2 px-1 py-1 rounded transition-colors ${
               isEditing
                 ? 'border border-terra bg-cream'

@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
-import { TagPanel, type TagPanelValue } from './TagPanel'
+import { CollapsibleTagPanel } from './CollapsibleTagPanel'
+import { ScrollSyncToggle } from './ScrollSyncToggle'
+import { type TagPanelValue } from './TagPanel'
 import { TranscriptColumn } from './TranscriptColumn'
+import { useSyncedColumnScroll } from '../hooks/useSyncedColumnScroll'
 import { diffSegments } from '../lib/segment-diff'
 import { formatMmSs } from '../lib/formatters'
 import type {
@@ -90,6 +93,16 @@ export function SuggestionsResolvePane({
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Bidirectional scroll sync (Commit 5.7). Mirrors the reviewer page.
+  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(false)
+  const col1Ref = useRef<HTMLDivElement | null>(null)
+  const col2Ref = useRef<HTMLDivElement | null>(null)
+  const col3Ref = useRef<HTMLDivElement | null>(null)
+  useSyncedColumnScroll({
+    enabled: scrollSyncEnabled,
+    columnRefs: [col1Ref, col2Ref, col3Ref],
+  })
 
   // Reset working state whenever the recording changes.
   useEffect(() => {
@@ -270,6 +283,7 @@ export function SuggestionsResolvePane({
             fallbackTranscript={recording.verified_transcript}
             currentTime={currentTime}
             onSeek={handleSeek}
+            scrollContainerRef={col1Ref}
           />
         </div>
         <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
@@ -282,9 +296,10 @@ export function SuggestionsResolvePane({
               currentTime={currentTime}
               onSeek={handleSeek}
               diffStatuses={diffStatusesCol2}
+              scrollContainerRef={col2Ref}
             />
           ) : (
-            <div className="px-4 py-3 h-full flex flex-col">
+            <div ref={col2Ref} className="px-4 py-3 h-full flex flex-col overflow-y-auto">
               <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-cream/95 backdrop-blur z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10">
                 Owner sent this back with notes only
               </h3>
@@ -313,13 +328,19 @@ export function SuggestionsResolvePane({
             alternativeMine={labelerPreviousSegments}
             alternativeTheirs={ownerSuggestedSegments ?? undefined}
             onUseSegmentFromAlternative={handleUseFromAlternative}
+            scrollContainerRef={col3Ref}
           />
         </div>
       </div>
 
-      <div className="flex-none max-h-[240px] overflow-y-auto border-t border-ink/10 bg-white">
-        <TagPanel value={tags} onChange={setTags} />
+      <div className="flex-none border-t border-ink/10">
+        <CollapsibleTagPanel value={tags} onChange={setTags} />
       </div>
+
+      <ScrollSyncToggle
+        enabled={scrollSyncEnabled}
+        onToggle={() => setScrollSyncEnabled((v) => !v)}
+      />
 
       <div className="flex-none border-t border-ink/10 bg-white px-4 py-3 flex items-center justify-end gap-3">
         {saveError ? (

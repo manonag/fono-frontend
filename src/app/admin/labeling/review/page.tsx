@@ -10,8 +10,11 @@ import {
   patchRecording,
 } from '../lib/api'
 import { AudioPlayer, type AudioPlayerHandle } from '../components/AudioPlayer'
-import { TagPanel, type TagPanelValue } from '../components/TagPanel'
+import { CollapsibleTagPanel } from '../components/CollapsibleTagPanel'
+import { ScrollSyncToggle } from '../components/ScrollSyncToggle'
+import { type TagPanelValue } from '../components/TagPanel'
 import { TranscriptColumn } from '../components/TranscriptColumn'
+import { useSyncedColumnScroll } from '../hooks/useSyncedColumnScroll'
 import { diffSegments } from '../lib/segment-diff'
 import { formatDateTime, formatMmSs, truncate } from '../lib/formatters'
 import type {
@@ -82,6 +85,20 @@ export default function ReviewQueuePage() {
   // inside TranscriptColumn per column; clicking a segment seeks the audio.
   const audioRef = useRef<AudioPlayerHandle | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
+
+  // Bidirectional scroll sync (Commit 5.7). Off by default; the floating
+  // toggle button at the bottom-right flips it on for the session. When on,
+  // a scroll in any column scrolls the other two so the segment at the top
+  // matches across all three columns. Off resets each column to scroll
+  // independently (pre-5.7 behavior).
+  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(false)
+  const col1Ref = useRef<HTMLDivElement | null>(null)
+  const col2Ref = useRef<HTMLDivElement | null>(null)
+  const col3Ref = useRef<HTMLDivElement | null>(null)
+  useSyncedColumnScroll({
+    enabled: scrollSyncEnabled,
+    columnRefs: [col1Ref, col2Ref, col3Ref],
+  })
 
   useEffect(() => {
     if (token === undefined) return
@@ -611,6 +628,7 @@ export default function ReviewQueuePage() {
                     fallbackTranscript={recording.machine.transcript}
                     currentTime={currentTime}
                     onSeek={handleSeek}
+                    scrollContainerRef={col1Ref}
                   />
                 </div>
                 <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
@@ -622,6 +640,7 @@ export default function ReviewQueuePage() {
                     currentTime={currentTime}
                     onSeek={handleSeek}
                     diffStatuses={diffStatusesLabeler}
+                    scrollContainerRef={col2Ref}
                   />
                 </div>
                 <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
@@ -639,15 +658,21 @@ export default function ReviewQueuePage() {
                     onEditCancel={handleEditCancel}
                     onSpeakerToggle={swapOwnerSegmentSpeaker}
                     diffStatuses={diffStatusesOwner}
+                    scrollContainerRef={col3Ref}
                   />
                 </div>
               </div>
 
               {ownerTags && (
-                <div className="flex-none max-h-[280px] overflow-y-auto border-t border-ink/10 bg-white">
-                  <TagPanel value={ownerTags} onChange={setOwnerTags} />
+                <div className="flex-none border-t border-ink/10">
+                  <CollapsibleTagPanel value={ownerTags} onChange={setOwnerTags} />
                 </div>
               )}
+
+              <ScrollSyncToggle
+                enabled={scrollSyncEnabled}
+                onToggle={() => setScrollSyncEnabled((v) => !v)}
+              />
 
               <div className="flex-none border-t border-ink/10 bg-white px-4 py-3 space-y-2">
                 <label className="block">
