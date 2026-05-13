@@ -5,6 +5,7 @@ import { useFonoToken } from '@/hooks/use-fono-token'
 import { useHeartbeat } from '@/hooks/use-heartbeat'
 import { LabelerHeader, deriveMyCounts } from './components/LabelerHeader'
 import { QueuePane } from './components/QueuePane'
+import { ResizableSplit } from './components/ResizableSplit'
 import { ReviewPane } from './components/ReviewPane'
 import { StatsHeader } from './components/StatsHeader'
 import {
@@ -379,28 +380,35 @@ export default function LabelingPage() {
         activeLabelers={activeLabelers}
       />
       <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
-      <div className="flex-1 flex min-h-0">
-        <QueuePane
-          items={queue}
-          total={queueTotal}
-          loading={queueLoading}
-          error={queueError}
-          filter={filter}
-          selectedId={selectedId}
-          currentUserId={me?.user_id ?? null}
-          onFilterChange={handleFilterChange}
-          onSelect={handleSelect}
-          onDemote={handleDemote}
-        />
-        <ReviewPane
-          recording={recording}
-          loading={recordingLoading}
-          error={recordingError}
-          hasNext={hasNext}
-          onSave={handleSave}
-          onDemote={handlePaneDemote}
-        />
-      </div>
+      <ResizableSplit
+        className="flex-1 min-h-0"
+        initialLeftWidth="33%"
+        minWidth={240}
+        left={
+          <QueuePane
+            items={queue}
+            total={queueTotal}
+            loading={queueLoading}
+            error={queueError}
+            filter={filter}
+            selectedId={selectedId}
+            currentUserId={me?.user_id ?? null}
+            onFilterChange={handleFilterChange}
+            onSelect={handleSelect}
+            onDemote={handleDemote}
+          />
+        }
+        right={
+          <ReviewPane
+            recording={recording}
+            loading={recordingLoading}
+            error={recordingError}
+            hasNext={hasNext}
+            onSave={handleSave}
+            onDemote={handlePaneDemote}
+          />
+        }
+      />
       {queueComplete && (
         <div className="fixed inset-x-0 bottom-6 flex justify-center pointer-events-none">
           <div className="pointer-events-auto bg-ink text-cream px-6 py-3 rounded shadow-lg flex items-center gap-3">

@@ -167,7 +167,7 @@ export function TranscriptColumn({
     return (
       <div className="px-4 py-3">
         {title ? (
-          <h3 className="text-sm font-semibold text-ink mb-2">{title}</h3>
+          <h3 className="text-sm font-semibold text-ink mb-2 bg-white">{title}</h3>
         ) : null}
         <p className="text-xs text-brown mb-2">
           No diarization available. Showing flat machine transcript.
@@ -190,7 +190,7 @@ export function TranscriptColumn({
       className="px-4 py-3 space-y-1.5 overflow-y-auto"
     >
       {title ? (
-        <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-cream/95 backdrop-blur z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10">
+        <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-white z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10 shadow-sm">
           {title}
         </h3>
       ) : null}

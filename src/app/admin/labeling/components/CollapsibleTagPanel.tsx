@@ -12,6 +12,9 @@ interface CollapsibleTagPanelProps {
   value: TagPanelValue
   onChange: (next: TagPanelValue) => void
   defaultExpanded?: boolean
+  /** Forwarded to TagPanel. Used by the labeler page to suppress
+   * keyboard shortcuts while the reviewer-notes textarea has focus. */
+  onTextFocusChange?: (focused: boolean) => void
 }
 
 /**
@@ -27,6 +30,7 @@ export function CollapsibleTagPanel({
   value,
   onChange,
   defaultExpanded = false,
+  onTextFocusChange,
 }: CollapsibleTagPanelProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = summarizeTags(value)
@@ -69,7 +73,11 @@ export function CollapsibleTagPanel({
       </button>
       {expanded ? (
         <div className="max-h-[280px] overflow-y-auto border-t border-ink/10">
-          <TagPanel value={value} onChange={onChange} />
+          <TagPanel
+            value={value}
+            onChange={onChange}
+            onTextFocusChange={onTextFocusChange}
+          />
         </div>
       ) : null}
     </div>

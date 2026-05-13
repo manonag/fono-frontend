@@ -12,35 +12,51 @@ interface UseSyncedColumnScrollOptions {
   segmentSelector?: string
 }
 
+interface UseSyncedColumnScrollReturn {
+  /**
+   * Programmatically align all enabled-sync columns so the segment with
+   * the given data-segment-index sits at the top. Gated on `enabled` per
+   * architect re-decision: if the user has sync turned off, editing a
+   * segment in one column should not move the others.
+   */
+  scrollToSegment: (index: number) => void
+}
+
 /**
  * Bidirectional scroll sync across the three transcript columns on the
  * reviewer / labeler-suggestions pages.
  *
  * When `enabled` is true, scrolling any column scrolls the other columns
- * so the segment at the top of the source column is also at the top of
- * every other column. Segments are identified by data-segment-index.
+ * to mirror the same segment + sub-segment offset. Lock is tight enough
+ * that the three columns appear visually rigid even mid-scroll.
  *
- * Implementation notes
+ * Algorithm
  *
- *   1. We listen for scroll events on each column's scrollable container.
- *   2. On a real user scroll, we find the first segment whose top is at
- *      or below the column's content top (with a small slack). That
- *      segment's data-segment-index is the alignment target.
- *   3. We programmatically scroll the OTHER columns so their matching
- *      segment lines up at the top. The active-segment scrollIntoView
- *      logic inside TranscriptColumn uses block: 'center', which lives
- *      alongside this hook fine because the guard flag below prevents
- *      a programmatic scroll from cascading.
+ *   1. On a real user scroll, find the FIRST segment in the source whose
+ *      top is at or below the source column's content top. That segment
+ *      is the anchor.
+ *   2. Compute topOffset = anchorSeg.top - sourceColumn.top. Positive
+ *      when the anchor segment has not yet reached the top (preceding
+ *      segment is partially visible above); zero when the anchor is
+ *      flush with the column top.
+ *   3. For each OTHER column, locate the segment with the same data-
+ *      segment-index. Adjust its column's scrollTop so the matching
+ *      segment's top sits at columnTop + topOffset. The adjustment is
+ *      column-relative: scrollTop += (currentDelta - desiredDelta).
  *   4. A 100ms ignore window suppresses re-entry while the programmatic
  *      scrolls settle. Real follow-up scrolls land outside the window.
+ *
+ * The sub-segment offset tracking is the difference from 5.7's
+ * implementation, which only aligned segment boundaries and could
+ * drift by up to one segment's height. With offset tracking the three
+ * columns lock visually within a few pixels regardless of mid-segment
+ * scroll position.
  */
 export function useSyncedColumnScroll({
   enabled,
   columnRefs,
   segmentSelector = '[data-segment-index]',
-}: UseSyncedColumnScrollOptions): void {
-  // columnRefs identity changes per render in the parent (array literal),
-  // so depend on length and `enabled` only. Refs themselves are stable.
+}: UseSyncedColumnScrollOptions): UseSyncedColumnScrollReturn {
   const refsLength = columnRefs.length
 
   useEffect(() => {
@@ -66,37 +82,52 @@ export function useSyncedColumnScroll({
       if (segments.length === 0) return
 
       const sourceRect = sourceEl.getBoundingClientRect()
-      let visibleIndex = -1
+      let anchorIndex = -1
+      let topOffset = 0
       for (const seg of Array.from(segments)) {
-        const segRect = (seg as HTMLElement).getBoundingClientRect()
-        if (segRect.top >= sourceRect.top - 20) {
-          const dataIdx = (seg as HTMLElement).getAttribute('data-segment-index')
+        const segEl = seg as HTMLElement
+        const segRect = segEl.getBoundingClientRect()
+        if (segRect.top >= sourceRect.top) {
+          // First segment whose top is at or below the source column top.
+          const dataIdx = segEl.getAttribute('data-segment-index')
           if (dataIdx !== null) {
-            visibleIndex = parseInt(dataIdx, 10)
+            const parsed = parseInt(dataIdx, 10)
+            if (!Number.isNaN(parsed)) {
+              anchorIndex = parsed
+              topOffset = segRect.top - sourceRect.top
+            }
           }
           break
         }
       }
 
-      if (visibleIndex < 0 || Number.isNaN(visibleIndex)) return
+      if (anchorIndex < 0) return
 
       setIgnoreWindow()
+      alignOtherColumns(sourceIdx, anchorIndex, topOffset)
+    }
 
+    const alignOtherColumns = (
+      sourceIdx: number,
+      anchorIndex: number,
+      topOffset: number,
+    ) => {
       columnRefs.forEach((ref, otherIdx) => {
         if (otherIdx === sourceIdx) return
         const otherEl = ref.current
         if (!otherEl) return
         const targetSeg = otherEl.querySelector(
-          `${segmentSelector}[data-segment-index="${visibleIndex}"]`,
-        )
+          `${segmentSelector}[data-segment-index="${anchorIndex}"]`,
+        ) as HTMLElement | null
         if (!targetSeg) return
-        const targetRect = (targetSeg as HTMLElement).getBoundingClientRect()
+        const targetRect = targetSeg.getBoundingClientRect()
         const otherRect = otherEl.getBoundingClientRect()
-        // Adjust scrollTop so the target segment's top aligns with the
-        // column's content top. scrollIntoView({block: 'start'}) would
-        // also work but can scroll ancestor containers; setting scrollTop
-        // directly stays within the column.
-        otherEl.scrollTop += targetRect.top - otherRect.top
+        // Current top delta = targetRect.top - otherRect.top.
+        // We want the delta to equal topOffset. Diff = current - desired.
+        // Adding diff to scrollTop scrolls the column DOWN by that
+        // amount (which moves content UP by that amount), so the
+        // target segment moves UP toward the desired position.
+        otherEl.scrollTop += targetRect.top - otherRect.top - topOffset
       })
     }
 
@@ -113,10 +144,34 @@ export function useSyncedColumnScroll({
       cleanupFns.forEach((fn) => fn())
       if (ignoreTimeout) clearTimeout(ignoreTimeout)
     }
-    // columnRefs is intentionally not in the dep array (it's a new array
-    // literal each render). The hook re-installs when enabled flips or
-    // when the number of columns changes; the refs themselves are stable
-    // useRef returns from the parent.
+    // columnRefs is a new array literal each render; the refs themselves
+    // are stable across renders so closure-captured access works. Re-install
+    // listeners only when sync flips or column count changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, refsLength, segmentSelector])
+
+  /**
+   * Align every column to the given segment index with zero top offset
+   * (segment top flush with column top). Used by the parent when a
+   * segment enters edit mode so the other columns scroll to the same
+   * segment for side-by-side comparison. Respects `enabled`: when sync
+   * is off the user explicitly opted out, so editing must not move
+   * other columns either.
+   */
+  const scrollToSegment = (index: number) => {
+    if (!enabled) return
+    columnRefs.forEach((ref) => {
+      const container = ref.current
+      if (!container) return
+      const targetSeg = container.querySelector(
+        `${segmentSelector}[data-segment-index="${index}"]`,
+      ) as HTMLElement | null
+      if (!targetSeg) return
+      const containerRect = container.getBoundingClientRect()
+      const targetRect = targetSeg.getBoundingClientRect()
+      container.scrollTop += targetRect.top - containerRect.top
+    })
+  }
+
+  return { scrollToSegment }
 }

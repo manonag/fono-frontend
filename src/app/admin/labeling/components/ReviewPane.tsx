@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
 import { TranscriptColumn } from './TranscriptColumn'
 import { VerifiedEditor } from './VerifiedEditor'
-import { TagPanel, type TagPanelValue } from './TagPanel'
+import { type TagPanelValue } from './TagPanel'
+import { CollapsibleTagPanel } from './CollapsibleTagPanel'
 import { SaveControls } from './SaveControls'
 import { SuggestionsResolvePane } from './SuggestionsResolvePane'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
@@ -471,7 +472,7 @@ export function ReviewPane({
         <hr className="border-ink/10" />
         <VerifiedEditor value={derivedVerifiedText} />
         <hr className="border-ink/10" />
-        <TagPanel
+        <CollapsibleTagPanel
           value={form.tags}
           onChange={(tags) => setForm((f) => (f ? { ...f, tags } : f))}
           onTextFocusChange={setTextFocused}

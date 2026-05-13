@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
 import { CollapsibleTagPanel } from './CollapsibleTagPanel'
+import { ResizableSplit } from './ResizableSplit'
 import { ScrollSyncToggle } from './ScrollSyncToggle'
 import { type TagPanelValue } from './TagPanel'
 import { TranscriptColumn } from './TranscriptColumn'
@@ -99,7 +100,7 @@ export function SuggestionsResolvePane({
   const col1Ref = useRef<HTMLDivElement | null>(null)
   const col2Ref = useRef<HTMLDivElement | null>(null)
   const col3Ref = useRef<HTMLDivElement | null>(null)
-  useSyncedColumnScroll({
+  const { scrollToSegment } = useSyncedColumnScroll({
     enabled: scrollSyncEnabled,
     columnRefs: [col1Ref, col2Ref, col3Ref],
   })
@@ -274,63 +275,84 @@ export function SuggestionsResolvePane({
         </div>
       ) : null}
 
-      <div className="flex-1 grid grid-cols-3 gap-2 p-2 min-h-0 overflow-hidden">
-        <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-          <TranscriptColumn
-            mode="readonly"
-            title="Your previous submission"
-            segments={labelerPreviousSegments}
-            fallbackTranscript={recording.verified_transcript}
-            currentTime={currentTime}
-            onSeek={handleSeek}
-            scrollContainerRef={col1Ref}
-          />
-        </div>
-        <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-          {hasOwnerSegments && ownerSuggestedSegments ? (
-            <TranscriptColumn
-              mode="readonly"
-              title="Owner's suggestions"
-              segments={ownerSuggestedSegments}
-              fallbackTranscript={recording.machine.transcript}
-              currentTime={currentTime}
-              onSeek={handleSeek}
-              diffStatuses={diffStatusesCol2}
-              scrollContainerRef={col2Ref}
-            />
-          ) : (
-            <div ref={col2Ref} className="px-4 py-3 h-full flex flex-col overflow-y-auto">
-              <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-cream/95 backdrop-blur z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10">
-                Owner sent this back with notes only
-              </h3>
-              <p className="text-sm text-brown mt-4">
-                The owner did not edit any segments. Read the notes above and
-                edit your working copy on the right based on the guidance.
-              </p>
+      <div className="flex-1 min-h-0 p-2 overflow-hidden">
+        <ResizableSplit
+          className="h-full"
+          initialLeftWidth="33.33%"
+          minWidth={200}
+          left={
+            <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+              <TranscriptColumn
+                mode="readonly"
+                title="Your previous submission"
+                segments={labelerPreviousSegments}
+                fallbackTranscript={recording.verified_transcript}
+                currentTime={currentTime}
+                onSeek={handleSeek}
+                scrollContainerRef={col1Ref}
+              />
             </div>
-          )}
-        </div>
-        <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-          <TranscriptColumn
-            mode="suggesting"
-            title="Your working copy"
-            segments={resolvedSegments}
-            fallbackTranscript={recording.verified_transcript}
-            currentTime={currentTime}
-            editingIndex={editingIndex}
-            onSeek={handleSeek}
-            onEditStart={handleEditStart}
-            onEditChange={updateResolvedTranscript}
-            onEditCommit={handleEditCommit}
-            onEditCancel={handleEditCancel}
-            onSpeakerToggle={swapResolvedSpeaker}
-            diffStatuses={diffStatusesCol3}
-            alternativeMine={labelerPreviousSegments}
-            alternativeTheirs={ownerSuggestedSegments ?? undefined}
-            onUseSegmentFromAlternative={handleUseFromAlternative}
-            scrollContainerRef={col3Ref}
-          />
-        </div>
+          }
+          right={
+            <ResizableSplit
+              className="h-full"
+              initialLeftWidth="50%"
+              minWidth={200}
+              left={
+                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+                  {hasOwnerSegments && ownerSuggestedSegments ? (
+                    <TranscriptColumn
+                      mode="readonly"
+                      title="Owner's suggestions"
+                      segments={ownerSuggestedSegments}
+                      fallbackTranscript={recording.machine.transcript}
+                      currentTime={currentTime}
+                      onSeek={handleSeek}
+                      diffStatuses={diffStatusesCol2}
+                      scrollContainerRef={col2Ref}
+                    />
+                  ) : (
+                    <div ref={col2Ref} className="px-4 py-3 h-full flex flex-col overflow-y-auto">
+                      <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-white z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10 shadow-sm">
+                        Owner sent this back with notes only
+                      </h3>
+                      <p className="text-sm text-brown mt-4">
+                        The owner did not edit any segments. Read the notes above and
+                        edit your working copy on the right based on the guidance.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              }
+              right={
+                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+                  <TranscriptColumn
+                    mode="suggesting"
+                    title="Your working copy"
+                    segments={resolvedSegments}
+                    fallbackTranscript={recording.verified_transcript}
+                    currentTime={currentTime}
+                    editingIndex={editingIndex}
+                    onSeek={handleSeek}
+                    onEditStart={(idx) => {
+                      scrollToSegment(idx)
+                      handleEditStart(idx)
+                    }}
+                    onEditChange={updateResolvedTranscript}
+                    onEditCommit={handleEditCommit}
+                    onEditCancel={handleEditCancel}
+                    onSpeakerToggle={swapResolvedSpeaker}
+                    diffStatuses={diffStatusesCol3}
+                    alternativeMine={labelerPreviousSegments}
+                    alternativeTheirs={ownerSuggestedSegments ?? undefined}
+                    onUseSegmentFromAlternative={handleUseFromAlternative}
+                    scrollContainerRef={col3Ref}
+                  />
+                </div>
+              }
+            />
+          }
+        />
       </div>
 
       <div className="flex-none border-t border-ink/10">

@@ -86,7 +86,7 @@ export function QueuePane({
   }, [openMenuId])
 
   return (
-    <aside className="w-1/3 border-r border-ink/10 bg-white flex flex-col min-h-0">
+    <aside className="w-full h-full border-r border-ink/10 bg-white flex flex-col min-h-0">
       <div className="px-4 py-3 border-b border-ink/10">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-ink">Queue</h2>

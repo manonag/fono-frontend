@@ -11,6 +11,7 @@ import {
 } from '../lib/api'
 import { AudioPlayer, type AudioPlayerHandle } from '../components/AudioPlayer'
 import { CollapsibleTagPanel } from '../components/CollapsibleTagPanel'
+import { ResizableSplit } from '../components/ResizableSplit'
 import { ScrollSyncToggle } from '../components/ScrollSyncToggle'
 import { type TagPanelValue } from '../components/TagPanel'
 import { TranscriptColumn } from '../components/TranscriptColumn'
@@ -95,7 +96,7 @@ export default function ReviewQueuePage() {
   const col1Ref = useRef<HTMLDivElement | null>(null)
   const col2Ref = useRef<HTMLDivElement | null>(null)
   const col3Ref = useRef<HTMLDivElement | null>(null)
-  useSyncedColumnScroll({
+  const { scrollToSegment } = useSyncedColumnScroll({
     enabled: scrollSyncEnabled,
     columnRefs: [col1Ref, col2Ref, col3Ref],
   })
@@ -500,8 +501,12 @@ export default function ReviewQueuePage() {
         </div>
       </header>
 
-      <div className="flex-1 flex min-h-0">
-        <aside className="w-1/3 border-r border-ink/10 bg-white flex flex-col min-h-0">
+      <ResizableSplit
+        className="flex-1 min-h-0"
+        initialLeftWidth="33%"
+        minWidth={240}
+        left={
+          <aside className="h-full w-full border-r border-ink/10 bg-white flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-ink/10 flex items-center justify-between">
             <h2 className="font-semibold text-ink">Pending review</h2>
             <span className="text-xs text-brown">{total} total</span>
@@ -567,9 +572,10 @@ export default function ReviewQueuePage() {
               })}
             </ul>
           </div>
-        </aside>
-
-        <main className="flex-1 flex flex-col min-h-0 bg-cream">
+          </aside>
+        }
+        right={
+          <main className="flex-1 flex flex-col min-h-0 bg-cream">
           {recordingLoading && !recording && (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-brown text-sm">Loading recording…</p>
@@ -619,48 +625,69 @@ export default function ReviewQueuePage() {
                 </div>
               </div>
 
-              <div className="flex-1 grid grid-cols-3 gap-2 p-2 min-h-0 overflow-hidden">
-                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-                  <TranscriptColumn
-                    mode="readonly"
-                    title="Machine (Sarvam)"
-                    segments={machineSegments}
-                    fallbackTranscript={recording.machine.transcript}
-                    currentTime={currentTime}
-                    onSeek={handleSeek}
-                    scrollContainerRef={col1Ref}
-                  />
-                </div>
-                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-                  <TranscriptColumn
-                    mode="readonly"
-                    title="Labeler's submission"
-                    segments={verifiedSegments}
-                    fallbackTranscript={recording.verified_transcript}
-                    currentTime={currentTime}
-                    onSeek={handleSeek}
-                    diffStatuses={diffStatusesLabeler}
-                    scrollContainerRef={col2Ref}
-                  />
-                </div>
-                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
-                  <TranscriptColumn
-                    mode="edit"
-                    title="Your edits"
-                    segments={ownerEditSegments}
-                    fallbackTranscript={recording.verified_transcript}
-                    currentTime={currentTime}
-                    editingIndex={editingIndex}
-                    onSeek={handleSeek}
-                    onEditStart={handleEditStart}
-                    onEditChange={updateOwnerSegmentTranscript}
-                    onEditCommit={handleEditCommit}
-                    onEditCancel={handleEditCancel}
-                    onSpeakerToggle={swapOwnerSegmentSpeaker}
-                    diffStatuses={diffStatusesOwner}
-                    scrollContainerRef={col3Ref}
-                  />
-                </div>
+              <div className="flex-1 min-h-0 p-2 overflow-hidden">
+                <ResizableSplit
+                  className="h-full"
+                  initialLeftWidth="33.33%"
+                  minWidth={200}
+                  left={
+                    <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+                      <TranscriptColumn
+                        mode="readonly"
+                        title="Machine (Sarvam)"
+                        segments={machineSegments}
+                        fallbackTranscript={recording.machine.transcript}
+                        currentTime={currentTime}
+                        onSeek={handleSeek}
+                        scrollContainerRef={col1Ref}
+                      />
+                    </div>
+                  }
+                  right={
+                    <ResizableSplit
+                      className="h-full"
+                      initialLeftWidth="50%"
+                      minWidth={200}
+                      left={
+                        <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+                          <TranscriptColumn
+                            mode="readonly"
+                            title="Labeler's submission"
+                            segments={verifiedSegments}
+                            fallbackTranscript={recording.verified_transcript}
+                            currentTime={currentTime}
+                            onSeek={handleSeek}
+                            diffStatuses={diffStatusesLabeler}
+                            scrollContainerRef={col2Ref}
+                          />
+                        </div>
+                      }
+                      right={
+                        <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden h-full">
+                          <TranscriptColumn
+                            mode="edit"
+                            title="Your edits"
+                            segments={ownerEditSegments}
+                            fallbackTranscript={recording.verified_transcript}
+                            currentTime={currentTime}
+                            editingIndex={editingIndex}
+                            onSeek={handleSeek}
+                            onEditStart={(idx) => {
+                              scrollToSegment(idx)
+                              handleEditStart(idx)
+                            }}
+                            onEditChange={updateOwnerSegmentTranscript}
+                            onEditCommit={handleEditCommit}
+                            onEditCancel={handleEditCancel}
+                            onSpeakerToggle={swapOwnerSegmentSpeaker}
+                            diffStatuses={diffStatusesOwner}
+                            scrollContainerRef={col3Ref}
+                          />
+                        </div>
+                      }
+                    />
+                  }
+                />
               </div>
 
               {ownerTags && (
@@ -721,8 +748,9 @@ export default function ReviewQueuePage() {
               </div>
             </div>
           )}
-        </main>
-      </div>
+          </main>
+        }
+      />
     </div>
   )
 }
