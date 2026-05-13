@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import {
   LabelingApiError,
@@ -9,14 +9,39 @@ import {
   fetchReviewQueue,
   patchRecording,
 } from '../lib/api'
+import { AudioPlayer, type AudioPlayerHandle } from '../components/AudioPlayer'
+import { TranscriptColumn } from '../components/TranscriptColumn'
+import { diffSegments } from '../lib/segment-diff'
 import { formatDateTime, formatMmSs, truncate } from '../lib/formatters'
 import type {
   MeResponse,
+  PatchPayload,
   RecordingDetail,
   ReviewQueueItem,
+  VerifiedSegment,
 } from '../lib/types'
 
 type AuthState = 'loading' | 'allowed' | 'denied' | 'unauthenticated' | 'not_owner'
+type ActionKind = 'approve' | 'send_back'
+
+// Sarvam emits speaker_id as bare digit strings ("0", "1") in
+// diarized_transcript. TranscriptColumn keys off the "speaker_<n>" form
+// for styling and S1/S2 swap, so normalize at this boundary. Mirrors the
+// same helper in components/ReviewPane.tsx (labeler page).
+function normalizeSpeakerId(rawId: string): string {
+  return /^\d+$/.test(rawId) ? `speaker_${rawId}` : rawId
+}
+
+function cloneSegment(s: VerifiedSegment): VerifiedSegment {
+  return {
+    speaker_id: s.speaker_id,
+    transcript: s.transcript,
+    start_time_seconds: s.start_time_seconds,
+    end_time_seconds: s.end_time_seconds,
+    edited_by_user_id: s.edited_by_user_id ?? null,
+    edited_at: s.edited_at ?? null,
+  }
+}
 
 export default function ReviewQueuePage() {
   const token = useFonoToken()
@@ -34,10 +59,21 @@ export default function ReviewQueuePage() {
   const [recordingError, setRecordingError] = useState<string | null>(null)
 
   const [notes, setNotes] = useState('')
-  const [actionInFlight, setActionInFlight] = useState<'approve' | 'reject' | null>(
-    null,
-  )
+  const [actionInFlight, setActionInFlight] = useState<ActionKind | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Owner's editable column state. Initialised on recording load as a deep
+  // clone of verified_segments (with normalized speaker ids). The backend
+  // stamps authorship on save via stamp_segment_authorship; we do not
+  // stamp client-side. V1 keeps things deterministic.
+  const [ownerEditSegments, setOwnerEditSegments] = useState<VerifiedSegment[]>([])
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const preEditRef = useRef<string>('')
+
+  // Audio player integration. activeSegmentIndex derives from currentTime
+  // inside TranscriptColumn per column; clicking a segment seeks the audio.
+  const audioRef = useRef<AudioPlayerHandle | null>(null)
+  const [currentTime, setCurrentTime] = useState(0)
 
   useEffect(() => {
     if (token === undefined) return
@@ -78,7 +114,8 @@ export default function ReviewQueuePage() {
           setSelectedId(res.items[0].recording_id)
         }
         if (selectedId && !res.items.find((i) => i.recording_id === selectedId)) {
-          // Selection no longer in queue — clear it.
+          // Selection no longer in queue. Clear it (caller may have set a
+          // next-item already; this is the fallback).
           setSelectedId(res.items[0]?.recording_id ?? null)
         }
       } catch (err) {
@@ -129,53 +166,214 @@ export default function ReviewQueuePage() {
     }
   }, [authState, token, selectedId])
 
-  const onAction = useCallback(
-    async (action: 'approve' | 'reject') => {
-      if (!token || !selectedId) return
-      const trimmed = notes.trim()
-      if (action === 'reject' && !trimmed) {
-        setActionError('Reviewer notes are required when rejecting')
-        return
-      }
-      setActionInFlight(action)
-      setActionError(null)
-      try {
-        await patchRecording(token, selectedId, {
-          review_action: action,
-          reviewer_notes_for_labeler: trimmed || null,
-        })
-        // Selection moves to next item; fully reload queue.
-        const idx = items.findIndex((i) => i.recording_id === selectedId)
-        const nextItem = items[idx + 1] ?? items[idx - 1] ?? null
-        setSelectedId(nextItem ? nextItem.recording_id : null)
-        await loadQueue({ keepSelection: true })
-      } catch (err) {
-        const msg = err instanceof LabelingApiError ? err.detail : 'Action failed'
-        setActionError(msg)
-      } finally {
-        setActionInFlight(null)
-      }
+  // Reset edit-state and seed owner's column whenever a new recording loads.
+  useEffect(() => {
+    if (!recording) {
+      setOwnerEditSegments([])
+      setEditingIndex(null)
+      setCurrentTime(0)
+      return
+    }
+    setOwnerEditSegments(
+      (recording.verified_segments ?? []).map((s) => ({
+        ...cloneSegment(s),
+        speaker_id: normalizeSpeakerId(s.speaker_id),
+      })),
+    )
+    setEditingIndex(null)
+    setCurrentTime(0)
+  }, [recording])
+
+  // ── Memoised derived state ─────────────────────────────────────────────
+
+  const machineSegments = useMemo<VerifiedSegment[]>(() => {
+    if (!recording) return []
+    const entries = recording.machine.diarization?.entries ?? []
+    if (entries.length > 0) {
+      return entries.map((e) => ({
+        speaker_id: normalizeSpeakerId(e.speaker_id),
+        transcript: e.transcript,
+        start_time_seconds: e.start_time_seconds,
+        end_time_seconds: e.end_time_seconds,
+      }))
+    }
+    // Synthesize a single-segment fallback when diarization is missing
+    // (older rows). The reviewer still sees the machine text; diff
+    // highlighting on Column 2 is suppressed in this case (see below).
+    return [
+      {
+        speaker_id: 'speaker_0',
+        transcript: recording.machine.transcript ?? '',
+        start_time_seconds: 0,
+        end_time_seconds: recording.recording.duration_seconds ?? 0,
+      },
+    ]
+  }, [recording])
+
+  const verifiedSegments = useMemo<VerifiedSegment[]>(() => {
+    if (!recording) return []
+    return (recording.verified_segments ?? []).map((s) => ({
+      ...cloneSegment(s),
+      speaker_id: normalizeSpeakerId(s.speaker_id),
+    }))
+  }, [recording])
+
+  const machineIsSynthesized = useMemo(() => {
+    if (!recording) return true
+    const entries = recording.machine.diarization?.entries
+    return !entries || entries.length === 0
+  }, [recording])
+
+  // Diff Column 2 (labeler) vs Column 1 (machine). Skipped when machine
+  // is synthesized. The single-segment fallback would mark everything
+  // as 'changed', which is more confusing than useful.
+  const diffStatusesLabeler = useMemo(() => {
+    if (!recording || machineIsSynthesized) return undefined
+    return diffSegments(machineSegments, verifiedSegments).perSegmentStatus
+  }, [recording, machineIsSynthesized, machineSegments, verifiedSegments])
+
+  // Diff Column 3 (owner) vs Column 2 (labeler). Always computed; rows
+  // identical to labeler's submission render with no class (empty string
+  // from diffStatusToTailwindClass).
+  const diffOwnerVsLabeler = useMemo(() => {
+    if (!recording) return null
+    return diffSegments(verifiedSegments, ownerEditSegments)
+  }, [recording, verifiedSegments, ownerEditSegments])
+
+  const diffStatusesOwner = diffOwnerVsLabeler?.perSegmentStatus
+
+  const ownerHasEdits = useMemo(() => {
+    if (!diffOwnerVsLabeler) return false
+    return (
+      diffOwnerVsLabeler.perSegmentStatus.some((s) => s !== 'unchanged') ||
+      diffOwnerVsLabeler.deletedBaselineIndices.length > 0
+    )
+  }, [diffOwnerVsLabeler])
+
+  // ── Edit-lifecycle handlers (Column 3) ──────────────────────────────────
+
+  const handleEditStart = useCallback(
+    (idx: number) => {
+      if (idx < 0 || idx >= ownerEditSegments.length) return
+      preEditRef.current = ownerEditSegments[idx].transcript
+      setEditingIndex(idx)
     },
-    [token, selectedId, notes, items, loadQueue],
+    [ownerEditSegments],
   )
 
-  const machineSnippet = useMemo(() => {
-    if (!recording) return null
-    return recording.machine.transcript ?? null
-  }, [recording])
+  const updateOwnerSegmentTranscript = useCallback(
+    (idx: number, transcript: string) => {
+      setOwnerEditSegments((prev) =>
+        prev.map((s, i) => (i === idx ? { ...s, transcript } : s)),
+      )
+    },
+    [],
+  )
 
-  const verifiedSnippet = useMemo(() => {
-    if (!recording) return null
-    if (
-      recording.verified_segments &&
-      recording.verified_segments.length > 0
-    ) {
-      return recording.verified_segments
-        .map((s) => `[${s.speaker_id}] ${s.transcript}`)
-        .join('\n')
+  const handleEditCommit = useCallback(() => {
+    setEditingIndex(null)
+  }, [])
+
+  const handleEditCancel = useCallback((idx: number) => {
+    setOwnerEditSegments((prev) =>
+      prev.map((s, i) =>
+        i === idx ? { ...s, transcript: preEditRef.current } : s,
+      ),
+    )
+    setEditingIndex(null)
+  }, [])
+
+  const swapOwnerSegmentSpeaker = useCallback((idx: number) => {
+    setOwnerEditSegments((prev) =>
+      prev.map((s, i) => {
+        if (i !== idx) return s
+        let next = s.speaker_id
+        if (s.speaker_id === 'speaker_0') next = 'speaker_1'
+        else if (s.speaker_id === 'speaker_1') next = 'speaker_0'
+        return { ...s, speaker_id: next }
+      }),
+    )
+  }, [])
+
+  const handleSeek = useCallback((seconds: number) => {
+    audioRef.current?.seekTo(seconds)
+    void audioRef.current?.play()
+  }, [])
+
+  // ── Action handlers ────────────────────────────────────────────────────
+
+  const advanceToNext = useCallback(async () => {
+    if (!selectedId) return
+    const idx = items.findIndex((i) => i.recording_id === selectedId)
+    const nextItem = items[idx + 1] ?? items[idx - 1] ?? null
+    setSelectedId(nextItem ? nextItem.recording_id : null)
+    await loadQueue({ keepSelection: true })
+  }, [items, selectedId, loadQueue])
+
+  const onApprove = useCallback(async () => {
+    if (!token || !selectedId) return
+    setActionInFlight('approve')
+    setActionError(null)
+    try {
+      const trimmed = notes.trim()
+      const payload: PatchPayload = {
+        review_action: 'approve',
+        // Owner's edits (or an unchanged clone of labeler's segments)
+        // become the verified truth. Backend re-stamps authorship on
+        // segments whose transcript or speaker_id differ from the prior
+        // version, preserving labeler's stamps on untouched segments.
+        verified_segments: ownerEditSegments,
+        reviewer_notes_for_labeler: trimmed || null,
+      }
+      await patchRecording(token, selectedId, payload)
+      await advanceToNext()
+    } catch (err) {
+      const msg = err instanceof LabelingApiError ? err.detail : 'Approve failed'
+      setActionError(msg)
+    } finally {
+      setActionInFlight(null)
     }
-    return recording.verified_transcript ?? null
-  }, [recording])
+  }, [token, selectedId, ownerEditSegments, notes, advanceToNext])
+
+  const onSendBack = useCallback(async () => {
+    if (!token || !selectedId) return
+    const trimmed = notes.trim()
+    if (!trimmed) {
+      setActionError(
+        'Add a note for the labeler explaining what to change.',
+      )
+      return
+    }
+    setActionInFlight('send_back')
+    setActionError(null)
+    try {
+      const payload: PatchPayload = {
+        review_action: 'send_back',
+        reviewer_notes_for_labeler: trimmed,
+      }
+      if (ownerHasEdits) {
+        // Owner edited at least one segment. Carry owner_segments so the
+        // labeler can compare. Backend will stamp authorship + persist.
+        payload.owner_segments = ownerEditSegments
+      }
+      await patchRecording(token, selectedId, payload)
+      await advanceToNext()
+    } catch (err) {
+      const msg = err instanceof LabelingApiError ? err.detail : 'Send back failed'
+      setActionError(msg)
+    } finally {
+      setActionInFlight(null)
+    }
+  }, [
+    token,
+    selectedId,
+    ownerHasEdits,
+    ownerEditSegments,
+    notes,
+    advanceToNext,
+  ])
+
+  // ── Auth gates ─────────────────────────────────────────────────────────
 
   if (authState === 'loading') {
     return (
@@ -204,12 +402,18 @@ export default function ReviewQueuePage() {
       <main className="min-h-screen bg-cream text-ink p-8 font-sans">
         <h1 className="text-2xl font-bold mb-2">Owner only</h1>
         <p className="text-brown">
-          Only owners can approve or reject labels. Contact Mano if you need
-          access.
+          Only owners can approve or send back labels. Contact Mano if you need access.
         </p>
       </main>
     )
   }
+
+  const sendBackDisabled =
+    actionInFlight !== null || notes.trim().length === 0
+  const sendBackTitle =
+    notes.trim().length === 0
+      ? 'Add a note for the labeler explaining what to change.'
+      : 'Returns the row to the labeler with your notes and any edits as suggestions.'
 
   return (
     <div className="h-screen flex flex-col bg-cream text-ink font-sans overflow-hidden">
@@ -218,7 +422,7 @@ export default function ReviewQueuePage() {
           <div>
             <h1 className="text-xl font-bold">Review queue</h1>
             <p className="text-xs text-cream/70">
-              T-204 · in_review recordings awaiting owner approval
+              in_review recordings awaiting owner approval
               {me?.name && <> · Owner: {me.name}</>}
             </p>
           </div>
@@ -334,10 +538,10 @@ export default function ReviewQueuePage() {
           {recording && (
             <div className="flex-1 flex flex-col min-h-0">
               <div className="flex-none border-b border-ink/10 bg-white">
-                <audio
+                <AudioPlayer
+                  ref={audioRef}
                   src={recording.recording.audio_url}
-                  controls
-                  className="w-full"
+                  onTimeUpdate={setCurrentTime}
                 />
                 <div className="px-4 py-2 text-xs text-brown flex flex-wrap gap-x-4 gap-y-1 font-mono">
                   <span>
@@ -354,62 +558,74 @@ export default function ReviewQueuePage() {
                   </span>
                   <span>
                     <span className="text-ink/60">Labeler</span>{' '}
-                    {recording.labeler_user_id ? recording.labeler_user_id.slice(0, 8) + '…' : '—'}
+                    {recording.labeler_user_id
+                      ? recording.labeler_user_id.slice(0, 8) + '…'
+                      : '-'}
                   </span>
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-                <section className="bg-white rounded-md shadow-sm border border-ink/10 p-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-brown mb-2">
-                    Verified transcript
-                  </h3>
-                  <pre className="whitespace-pre-wrap text-sm text-ink font-sans">
-                    {verifiedSnippet || (
-                      <span className="text-brown italic">
-                        No verified transcript saved yet.
-                      </span>
-                    )}
-                  </pre>
-                </section>
-
-                <section className="bg-white rounded-md shadow-sm border border-ink/10 p-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-brown mb-2">
-                    Machine transcript (Sarvam)
-                  </h3>
-                  <pre className="whitespace-pre-wrap text-sm text-ink/80 font-sans">
-                    {machineSnippet || (
-                      <span className="text-brown italic">No machine transcript.</span>
-                    )}
-                  </pre>
-                </section>
-
-                {recording.error_tags.length > 0 && (
-                  <section className="bg-white rounded-md shadow-sm border border-ink/10 p-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-brown mb-2">
-                      Error tags ({recording.error_tags.length})
-                    </h3>
-                    <div className="flex flex-wrap gap-1">
-                      {recording.error_tags.map((t) => (
-                        <span
-                          key={t}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
-                )}
+              <div className="flex-1 grid grid-cols-3 gap-2 p-2 min-h-0 overflow-hidden">
+                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
+                  <TranscriptColumn
+                    mode="readonly"
+                    title="Machine (Sarvam)"
+                    segments={machineSegments}
+                    fallbackTranscript={recording.machine.transcript}
+                    currentTime={currentTime}
+                    onSeek={handleSeek}
+                  />
+                </div>
+                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
+                  <TranscriptColumn
+                    mode="readonly"
+                    title="Labeler's submission"
+                    segments={verifiedSegments}
+                    fallbackTranscript={recording.verified_transcript}
+                    currentTime={currentTime}
+                    onSeek={handleSeek}
+                    diffStatuses={diffStatusesLabeler}
+                  />
+                </div>
+                <div className="bg-white rounded-md shadow-sm border border-ink/10 flex flex-col min-h-0 overflow-hidden">
+                  <TranscriptColumn
+                    mode="edit"
+                    title="Your edits"
+                    segments={ownerEditSegments}
+                    fallbackTranscript={recording.verified_transcript}
+                    currentTime={currentTime}
+                    editingIndex={editingIndex}
+                    onSeek={handleSeek}
+                    onEditStart={handleEditStart}
+                    onEditChange={updateOwnerSegmentTranscript}
+                    onEditCommit={handleEditCommit}
+                    onEditCancel={handleEditCancel}
+                    onSpeakerToggle={swapOwnerSegmentSpeaker}
+                    diffStatuses={diffStatusesOwner}
+                  />
+                </div>
               </div>
+
+              {recording.error_tags.length > 0 && (
+                <div className="flex-none px-4 py-2 border-t border-ink/10 bg-white flex flex-wrap gap-1 items-center">
+                  <span className="text-xs font-semibold text-brown mr-1">
+                    Error tags ({recording.error_tags.length}):
+                  </span>
+                  {recording.error_tags.map((t) => (
+                    <span
+                      key={t}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="flex-none border-t border-ink/10 bg-white px-4 py-3 space-y-2">
                 <label className="block">
                   <span className="block text-xs font-semibold text-ink mb-1">
-                    Reviewer notes for labeler{' '}
-                    <span className="text-brown font-normal">
-                      (required to reject)
-                    </span>
+                    Reviewer notes for labeler
                   </span>
                   <textarea
                     value={notes}
@@ -418,6 +634,9 @@ export default function ReviewQueuePage() {
                     placeholder="What was wrong, or why approving?"
                     className="w-full px-3 py-2 border border-ink/20 rounded text-sm resize-y"
                   />
+                  <span className="block text-[11px] text-brown mt-1">
+                    Required when sending back. Optional when approving.
+                  </span>
                 </label>
                 {actionError && (
                   <p className="text-red-700 text-xs">{actionError}</p>
@@ -425,19 +644,26 @@ export default function ReviewQueuePage() {
                 <div className="flex items-center gap-2 justify-end">
                   <button
                     type="button"
-                    onClick={() => void onAction('reject')}
-                    disabled={actionInFlight !== null}
-                    className="px-4 py-2 rounded border border-red-700 text-red-700 hover:bg-red-50 text-sm font-semibold disabled:opacity-50"
+                    onClick={() => void onSendBack()}
+                    disabled={sendBackDisabled}
+                    title={sendBackTitle}
+                    className="px-4 py-2 rounded border border-yellow-700 text-yellow-800 bg-yellow-50 hover:bg-yellow-100 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {actionInFlight === 'reject' ? 'Rejecting…' : 'Reject'}
+                    {actionInFlight === 'send_back'
+                      ? 'Sending back…'
+                      : ownerHasEdits
+                        ? 'Send back with edits'
+                        : 'Send back'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => void onAction('approve')}
+                    onClick={() => void onApprove()}
                     disabled={actionInFlight !== null}
                     className="px-4 py-2 rounded bg-green-700 text-white hover:bg-green-800 text-sm font-semibold disabled:opacity-50"
                   >
-                    {actionInFlight === 'approve' ? 'Approving…' : 'Approve → verified'}
+                    {actionInFlight === 'approve'
+                      ? 'Approving…'
+                      : 'Approve → verified'}
                   </button>
                 </div>
               </div>

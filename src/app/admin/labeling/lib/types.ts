@@ -46,6 +46,11 @@ export interface VerifiedSegment {
   transcript: string
   start_time_seconds: number
   end_time_seconds: number
+  // Optional authorship stamps (backend Commit 2). UI does not surface
+  // them in V1; they round-trip through PATCH payloads so the server can
+  // diff against the prior version.
+  edited_by_user_id?: string | null
+  edited_at?: string | null
 }
 
 export interface RecordingDetail {
@@ -109,6 +114,11 @@ export interface RecordingDetail {
   labeler_user_id: string | null
   reviewed_by_user_id: string | null
   reviewer_notes_for_labeler: string | null
+  // Send-back-with-edits workflow (backend Commit 2). owner_segments is
+  // null unless the row was sent back with inline edits; owner_review_at
+  // stamps the most recent Send back action.
+  owner_segments: VerifiedSegment[] | null
+  owner_review_at: string | null
 }
 
 export interface PatchPayload {
@@ -125,11 +135,18 @@ export interface PatchPayload {
   is_holdout?: boolean
   reviewer_notes?: string | null
   status?: Status
-  // T-204 owner review actions. review_action='approve' flips an
-  // in_review row to verified; 'reject' flips it back to auto_labeled
-  // with reviewer_notes_for_labeler stored on the row.
-  review_action?: 'approve' | 'reject'
+  // Owner review actions. 'approve' flips an in_review row to verified;
+  // 'reject' (legacy, retained in API for backwards compat) flips back to
+  // auto_labeled; 'send_back' flips to suggestions_pending with optional
+  // owner_segments persisted as the owner's edited suggestion overlay.
+  review_action?: 'approve' | 'reject' | 'send_back'
   reviewer_notes_for_labeler?: string | null
+  // Send-back-with-edits payload. Owner's edited segments when the
+  // 'send_back' action carries edits; omit for notes-only send back.
+  owner_segments?: VerifiedSegment[]
+  // Labeler's reconciliation when resolving a suggestions_pending row
+  // back to in_review (Commit 5 wires this on the labeler page).
+  resolved_segments?: VerifiedSegment[]
 }
 
 export interface LabelerCounts {
