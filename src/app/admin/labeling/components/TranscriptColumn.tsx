@@ -181,19 +181,26 @@ export function TranscriptColumn({
     )
   }
 
+  // Title rendered as a flex-none sibling ABOVE the scrollable area,
+  // not as a `position: sticky` element inside the scroll container.
+  // Prior 5.7 / 5.8 attempts used sticky + bg-white + z-10 and still
+  // saw segment-text bleed-through in architect smoke. The structural
+  // fix moves the title out of the scroll context entirely so there is
+  // no z-stack to manage and nothing can scroll past it.
   return (
-    <div
-      ref={(el) => {
-        containerRef.current = el
-        if (scrollContainerRef) scrollContainerRef.current = el
-      }}
-      className="px-4 py-3 space-y-1.5 overflow-y-auto"
-    >
+    <div className="flex flex-col h-full min-h-0">
       {title ? (
-        <h3 className="text-sm font-semibold text-ink mb-2 sticky top-0 bg-white z-10 -mx-4 px-4 -mt-3 pt-3 pb-2 border-b border-ink/10 shadow-sm">
+        <h3 className="flex-none text-sm font-semibold text-ink bg-white border-b border-ink/10 shadow-sm px-4 py-2">
           {title}
         </h3>
       ) : null}
+      <div
+        ref={(el) => {
+          containerRef.current = el
+          if (scrollContainerRef) scrollContainerRef.current = el
+        }}
+        className="flex-1 min-h-0 px-4 py-3 space-y-1.5 overflow-y-auto"
+      >
       {segments.map((segment, idx) => {
         const styles = stylesFor(segment.speaker_id)
         const isActive = idx === activeIdx
@@ -349,6 +356,7 @@ export function TranscriptColumn({
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

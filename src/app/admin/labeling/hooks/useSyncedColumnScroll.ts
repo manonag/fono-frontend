@@ -2,6 +2,12 @@
 
 import { useEffect } from 'react'
 
+// Diagnostic instrumentation for the recurring scroll-sync misalignment
+// issue (5.7 -> 5.8 -> 5.8.1 each fixed some cases, 5.8.1 smoke showed
+// Column 2 still drifts on recordings with divergent segment arrays).
+// Flip to false in a cleanup commit once the root cause is locked.
+const DEBUG_SCROLL_SYNC = true
+
 interface ColumnRef {
   current: HTMLDivElement | null
 }
@@ -104,16 +110,57 @@ export function useSyncedColumnScroll({
 
       setIgnoreWindow()
 
+      if (DEBUG_SCROLL_SYNC) {
+        // eslint-disable-next-line no-console
+        console.group(`[scroll-sync] from column ${sourceIdx}`)
+        // eslint-disable-next-line no-console
+        console.log('source anchor:', {
+          segmentIndex: anchorEl.getAttribute('data-segment-index'),
+          startTime: anchorEl.getAttribute('data-segment-start'),
+          endTime: anchorEl.getAttribute('data-segment-end'),
+          topOffset,
+          containerScrollTop: sourceEl.scrollTop,
+        })
+      }
+
       columnRefs.forEach((ref, otherIdx) => {
         if (otherIdx === sourceIdx) return
         const otherEl = ref.current
         if (!otherEl) return
         const matchingSeg = findSegmentByTime(otherEl, anchorStart)
-        if (!matchingSeg) return
+        if (!matchingSeg) {
+          if (DEBUG_SCROLL_SYNC) {
+            // eslint-disable-next-line no-console
+            console.log(`  -> column ${otherIdx}: NO MATCH for time ${anchorStart}`)
+          }
+          return
+        }
         const targetRect = matchingSeg.getBoundingClientRect()
         const otherRect = otherEl.getBoundingClientRect()
-        otherEl.scrollTop += targetRect.top - otherRect.top - topOffset
+        const delta = targetRect.top - otherRect.top - topOffset
+        const previousScrollTop = otherEl.scrollTop
+        const computedScrollTop = previousScrollTop + delta
+        otherEl.scrollTop = computedScrollTop
+
+        if (DEBUG_SCROLL_SYNC) {
+          // eslint-disable-next-line no-console
+          console.log(`  -> column ${otherIdx}:`, {
+            matchedSegmentIndex: matchingSeg.getAttribute('data-segment-index'),
+            matchedStartTime: matchingSeg.getAttribute('data-segment-start'),
+            matchedEndTime: matchingSeg.getAttribute('data-segment-end'),
+            previousScrollTop,
+            computedScrollTop,
+            delta,
+            targetRectTop: targetRect.top,
+            otherRectTop: otherRect.top,
+          })
+        }
       })
+
+      if (DEBUG_SCROLL_SYNC) {
+        // eslint-disable-next-line no-console
+        console.groupEnd()
+      }
     }
 
     const cleanupFns: Array<() => void> = []
@@ -155,16 +202,54 @@ export function useSyncedColumnScroll({
     )
     if (Number.isNaN(startTime)) return
 
+    if (DEBUG_SCROLL_SYNC) {
+      // eslint-disable-next-line no-console
+      console.group(
+        `[scroll-sync] scrollToSegment from column ${sourceColumnIdx} idx ${segmentIndex}`,
+      )
+      // eslint-disable-next-line no-console
+      console.log('source segment:', {
+        segmentIndex,
+        startTime,
+        endTime: sourceSeg.getAttribute('data-segment-end'),
+      })
+    }
+
     columnRefs.forEach((ref, idx) => {
       if (idx === sourceColumnIdx) return
       const targetContainer = ref.current
       if (!targetContainer) return
       const matchingSeg = findSegmentByTime(targetContainer, startTime)
-      if (!matchingSeg) return
+      if (!matchingSeg) {
+        if (DEBUG_SCROLL_SYNC) {
+          // eslint-disable-next-line no-console
+          console.log(`  -> column ${idx}: NO MATCH for time ${startTime}`)
+        }
+        return
+      }
       const containerRect = targetContainer.getBoundingClientRect()
       const segmentRect = matchingSeg.getBoundingClientRect()
-      targetContainer.scrollTop += segmentRect.top - containerRect.top
+      const delta = segmentRect.top - containerRect.top
+      const previousScrollTop = targetContainer.scrollTop
+      const computedScrollTop = previousScrollTop + delta
+      targetContainer.scrollTop = computedScrollTop
+
+      if (DEBUG_SCROLL_SYNC) {
+        // eslint-disable-next-line no-console
+        console.log(`  -> column ${idx}:`, {
+          matchedSegmentIndex: matchingSeg.getAttribute('data-segment-index'),
+          matchedStartTime: matchingSeg.getAttribute('data-segment-start'),
+          previousScrollTop,
+          computedScrollTop,
+          delta,
+        })
+      }
     })
+
+    if (DEBUG_SCROLL_SYNC) {
+      // eslint-disable-next-line no-console
+      console.groupEnd()
+    }
   }
 
   return { scrollToSegment }
