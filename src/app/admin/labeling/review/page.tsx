@@ -673,7 +673,11 @@ export default function ReviewQueuePage() {
                             editingIndex={editingIndex}
                             onSeek={handleSeek}
                             onEditStart={(idx) => {
-                              scrollToSegment(idx)
+                              // Column 3 ("Your edits") is index 2 in
+                              // [col1Ref, col2Ref, col3Ref]. The hook reads
+                              // the segment's data-segment-start to align
+                              // Columns 1 and 2 by audio timestamp.
+                              scrollToSegment(2, idx)
                               handleEditStart(idx)
                             }}
                             onEditChange={updateOwnerSegmentTranscript}

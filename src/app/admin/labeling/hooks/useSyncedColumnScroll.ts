@@ -14,48 +14,50 @@ interface UseSyncedColumnScrollOptions {
 
 interface UseSyncedColumnScrollReturn {
   /**
-   * Programmatically align all enabled-sync columns so the segment with
-   * the given data-segment-index sits at the top. Gated on `enabled` per
-   * architect re-decision: if the user has sync turned off, editing a
-   * segment in one column should not move the others.
+   * Programmatically align all enabled-sync columns so the segment at
+   * the given index in the source column drives a timestamp-based
+   * lookup; every other column scrolls so the segment matching that
+   * timestamp sits at the top. Gated on `enabled` per architect:
+   * if the user has sync off, editing must not move other columns.
    */
-  scrollToSegment: (index: number) => void
+  scrollToSegment: (sourceColumnIdx: number, segmentIndex: number) => void
 }
 
 /**
- * Bidirectional scroll sync across the three transcript columns on the
- * reviewer / labeler-suggestions pages.
+ * Bidirectional scroll sync across transcript columns on the reviewer
+ * and labeler-suggestions pages.
  *
- * When `enabled` is true, scrolling any column scrolls the other columns
- * to mirror the same segment + sub-segment offset. Lock is tight enough
- * that the three columns appear visually rigid even mid-scroll.
+ * Alignment key: start_time_seconds (NOT array index). Different
+ * columns can have divergent segment arrays (owner inserts/deletes/
+ * splits segments in their working copy) but the audio is the same,
+ * so timestamps identify "the same moment in the conversation." This
+ * is the 5.8.1 fix on top of 5.8's index-based alignment.
  *
  * Algorithm
  *
- *   1. On a real user scroll, find the FIRST segment in the source whose
- *      top is at or below the source column's content top. That segment
- *      is the anchor.
- *   2. Compute topOffset = anchorSeg.top - sourceColumn.top. Positive
- *      when the anchor segment has not yet reached the top (preceding
- *      segment is partially visible above); zero when the anchor is
- *      flush with the column top.
- *   3. For each OTHER column, locate the segment with the same data-
- *      segment-index. Adjust its column's scrollTop so the matching
- *      segment's top sits at columnTop + topOffset. The adjustment is
- *      column-relative: scrollTop += (currentDelta - desiredDelta).
- *   4. A 100ms ignore window suppresses re-entry while the programmatic
- *      scrolls settle. Real follow-up scrolls land outside the window.
+ *   1. On scroll, find the source column's anchor segment (first whose
+ *      top is at or below the column's content top). Compute the
+ *      sub-segment topOffset (positive when preceding segment is still
+ *      partially visible above the anchor).
+ *   2. Read the anchor's data-segment-start to get its audio timestamp.
+ *   3. For each OTHER column, locate the segment whose
+ *      [start_time, end_time] interval contains that timestamp
+ *      (preferred). If none does, fall back to the segment whose
+ *      start_time is closest to the source's. This gracefully handles
+ *      inserted, deleted, or split segments.
+ *   4. Scroll the target column so the matching segment's top sits at
+ *      columnTop + same topOffset, preserving sub-segment scroll feel.
+ *   5. A 100ms ignore window prevents the programmatic scrolls from
+ *      cascading.
  *
- * The sub-segment offset tracking is the difference from 5.7's
- * implementation, which only aligned segment boundaries and could
- * drift by up to one segment's height. With offset tracking the three
- * columns lock visually within a few pixels regardless of mid-segment
- * scroll position.
+ * For edit-trigger sync (Bug 2 from 5.8), scrollToSegment looks up
+ * the source segment's timestamp via data-segment-start, then aligns
+ * other columns with zero topOffset (flush at column top).
  */
 export function useSyncedColumnScroll({
   enabled,
   columnRefs,
-  segmentSelector = '[data-segment-index]',
+  segmentSelector = '[data-segment-start]',
 }: UseSyncedColumnScrollOptions): UseSyncedColumnScrollReturn {
   const refsLength = columnRefs.length
 
@@ -82,51 +84,34 @@ export function useSyncedColumnScroll({
       if (segments.length === 0) return
 
       const sourceRect = sourceEl.getBoundingClientRect()
-      let anchorIndex = -1
+      let anchorEl: HTMLElement | null = null
       let topOffset = 0
       for (const seg of Array.from(segments)) {
         const segEl = seg as HTMLElement
         const segRect = segEl.getBoundingClientRect()
         if (segRect.top >= sourceRect.top) {
-          // First segment whose top is at or below the source column top.
-          const dataIdx = segEl.getAttribute('data-segment-index')
-          if (dataIdx !== null) {
-            const parsed = parseInt(dataIdx, 10)
-            if (!Number.isNaN(parsed)) {
-              anchorIndex = parsed
-              topOffset = segRect.top - sourceRect.top
-            }
-          }
+          anchorEl = segEl
+          topOffset = segRect.top - sourceRect.top
           break
         }
       }
+      if (!anchorEl) return
 
-      if (anchorIndex < 0) return
+      const anchorStart = parseFloat(
+        anchorEl.getAttribute('data-segment-start') ?? 'NaN',
+      )
+      if (Number.isNaN(anchorStart)) return
 
       setIgnoreWindow()
-      alignOtherColumns(sourceIdx, anchorIndex, topOffset)
-    }
 
-    const alignOtherColumns = (
-      sourceIdx: number,
-      anchorIndex: number,
-      topOffset: number,
-    ) => {
       columnRefs.forEach((ref, otherIdx) => {
         if (otherIdx === sourceIdx) return
         const otherEl = ref.current
         if (!otherEl) return
-        const targetSeg = otherEl.querySelector(
-          `${segmentSelector}[data-segment-index="${anchorIndex}"]`,
-        ) as HTMLElement | null
-        if (!targetSeg) return
-        const targetRect = targetSeg.getBoundingClientRect()
+        const matchingSeg = findSegmentByTime(otherEl, anchorStart)
+        if (!matchingSeg) return
+        const targetRect = matchingSeg.getBoundingClientRect()
         const otherRect = otherEl.getBoundingClientRect()
-        // Current top delta = targetRect.top - otherRect.top.
-        // We want the delta to equal topOffset. Diff = current - desired.
-        // Adding diff to scrollTop scrolls the column DOWN by that
-        // amount (which moves content UP by that amount), so the
-        // target segment moves UP toward the desired position.
         otherEl.scrollTop += targetRect.top - otherRect.top - topOffset
       })
     }
@@ -144,34 +129,83 @@ export function useSyncedColumnScroll({
       cleanupFns.forEach((fn) => fn())
       if (ignoreTimeout) clearTimeout(ignoreTimeout)
     }
-    // columnRefs is a new array literal each render; the refs themselves
-    // are stable across renders so closure-captured access works. Re-install
-    // listeners only when sync flips or column count changes.
+    // columnRefs is a new array literal each render; refs themselves are
+    // stable across renders so closure-captured access works. Re-install
+    // listeners only on enabled flip or column count change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, refsLength, segmentSelector])
 
   /**
-   * Align every column to the given segment index with zero top offset
-   * (segment top flush with column top). Used by the parent when a
-   * segment enters edit mode so the other columns scroll to the same
-   * segment for side-by-side comparison. Respects `enabled`: when sync
-   * is off the user explicitly opted out, so editing must not move
-   * other columns either.
+   * Align every column to the segment matching the timestamp of
+   * `segmentIndex` in `sourceColumnIdx`'s column. Used by the parent
+   * when a segment enters edit mode. Skips the source column (the
+   * user is already there). Aligns matched segments flush with the
+   * column top (zero offset). Respects `enabled`.
    */
-  const scrollToSegment = (index: number) => {
+  const scrollToSegment = (sourceColumnIdx: number, segmentIndex: number) => {
     if (!enabled) return
-    columnRefs.forEach((ref) => {
-      const container = ref.current
-      if (!container) return
-      const targetSeg = container.querySelector(
-        `${segmentSelector}[data-segment-index="${index}"]`,
-      ) as HTMLElement | null
-      if (!targetSeg) return
-      const containerRect = container.getBoundingClientRect()
-      const targetRect = targetSeg.getBoundingClientRect()
-      container.scrollTop += targetRect.top - containerRect.top
+    const sourceContainer = columnRefs[sourceColumnIdx]?.current
+    if (!sourceContainer) return
+    const sourceSeg = sourceContainer.querySelector(
+      `[data-segment-index="${segmentIndex}"]`,
+    ) as HTMLElement | null
+    if (!sourceSeg) return
+    const startTime = parseFloat(
+      sourceSeg.getAttribute('data-segment-start') ?? 'NaN',
+    )
+    if (Number.isNaN(startTime)) return
+
+    columnRefs.forEach((ref, idx) => {
+      if (idx === sourceColumnIdx) return
+      const targetContainer = ref.current
+      if (!targetContainer) return
+      const matchingSeg = findSegmentByTime(targetContainer, startTime)
+      if (!matchingSeg) return
+      const containerRect = targetContainer.getBoundingClientRect()
+      const segmentRect = matchingSeg.getBoundingClientRect()
+      targetContainer.scrollTop += segmentRect.top - containerRect.top
     })
   }
 
   return { scrollToSegment }
+}
+
+/**
+ * Locate the segment in `container` that best matches `targetStart`
+ * (audio timestamp in seconds).
+ *
+ *   1. Prefer a segment whose [start_time, end_time] interval contains
+ *      the target. That's "the segment playing at this moment."
+ *   2. Otherwise return the segment whose start_time is closest to
+ *      the target. Handles inserted/deleted/split segments gracefully
+ *      across columns with divergent arrays.
+ */
+function findSegmentByTime(
+  container: HTMLElement,
+  targetStart: number,
+): HTMLElement | null {
+  const segments = Array.from(
+    container.querySelectorAll('[data-segment-start]'),
+  ) as HTMLElement[]
+  if (segments.length === 0) return null
+
+  for (const seg of segments) {
+    const start = parseFloat(seg.getAttribute('data-segment-start') ?? 'NaN')
+    const end = parseFloat(seg.getAttribute('data-segment-end') ?? 'NaN')
+    if (Number.isNaN(start) || Number.isNaN(end)) continue
+    if (start <= targetStart && targetStart <= end) return seg
+  }
+
+  let closest: HTMLElement | null = null
+  let closestDist = Infinity
+  for (const seg of segments) {
+    const start = parseFloat(seg.getAttribute('data-segment-start') ?? 'NaN')
+    if (Number.isNaN(start)) continue
+    const dist = Math.abs(start - targetStart)
+    if (dist < closestDist) {
+      closestDist = dist
+      closest = seg
+    }
+  }
+  return closest
 }

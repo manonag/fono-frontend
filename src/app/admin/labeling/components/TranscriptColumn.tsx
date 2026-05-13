@@ -228,6 +228,8 @@ export function TranscriptColumn({
               entryRefs.current[idx] = el
             }}
             data-segment-index={idx}
+            data-segment-start={segment.start_time_seconds}
+            data-segment-end={segment.end_time_seconds}
             className={`flex items-start gap-2 px-1 py-1 rounded transition-colors ${
               isEditing
                 ? 'border border-terra bg-cream'
