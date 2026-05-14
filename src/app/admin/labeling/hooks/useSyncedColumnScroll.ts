@@ -256,14 +256,24 @@ export function useSyncedColumnScroll({
 }
 
 /**
- * Locate the segment in `container` that best matches `targetStart`
- * (audio timestamp in seconds).
+ * Locate the segment in `container` whose start_time is closest to
+ * `targetStart` (audio timestamp in seconds).
  *
- *   1. Prefer a segment whose [start_time, end_time] interval contains
- *      the target. That's "the segment playing at this moment."
- *   2. Otherwise return the segment whose start_time is closest to
- *      the target. Handles inserted/deleted/split segments gracefully
- *      across columns with divergent arrays.
+ * 5.8.1 / 5.8.2 had an interval-containment first pass before this
+ * closest-start fallback. The interval check returned the FIRST
+ * segment whose [start_time, end_time] contained the target. That
+ * was the wrong segment when Sarvam diarization produced overlapping
+ * or inflated end_time_seconds. Architect's 5.8.2 console capture
+ * showed source segment 6 at startTime=12.75 matching segment 4 at
+ * startTime=5.53 in target columns because segment 4's interval
+ * [5.53, 15.0+] happened to include 12.75. Visible 2-segment drift.
+ *
+ * Closest-start has no such failure mode. Every segment competes by
+ * the distance of its start_time to the target; the smallest wins.
+ * For identical-segment columns the closest match IS the same-index
+ * segment (distance 0). For divergent arrays (inserted / deleted /
+ * split segments in the owner's edits), the closest match is the
+ * one that semantically corresponds to the source moment.
  */
 function findSegmentByTime(
   container: HTMLElement,
@@ -274,17 +284,12 @@ function findSegmentByTime(
   ) as HTMLElement[]
   if (segments.length === 0) return null
 
-  for (const seg of segments) {
-    const start = parseFloat(seg.getAttribute('data-segment-start') ?? 'NaN')
-    const end = parseFloat(seg.getAttribute('data-segment-end') ?? 'NaN')
-    if (Number.isNaN(start) || Number.isNaN(end)) continue
-    if (start <= targetStart && targetStart <= end) return seg
-  }
-
   let closest: HTMLElement | null = null
   let closestDist = Infinity
   for (const seg of segments) {
-    const start = parseFloat(seg.getAttribute('data-segment-start') ?? 'NaN')
+    const startAttr = seg.getAttribute('data-segment-start')
+    if (startAttr === null) continue
+    const start = parseFloat(startAttr)
     if (Number.isNaN(start)) continue
     const dist = Math.abs(start - targetStart)
     if (dist < closestDist) {
