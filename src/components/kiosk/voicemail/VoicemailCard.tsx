@@ -69,6 +69,7 @@ export function VoicemailCard({
   const [reclassifyOpen, setReclassifyOpen] = useState(false)
   const [hideArmed, setHideArmed] = useState(false)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const stampRef = useRef<HTMLButtonElement>(null)
   // 0 until mounted; locale-formatted timestamps are gated on it.
   const now = useClock()
 
@@ -121,13 +122,15 @@ export function VoicemailCard({
       {/* Ticket header band */}
       <div className="relative flex items-center gap-3 border-b border-dashed border-rcp-rule px-[18px] pb-3 pt-3.5">
         <button
+          ref={stampRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            if (cat) setReclassifyOpen(true)
+            if (cat) setReclassifyOpen((o) => !o)
           }}
           title="Tap to reclassify intent"
           aria-label="Reclassify intent"
+          aria-expanded={reclassifyOpen}
           className={cn(
             styles.tap48,
             'relative inline-flex items-baseline gap-1.5 pb-1.5 pt-1 text-left hover:bg-rcp-stamp-hover',
@@ -172,6 +175,7 @@ export function VoicemailCard({
           open={reclassifyOpen}
           current={cat}
           categories={categories}
+          triggerRef={stampRef}
           onPick={(k) => {
             onReclassify(vm.id, k)
             setReclassifyOpen(false)

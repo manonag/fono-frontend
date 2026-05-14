@@ -10,7 +10,7 @@
 // resolves it from the impersonation context or the session and passes it
 // down (CHIRAN principle #49 / brief section 7).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchVoicemails, patchVoicemailIntent, patchVoicemailStatus } from '@/lib/api'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { cn } from '@/lib/utils'
@@ -50,11 +50,6 @@ export function KioskPage({ tenant }: KioskPageProps) {
   const [dark, setDark] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
-  // Mirror of `voicemails` for the mutation handlers to snapshot from
-  // without taking a dependency on the state (keeps the handlers stable).
-  const voicemailsRef = useRef<Voicemail[]>(voicemails)
-  voicemailsRef.current = voicemails
-
   // --- data load (mock-backed until the voicemail backend ships) + poll ---
   const load = useCallback(async () => {
     const data = await fetchVoicemails(tenant.id, token)
@@ -79,7 +74,9 @@ export function KioskPage({ tenant }: KioskPageProps) {
 
   const onStatusChange = useCallback(
     async (id: string, status: Status) => {
-      const snapshot = voicemailsRef.current
+      // Snapshot for rollback. Event handlers always run the latest
+      // callback instance, so this closes over the current voicemails.
+      const snapshot = voicemails
       setVoicemails((prev) => prev.map((v) => (v.id === id ? applyStatus(v, status) : v)))
       try {
         await patchVoicemailStatus(id, status, token)
@@ -88,13 +85,13 @@ export function KioskPage({ tenant }: KioskPageProps) {
         setToast('Could not update the voicemail. Reverted.')
       }
     },
-    [token],
+    [voicemails, token],
   )
 
   const onReclassify = useCallback(
     async (id: string, key: IntentKey) => {
       const display = tenant.categories.find((c) => c.key === key)?.display ?? key
-      const snapshot = voicemailsRef.current
+      const snapshot = voicemails
       setVoicemails((prev) =>
         prev.map((v) =>
           v.id === id
@@ -113,7 +110,7 @@ export function KioskPage({ tenant }: KioskPageProps) {
         setToast('Could not reclassify the voicemail. Reverted.')
       }
     },
-    [tenant.categories, token],
+    [voicemails, tenant.categories, token],
   )
 
   const counts = useMemo(() => tabCounts(voicemails), [voicemails])

@@ -7,7 +7,7 @@
 // design_handoff_voicemail_kiosk common.jsx; outside-click + Escape close
 // added per the CD README "Screen 3" interaction spec.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { cn } from '@/lib/utils'
 import { IconClose } from './icons'
 import styles from './styles.module.css'
@@ -17,6 +17,9 @@ interface ReclassifyMenuProps {
   open: boolean
   current: IntentKey | null
   categories: Category[]
+  // The trigger (intent stamp). Clicks on it are excluded from the
+  // outside-click close so the stamp can cleanly toggle the popover.
+  triggerRef: RefObject<HTMLElement>
   onPick: (key: IntentKey) => void
   onClose: () => void
 }
@@ -25,6 +28,7 @@ export function ReclassifyMenu({
   open,
   current,
   categories,
+  triggerRef,
   onPick,
   onClose,
 }: ReclassifyMenuProps) {
@@ -33,9 +37,10 @@ export function ReclassifyMenu({
   useEffect(() => {
     if (!open) return
     const onDocMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      const target = e.target as Node
+      if (popoverRef.current?.contains(target)) return
+      if (triggerRef.current?.contains(target)) return
+      onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -46,7 +51,7 @@ export function ReclassifyMenu({
       document.removeEventListener('mousedown', onDocMouseDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open, onClose])
+  }, [open, onClose, triggerRef])
 
   if (!open) return null
 
