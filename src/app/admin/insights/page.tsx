@@ -7,6 +7,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { HotLeadsSection } from './components/HotLeadsSection'
@@ -71,6 +72,12 @@ export default function AdminInsightsPage() {
   return (
     <main className="min-h-screen bg-cream text-ink font-sans">
       <header className="bg-ink text-cream px-6 py-4">
+        <Link
+          href="/admin"
+          className="inline-block text-xs text-cream/70 hover:text-cream underline mb-1"
+        >
+          ← Back to Admin
+        </Link>
         <h1 className="text-xl font-bold">Tara Insights</h1>
         <p className="text-xs text-cream/70">
           Hot leads and analyzed visitor conversations from the Tara chat

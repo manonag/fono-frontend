@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { AlarmBell } from '@/components/admin/AlarmBell'
 import { BlockersSurface, type Blocker } from '@/components/admin/BlockersSurface'
 import { DemoBadge } from '@/components/admin/DemoBadge'
@@ -336,6 +337,12 @@ export default function AdminPage() {
             <p className="text-xs text-cream/70">Sections 1-3: Tenant Health, Alarm Bell, Platform Vitals</p>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
+            <Link
+              href="/admin/insights"
+              className="text-xs text-cream/70 hover:text-cream underline"
+            >
+              Tara Insights
+            </Link>
             <DemoToggle value={showDemo} onChange={handleToggleDemo} />
             <div className="text-xs text-cream/70">
               Auto-refreshing every 30s
