@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import {
   Plus_Jakarta_Sans,
   Nunito,
+  JetBrains_Mono,
   Noto_Sans_Devanagari,
   Noto_Sans_Telugu,
   Noto_Sans_Gurmukhi,
@@ -23,6 +24,15 @@ const nunito = Nunito({
   subsets: ['latin'],
   weight: ['700', '800', '900'],
   variable: '--font-nunito',
+  display: 'swap',
+})
+
+// Display font for the voicemail-route kiosk (Direction A - receipt):
+// numerals, category keys, ticket ids, timestamps, uppercase mono labels.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-jetbrains-mono',
   display: 'swap',
 })
 
@@ -60,7 +70,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${jakarta.variable} ${nunito.variable} ${notoDevanagari.variable} ${notoTelugu.variable} ${notoGurmukhi.variable}`}
+      className={`${jakarta.variable} ${nunito.variable} ${jetbrainsMono.variable} ${notoDevanagari.variable} ${notoTelugu.variable} ${notoGurmukhi.variable}`}
     >
       <body className="font-sans bg-cream text-ink antialiased">
         <Providers>
