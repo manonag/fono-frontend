@@ -569,18 +569,8 @@ function KioskContent() {
 
 function KioskRouteLoading() {
   return (
-    <div
-      style={{
-        height: '100dvh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#F5EDE6',
-      }}
-    >
-      <span style={{ fontSize: 13, fontWeight: 500, color: '#8B7355' }}>
-        Loading kiosk...
-      </span>
+    <div className="flex h-[100dvh] items-center justify-center bg-cream">
+      <span className="text-[13px] font-medium text-brown">Loading kiosk...</span>
     </div>
   )
 }
