@@ -3,8 +3,8 @@
 // Voicemail list for the voicemail-route kiosk (Direction A - receipt).
 // Owns the local category-filter + sort state, renders the filter row (New
 // tab only), and renders either the per-tab EmptyState or the list of
-// VoicemailCard / ProcessingCard. Single-column 1-up density for v1 -
-// 2-up / list density is deferred (brief section 9).
+// VoicemailCard / ProcessingCard. Ships the 2-up grid density (the column
+// rules mirror the CD prototype's .rcp-grid--two: 2 columns, 14px gap).
 
 import { useEffect, useState } from 'react'
 import { CategoryFilterRow } from './CategoryFilterRow'
@@ -15,11 +15,22 @@ import { VoicemailCard } from './VoicemailCard'
 import type {
   Category,
   CategoryFilter,
+  Density,
   IntentKey,
   SortOrder,
   Status,
   Voicemail,
 } from './types'
+
+// Grid density. Brief section 9 deferred 2-up for v1; set to 'two' per the
+// follow-up request to ship the 2-up grid. GRID_CLASS mirrors the CD
+// prototype's .rcp-grid--* column rules.
+const DENSITY: Density = 'two'
+const GRID_CLASS: Record<Density, string> = {
+  one: 'grid-cols-1 gap-4',
+  two: 'grid-cols-2 gap-[14px]',
+  list: 'grid-cols-1 gap-0',
+}
 
 interface VoicemailListProps {
   tab: Status
@@ -64,7 +75,7 @@ export function VoicemailList({
       {list.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
-        <main className="grid grid-cols-1 gap-4 pt-[18px]">
+        <main className={`grid pt-[18px] ${GRID_CLASS[DENSITY]}`}>
           {list.map((vm, i) =>
             isProcessing(vm) ? (
               <ProcessingCard key={vm.id} voicemail={vm} index={i} />
@@ -74,7 +85,7 @@ export function VoicemailList({
                 voicemail={vm}
                 index={i}
                 categories={categories}
-                density="one"
+                density={DENSITY}
                 onStatusChange={onStatusChange}
                 onReclassify={onReclassify}
               />
