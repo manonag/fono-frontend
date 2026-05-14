@@ -3,10 +3,11 @@
 import { useEffect } from 'react'
 
 // Diagnostic instrumentation for the recurring scroll-sync misalignment
-// issue (5.7 -> 5.8 -> 5.8.1 each fixed some cases, 5.8.1 smoke showed
-// Column 2 still drifts on recordings with divergent segment arrays).
-// Flip to false in a cleanup commit once the root cause is locked.
-const DEBUG_SCROLL_SYNC = true
+// issue. Root cause was identified via 5.8.2 console capture and fixed
+// in 5.8.3 (findSegmentByTime closest-start-only). The console.group /
+// log statements below are gated on this flag and stay in place so
+// any future sync regression can be diagnosed by flipping back to true.
+const DEBUG_SCROLL_SYNC = false
 
 interface ColumnRef {
   current: HTMLDivElement | null
