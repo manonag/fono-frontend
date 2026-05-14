@@ -1,10 +1,10 @@
-// Shared types for the voicemail-route kiosk (Direction A - receipt).
+// Shared types for the voicemail-route kiosk.
 //
 // IntentKey / Status / Category / Tenant / Voicemail / KioskPageProps /
-// VoicemailCardProps are transcribed verbatim from the CD design handoff
-// (design_handoff_voicemail_kiosk/README.md, section "Component prop
-// contracts"). Do not widen or narrow these without updating the design
-// contract first.
+// VoicemailCardProps originate from the CD design handoff. The v2.3 Layout C
+// revision (binder-tab) extends Category with Palette A swatch + tint and
+// drops `density` from VoicemailCardProps (the grid is locked to 2-up). Do
+// not widen or narrow these without updating the design contract first.
 
 export type IntentKey = 'order' | 'catering' | 'banquet_hall' | 'others'
 export type Status = 'new' | 'resolved' | 'hidden'
@@ -12,6 +12,17 @@ export type Status = 'new' | 'resolved' | 'hidden'
 export interface Category {
   key: IntentKey
   display: string // tenant-customizable display name
+  // Palette A (v2.3 Layout C). `swatch` is the category's hex identity color
+  // (spine tab, card swatch); `tint` carries the precomputed RGBA values for
+  // the category-tinted card header band. Header tinting is rendered CSS-side
+  // via [data-c] selectors in styles.module.css - these fields are the data
+  // model representation, available for a future tenant-config backend (T-219).
+  swatch: string
+  tint: {
+    light: string // header band background, light theme
+    dark: string // header band background, dark theme
+    border: string // header band dashed bottom border
+  }
 }
 
 export interface Tenant {
@@ -54,7 +65,6 @@ export interface VoicemailCardProps {
   voicemail: Voicemail
   index: number // for ticket-id display
   categories: Category[]
-  density: 'one' | 'two' | 'list'
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
 }
@@ -63,12 +73,7 @@ export interface VoicemailCardProps {
 // Implementation-support types (not part of the CD prop contract).
 // ---------------------------------------------------------------------------
 
-// Density union kept whole so VoicemailCardProps stays byte-for-byte the
-// design contract. v1 ships 'one' only (brief section 9); 'two' and 'list'
-// are intentionally unbuilt.
-export type Density = 'one' | 'two' | 'list'
-
-// Category filter selection on the New tab.
+// Category filter selection (spine binder tab): a category key or "all".
 export type CategoryFilter = IntentKey | 'all'
 
 // Sort order on the New tab.

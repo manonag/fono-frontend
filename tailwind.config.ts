@@ -13,6 +13,12 @@ const config: Config = {
         cream: '#FDF0E8',
         ink: '#1E0E00',
         brown: '#8B7355',
+        // Palette A - voicemail kiosk Layout C (binder-tab) category colors.
+        // Receipt-faithful, low-chroma. Scoped to the kiosk for now; CHIRAN
+        // T-229 tracks formalizing them as official brand additions.
+        sage: '#7B9C68',
+        'dusty-blue': '#4A6D86',
+        bone: '#B0A090',
         // Voicemail-route kiosk (Direction A - receipt). CSS-variable backed
         // so the [data-theme="dark"] swap defined in
         // src/components/kiosk/voicemail/styles.module.css cascades through

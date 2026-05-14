@@ -38,11 +38,51 @@ export const mockTenant: Tenant = {
   name: 'Spice Garden',
   location: 'Tracy, CA',
   routing_mode: 'voicemail',
+  // Palette A swatch + tinted-header-band RGBA values are verbatim from the
+  // CD README v2.3 "Tinted header band" / "Palette A - final per-category
+  // swatches" tables. Rendering is CSS-driven via [data-c] selectors; these
+  // values are the data-model mirror of those CSS rules.
   categories: [
-    { key: 'order', display: 'Order' },
-    { key: 'catering', display: 'Catering' },
-    { key: 'banquet_hall', display: 'Banquet hall' },
-    { key: 'others', display: 'Others' },
+    {
+      key: 'order',
+      display: 'Order',
+      swatch: '#D4652C',
+      tint: {
+        light: 'rgba(212,101,44,.10)',
+        dark: 'rgba(212,101,44,.18)',
+        border: 'rgba(212,101,44,.30)',
+      },
+    },
+    {
+      key: 'catering',
+      display: 'Catering',
+      swatch: '#7B9C68',
+      tint: {
+        light: 'rgba(123,156,104,.12)',
+        dark: 'rgba(123,156,104,.20)',
+        border: 'rgba(123,156,104,.32)',
+      },
+    },
+    {
+      key: 'banquet_hall',
+      display: 'Banquet hall',
+      swatch: '#4A6D86',
+      tint: {
+        light: 'rgba(74,109,134,.12)',
+        dark: 'rgba(74,109,134,.22)',
+        border: 'rgba(74,109,134,.30)',
+      },
+    },
+    {
+      key: 'others',
+      display: 'Others',
+      swatch: '#B0A090',
+      tint: {
+        light: 'rgba(176,160,144,.18)',
+        dark: 'rgba(176,160,144,.18)',
+        border: 'rgba(176,160,144,.40)',
+      },
+    },
   ],
 }
 
