@@ -63,6 +63,14 @@ const config: Config = {
           'popover-border': 'var(--rcp-popover-border)',
           'repeat-bg': 'var(--rcp-repeat-bg)',
           'repeat-fg': 'var(--rcp-repeat-fg)',
+          // Terra wash tints used on hover / current states, plus the soft
+          // status-stamp borders. Theme-constant (the prototype does not
+          // swap these in dark mode), so they are literal rather than
+          // CSS-variable backed.
+          'terra-tint': 'rgba(212, 101, 44, 0.1)',
+          'terra-tint-soft': 'rgba(212, 101, 44, 0.06)',
+          'danger-soft': 'rgba(220, 38, 38, 0.4)',
+          'success-soft': 'rgba(22, 163, 74, 0.35)',
         },
       },
       boxShadow: {
@@ -96,6 +104,9 @@ const config: Config = {
           'Menlo',
           'monospace',
         ],
+        // Nunito powers the Fono wordmark in the voicemail kiosk header.
+        // Already loaded by the root layout as --font-nunito.
+        nunito: ['var(--font-nunito)', 'Nunito', 'system-ui', 'sans-serif'],
       },
       keyframes: {
         'fade-in': {
