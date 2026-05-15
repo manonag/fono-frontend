@@ -8,7 +8,6 @@ const statusConfig: Record<string, { label: string; bg: string; text: string }> 
   missed:      { label: 'Missed',      bg: '#FEE2E2', text: '#DC2626' },
   recovered:   { label: 'Recovered',   bg: '#DBEAFE', text: '#2563EB' },
   ignored:     { label: 'Ignored',     bg: '#F3F4F6', text: '#6B7280' },
-  'no-answer': { label: 'No Answer',   bg: '#FEE2E2', text: '#DC2626' },
   in_progress: { label: 'In Progress', bg: '#FEF3C7', text: '#D97706' },
 }
 

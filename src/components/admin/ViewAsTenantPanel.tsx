@@ -34,6 +34,7 @@ interface StartSessionResponse {
   session_id: string
   tenant_id: string
   tenant_name: string
+  tenant_timezone: string
   admin_email: string
   device_mode: string
   ttl_minutes: number
@@ -242,6 +243,10 @@ export function ViewAsTenantPanel({ token, includeDemo }: ViewAsTenantPanelProps
       admin_email: session.admin_email,
       tenant_id: session.tenant_id,
       tenant_name: encodeURIComponent(session.tenant_name),
+      // IANA TZ identifier — the iframe's RestaurantProvider uses this
+      // so calendar-day math (Today/Yesterday) resolves to the tenant's
+      // local boundary, not the admin viewer's browser TZ.
+      tenant_timezone: session.tenant_timezone,
     }).toString()
   }, [session])
 

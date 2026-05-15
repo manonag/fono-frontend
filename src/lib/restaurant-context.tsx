@@ -3,25 +3,36 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useSession } from 'next-auth/react'
 import { useImpersonation } from '@/lib/impersonation'
 
+// Default IANA TZ used when a restaurant has none set. Matches the backend
+// column default on tenants.timezone so the frontend and backend converge
+// on the same fallback for any pre-migration session payload.
+const DEFAULT_TENANT_TIMEZONE = 'America/Los_Angeles'
+
 interface Restaurant {
   id: string
   name: string
   location: string
   initials: string
+  // IANA TZ identifier (e.g. "America/Los_Angeles"). Drives calendar-day
+  // math for Today/Yesterday/This Week pills on every dashboard surface.
+  timezone: string
 }
 
 // Fallback restaurants used when session has no tenants (e.g. during loading)
 const FALLBACK_RESTAURANTS: Restaurant[] = [
-  { id: '5c59ba59-2bf0-40a4-b15a-2d96c509ef29', name: 'Spice Garden', location: 'Tracy, CA', initials: 'SG' },
-  { id: 'b1a2c3d4-e5f6-7890-abcd-ef1234567890', name: 'Bawarchi Cafe', location: 'Fremont, CA', initials: 'BC' },
+  { id: '5c59ba59-2bf0-40a4-b15a-2d96c509ef29', name: 'Spice Garden', location: 'Tracy, CA', initials: 'SG', timezone: DEFAULT_TENANT_TIMEZONE },
+  { id: 'b1a2c3d4-e5f6-7890-abcd-ef1234567890', name: 'Bawarchi Cafe', location: 'Fremont, CA', initials: 'BC', timezone: DEFAULT_TENANT_TIMEZONE },
 ]
 
-function tenantsToRestaurants(tenants: { id: string; name: string; slug: string; role: string }[]): Restaurant[] {
+function tenantsToRestaurants(
+  tenants: { id: string; name: string; slug: string; role: string; timezone?: string }[],
+): Restaurant[] {
   return tenants.map(t => ({
     id: t.id,
     name: t.name,
     location: '',
     initials: t.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+    timezone: t.timezone || DEFAULT_TENANT_TIMEZONE,
   }))
 }
 
@@ -74,6 +85,10 @@ export function RestaurantProvider({ children }: { children: ReactNode }) {
         .join('')
         .slice(0, 2)
         .toUpperCase(),
+      // Carried in the impersonation URL hash from the admin shell so
+      // the impersonated view computes Today/Yesterday in the target
+      // tenant's TZ, not the admin viewer's browser TZ.
+      timezone: imp.tenantTimezone || DEFAULT_TENANT_TIMEZONE,
     }
     return (
       <RestaurantContext.Provider

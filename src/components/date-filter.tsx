@@ -24,8 +24,21 @@ const PILLS: { id: DateFilter; label: string }[] = [
   { id: 'custom', label: 'Custom' },
 ]
 
-export function getDateRangeForFilter(filter: DateFilter, customRange?: DateRange): { dateFrom: string; dateTo: string; days: number } {
-  const window = resolveFilterWindow(filter, customRange)
+/**
+ * Resolve the pill-state into ISO UTC instants for backend `date_from` /
+ * `date_to` query params. Always honors the tenant's TZ for the calendar-
+ * day boundary — see analytics-filter.ts for why this matters.
+ *
+ * `days` is retained for back-compat with callsites that still pass it to
+ * /dashboard/{id}/summary and /tenants/{id}/stats; migrated pages should
+ * ignore the field and use `dateFrom`/`dateTo` instead.
+ */
+export function getDateRangeForFilter(
+  filter: DateFilter,
+  customRange: DateRange | undefined,
+  timezone: string,
+): { dateFrom: string; dateTo: string; days: number } {
+  const window = resolveFilterWindow(filter, customRange, timezone)
   return {
     dateFrom: window.startDate.toISOString(),
     dateTo: window.endDate.toISOString(),

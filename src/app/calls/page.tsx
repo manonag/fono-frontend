@@ -320,7 +320,7 @@ export default function CallsPage() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean; onClick: () => void }) {
-  const isMissed = call.status === 'missed' || call.status === 'no-answer'
+  const isMissed = call.status === 'missed'
   const statusColor = isMissed ? '#EF4444' : call.status === 'recovered' ? '#22C55E' : call.status === 'in_progress' ? '#F59E0B' : '#22C55E'
   const time = new Date(call.created_at)
 
@@ -384,7 +384,7 @@ function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCount: number }) {
-  const isMissed = call.status === 'missed' || call.status === 'no-answer'
+  const isMissed = call.status === 'missed'
   const time = new Date(call.created_at)
 
   return (

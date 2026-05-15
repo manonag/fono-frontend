@@ -37,6 +37,7 @@ export interface ImpersonationState {
   sessionId: string | null
   tenantId: string | null
   tenantName: string | null
+  tenantTimezone: string | null
   token: string | null
 }
 
@@ -46,6 +47,7 @@ const EMPTY: ImpersonationState = {
   sessionId: null,
   tenantId: null,
   tenantName: null,
+  tenantTimezone: null,
   token: null,
 }
 
@@ -63,6 +65,7 @@ function parseHash(hashValue: string): ImpersonationState {
     sessionId: params.get('session_id'),
     tenantId: params.get('tenant_id'),
     tenantName: tenantNameRaw ? decodeURIComponent(tenantNameRaw) : null,
+    tenantTimezone: params.get('tenant_timezone'),
     token,
   }
 }

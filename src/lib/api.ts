@@ -4,7 +4,6 @@ import type {
   DashboardSummary,
   CallLogFilters,
   ChartDataPoint,
-  DateFilter,
   AnalyticsSummary,
   PeakHoursResponse,
 } from '@/types'
@@ -25,14 +24,32 @@ function authHeaders(token?: string): HeadersInit {
   return { Authorization: `Bearer ${token}` }
 }
 
+/**
+ * Window params for the summary / stats endpoints. Prefer `dateFrom`/
+ * `dateTo` (ISO UTC instants, tenant-TZ-resolved). `days` is accepted for
+ * back-compat with surfaces that haven't migrated yet; the backend ignores
+ * `days` when `dateFrom` is set.
+ */
+export interface SummaryWindow {
+  dateFrom?: string
+  dateTo?: string
+  days?: number
+}
+
+function appendWindowParams(params: URLSearchParams, w: SummaryWindow | undefined): void {
+  if (!w) return
+  if (w.dateFrom) params.set('date_from', w.dateFrom)
+  if (w.dateTo) params.set('date_to', w.dateTo)
+  if (w.days && !w.dateFrom) params.set('days', String(w.days))
+}
+
 export async function fetchDashboardSummary(
   tenantId: string,
-  days?: number,
-  token?: string
+  window?: SummaryWindow,
+  token?: string,
 ): Promise<DashboardSummary> {
   const params = new URLSearchParams()
-  if (days) params.set('days', days.toString())
-
+  appendWindowParams(params, window)
   const qs = params.toString() ? `?${params.toString()}` : ''
   const res = await fetch(`${baseUrl}/api/v1/dashboard/${tenantId}/summary${qs}`, {
     headers: authHeaders(token),
@@ -101,12 +118,20 @@ export async function fetchPeakHours(
   return res.json()
 }
 
+/**
+ * All-Restaurants aggregation: applies a single window to every tenant and
+ * sums the results. When a portfolio spans timezones there is no single
+ * correct calendar day, so callers should resolve the window in the admin
+ * viewer's browser TZ (or whichever pragmatic anchor they prefer) before
+ * passing it here. Single-tenant views should always resolve in the
+ * tenant's own TZ via useRestaurant().current.timezone.
+ */
 export async function fetchCombinedSummary(
   tenantIds: string[],
-  days?: number,
-  token?: string
+  window?: SummaryWindow,
+  token?: string,
 ): Promise<DashboardSummary> {
-  const results = await Promise.all(tenantIds.map(id => fetchDashboardSummary(id, days, token)))
+  const results = await Promise.all(tenantIds.map(id => fetchDashboardSummary(id, window, token)))
   return {
     total_calls: results.reduce((s, r) => s + (r.total_calls || 0), 0),
     missed_calls: results.reduce((s, r) => s + (r.missed_calls || 0), 0),
@@ -147,11 +172,11 @@ export interface TenantStats {
 
 export async function fetchTenantStats(
   tenantId: string,
-  days?: number,
-  token?: string
+  window?: SummaryWindow,
+  token?: string,
 ): Promise<TenantStats> {
   const params = new URLSearchParams()
-  if (days) params.set('days', days.toString())
+  appendWindowParams(params, window)
   const qs = params.toString() ? `?${params.toString()}` : ''
   const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/stats${qs}`, {
     headers: authHeaders(token),
@@ -162,10 +187,10 @@ export async function fetchTenantStats(
 
 export async function fetchCombinedStats(
   tenantIds: string[],
-  days?: number,
-  token?: string
+  window?: SummaryWindow,
+  token?: string,
 ): Promise<TenantStats> {
-  const results = await Promise.all(tenantIds.map(id => fetchTenantStats(id, days, token)))
+  const results = await Promise.all(tenantIds.map(id => fetchTenantStats(id, window, token)))
   const totalMissed = results.reduce((s, r) => s + r.missed_calls, 0)
   const totalRecoveredWeighted = results.reduce((s, r) => s + (r.recovery_rate * r.missed_calls / 100), 0)
   return {
@@ -182,34 +207,20 @@ export async function fetchCombinedStats(
   }
 }
 
-function getDateRange(period: DateFilter): { start: Date; end: Date } {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const end = new Date(today.getTime() + 86400000 - 1)
-
-  switch (period) {
-    case 'yesterday': {
-      const yesterday = new Date(today.getTime() - 86400000)
-      return { start: yesterday, end: new Date(today.getTime() - 1) }
-    }
-    case 'week': {
-      const weekAgo = new Date(today.getTime() - 7 * 86400000)
-      return { start: weekAgo, end }
-    }
-    case 'month': {
-      const monthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate())
-      return { start: monthAgo, end }
-    }
-    case 'today':
-    default:
-      return { start: today, end }
-  }
-}
-
+/**
+ * Mini-chart data for the dashboard cards. Pulls the full call log
+ * already-scoped to the window (server-side filter), then buckets by
+ * hour-of-day. Caller passes `dateFrom`/`dateTo` resolved in the tenant's
+ * TZ — see analytics-filter.ts.
+ *
+ * Ignored calls are counted as missed here (sprint c630d5f1 A3): a call
+ * that was missed and then dismissed by the operator is still a missed
+ * call for the purpose of "how busy was this hour."
+ */
 export async function fetchChartData(
   tenantId: string,
-  period: DateFilter,
-  token?: string
+  window: { dateFrom: string; dateTo: string },
+  token?: string,
 ): Promise<ChartDataPoint[]> {
   const allCalls: CallRecord[] = []
   let page = 1
@@ -217,18 +228,15 @@ export async function fetchChartData(
   let hasMore = true
 
   while (hasMore) {
-    const result = await fetchCallLog(tenantId, { status: 'all', page, perPage }, token)
+    const result = await fetchCallLog(
+      tenantId,
+      { status: 'all', page, perPage, dateFrom: window.dateFrom, dateTo: window.dateTo },
+      token,
+    )
     allCalls.push(...result.calls)
     hasMore = result.calls.length === perPage && page < 5
     page++
   }
-
-  const { start, end } = getDateRange(period)
-
-  const filtered = allCalls.filter((call) => {
-    const callDate = new Date(call.created_at)
-    return callDate >= start && callDate <= end
-  })
 
   const hourMap = new Map<number, ChartDataPoint>()
   for (let h = 0; h < 24; h++) {
@@ -236,11 +244,11 @@ export async function fetchChartData(
     hourMap.set(h, { hour: h, label: ampm, answered: 0, missed: 0, recovered: 0 })
   }
 
-  for (const call of filtered) {
+  for (const call of allCalls) {
     const hour = new Date(call.created_at).getHours()
     const point = hourMap.get(hour)!
     if (call.status === 'completed') point.answered++
-    else if (call.status === 'missed' || call.status === 'no-answer') point.missed++
+    else if (call.status === 'missed' || call.status === 'ignored') point.missed++
     else if (call.status === 'recovered') point.recovered++
   }
 

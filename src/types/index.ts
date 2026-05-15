@@ -1,7 +1,10 @@
 export interface CallRecord {
   id: string
   caller_number: string
-  status: 'completed' | 'missed' | 'recovered' | 'ignored' | 'no-answer' | 'in_progress'
+  // Backend's _ux_status (app/services/tenant_views.py) produces exactly
+  // these literals — see sprint c630d5f1 A6 for why the legacy hyphenated
+  // 'no-answer' was dropped.
+  status: 'completed' | 'missed' | 'recovered' | 'ignored' | 'in_progress'
   consent_given: boolean
   duration_seconds: number | null
   recording_url: string | null
