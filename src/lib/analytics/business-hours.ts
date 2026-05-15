@@ -7,8 +7,10 @@
 //       0f8d0118-039f-42d0-861a-ef3753cd2313
 //   - Sprint C (signup flow wires place_id end-to-end, blocked on A):
 //       3cef7bcd-8b4c-4959-9074-1059e058e72e
-//   - Parent: Google Places integration umbrella
-//       706c2252-d05e-4f3b-a1a8-6f7ac2abd0de
+//   - Sprint D (deletes this file once A ships, swaps in per-tenant fetch):
+//       7a5d367b-4f69-4aaf-a7a4-28cf78b30f81
+//   - Sprint E (cron + heatmap tenant-TZ correction):
+//       c11502d8-c370-4119-97ce-b0d5de24763c
 // Owner: Mano. Do not extend this file - extend the platform sprint instead.
 
 export type BusinessHours = {
