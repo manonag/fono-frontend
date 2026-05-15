@@ -14,6 +14,11 @@ import { DateFilterBar } from '@/components/date-filter'
 import { resolveFilterWindow } from '@/lib/analytics-filter'
 import { ChartTooltip, type ChartTooltipState } from '@/components/chart-tooltip'
 import { formatDuration } from '@/lib/utils'
+import {
+  HARDCODED_BUSINESS_HOURS,
+  bucketHours,
+  type BucketedHours,
+} from '@/lib/analytics/business-hours'
 import type { CallRecord, DateFilter } from '@/types'
 
 const DEFAULT_TIMEZONE = 'America/Los_Angeles'
@@ -89,7 +94,11 @@ export default function AnalyticsPage() {
     })
   }, [calls, resolvedWindow])
 
-  // Heatmap: 7 days × 24 hours
+  // Heatmap: 7 days x (working hours + 1 collapsed Closed bucket).
+  // We still bucket by browser-local hour today (same as the prior 24-col
+  // version); the tenant-TZ correction is tracked separately. After raw
+  // bucketing each row is passed through bucketHours so closed hours
+  // collapse into a single right-edge cell.
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
     filteredCalls.forEach(call => {
@@ -100,10 +109,20 @@ export default function AnalyticsPage() {
       const row = day === 0 ? 6 : day - 1
       grid[row][hour]++
     })
-    return grid
+    const rows = grid.map(r => bucketHours(r, HARDCODED_BUSINESS_HOURS))
+    const workingHourLabels = bucketHours(Array(24).fill(0), HARDCODED_BUSINESS_HOURS)
+      .workingHours.map(w => w.hour)
+    return { rows, workingHourLabels }
   }, [filteredCalls])
 
-  const heatmapMax = useMemo(() => Math.max(...heatmapData.flat(), 1), [heatmapData])
+  const heatmapMax = useMemo(() => {
+    let m = 1
+    for (const row of heatmapData.rows) {
+      for (const w of row.workingHours) if (w.count > m) m = w.count
+      if (row.closedCount > m) m = row.closedCount
+    }
+    return m
+  }, [heatmapData])
 
   // Donut chart data. "Missed" includes 'ignored' (calls swept by the
   // end-of-day auto-ignore cron) so the chart reflects the full missed-call
@@ -143,8 +162,10 @@ export default function AnalyticsPage() {
     return buckets
   }, [filteredCalls, resolvedWindow])
 
-  // Peak hours: bucket calls into 24 hours using the tenant timezone
-  const hourlyData = useMemo(() => {
+  // Peak hours: bucket calls into 24 hours using the tenant timezone, then
+  // collapse closed hours into a single right-edge bucket via the shared
+  // bucketHours helper. Working hours stay at 1-hour granularity.
+  const hourlyBuckets = useMemo<BucketedHours>(() => {
     const hours = Array(24).fill(0)
     filteredCalls.forEach(c => {
       const d = new Date(c.created_at)
@@ -155,7 +176,7 @@ export default function AnalyticsPage() {
       const bucket = Number.isFinite(localHour) ? localHour % 24 : d.getHours()
       hours[bucket] = (hours[bucket] || 0) + 1
     })
-    return hours as number[]
+    return bucketHours(hours, HARDCODED_BUSINESS_HOURS)
   }, [filteredCalls, tenantTimezone])
 
   const isSingleDayTrend = resolvedWindow.daysInRange.length <= 1
@@ -255,7 +276,7 @@ export default function AnalyticsPage() {
 
           {/* Peak Hours */}
           <Card title={`Peak Hours (${resolvedWindow.shortLabel})`} style={{ marginBottom: 20 }}>
-            <PeakHoursChart data={hourlyData} />
+            <PeakHoursChart data={hourlyBuckets} />
           </Card>
 
           {/* Stats Grid */}
@@ -311,12 +332,25 @@ function Card({ title, children, style }: { title: string; children: React.React
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const HOURS_LABELS = ['12a', '', '', '3a', '', '', '6a', '', '', '9a', '', '', '12p', '', '', '3p', '', '', '6p', '', '', '9p', '', '']
 
 function formatHourLabel(hour: number): string {
   if (hour === 0) return '12 AM'
   if (hour === 12) return '12 PM'
   return hour < 12 ? `${hour} AM` : `${hour - 12} PM`
+}
+
+function formatHourLabelShort(hour: number): string {
+  if (hour === 0) return '12a'
+  if (hour === 12) return '12p'
+  return hour < 12 ? `${hour}a` : `${hour - 12}p`
+}
+
+// Visual treatment shared by the Closed cell on the heatmap and the Closed
+// bar on the Peak Hours chart. Dashed outline drawn inside the cell so it
+// does not change layout footprint.
+const CLOSED_OUTLINE: React.CSSProperties = {
+  outline: '1px dashed rgba(0,0,0,0.28)',
+  outlineOffset: -1,
 }
 
 function positionTooltip(target: Element, container: HTMLElement | null): { x: number; y: number } | null {
@@ -329,44 +363,106 @@ function positionTooltip(target: Element, container: HTMLElement | null): { x: n
   }
 }
 
-function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMobile: boolean }) {
+type HeatmapData = {
+  rows: BucketedHours[]
+  workingHourLabels: number[]
+}
+
+function Heatmap({ data, max, isMobile }: { data: HeatmapData; max: number; isMobile: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
-  const cellSize = isMobile ? 12 : 28
+  const cellSize = isMobile ? 14 : 28
   const gap = isMobile ? 2 : 3
 
-  const showCell = (e: React.SyntheticEvent<Element>, dayIdx: number, hourIdx: number, count: number) => {
+  // Working-hour labels show every hour on desktop and every 3rd hour on
+  // mobile so they do not collide at 14px cell width. The Closed column
+  // header always renders.
+  const labels = data.workingHourLabels.map((hour, i) => {
+    if (isMobile && i % 3 !== 0) return ''
+    return formatHourLabelShort(hour)
+  })
+
+  const showWorking = (
+    e: React.SyntheticEvent<Element>,
+    dayIdx: number,
+    hour: number,
+    count: number,
+  ) => {
     if (count <= 0) return
     const pos = positionTooltip(e.currentTarget, containerRef.current)
     if (!pos) return
     setTooltip({
       ...pos,
-      content: `${DAYS[dayIdx]} ${formatHourLabel(hourIdx)}: ${count} call${count !== 1 ? 's' : ''}`,
+      content: `${DAYS[dayIdx]} ${formatHourLabel(hour)}: ${count} call${count !== 1 ? 's' : ''}`,
+    })
+  }
+
+  const showClosed = (
+    e: React.SyntheticEvent<Element>,
+    dayIdx: number,
+    count: number,
+  ) => {
+    const pos = positionTooltip(e.currentTarget, containerRef.current)
+    if (!pos) return
+    setTooltip({
+      ...pos,
+      content: `${DAYS[dayIdx]} closed hours: ${count} call${count !== 1 ? 's' : ''}`,
     })
   }
 
   return (
     <div ref={containerRef} className="relative overflow-x-auto">
       <div style={{ display: 'inline-flex', flexDirection: 'column', gap }}>
-        {/* Hour labels */}
+        {/* Hour labels + Closed header */}
         <div style={{ display: 'flex', gap, paddingLeft: isMobile ? 28 : 40 }}>
-          {HOURS_LABELS.map((label, i) => (
-            <div key={i} style={{ width: cellSize, textAlign: 'center', fontSize: isMobile ? 8 : 10, color: '#B0A090', fontWeight: 500 }}>
+          {labels.map((label, i) => (
+            <div
+              key={i}
+              style={{
+                width: cellSize,
+                textAlign: 'center',
+                fontSize: isMobile ? 8 : 10,
+                color: '#B0A090',
+                fontWeight: 500,
+              }}
+            >
               {label}
             </div>
           ))}
+          <div
+            style={{
+              width: cellSize,
+              textAlign: 'center',
+              fontSize: isMobile ? 8 : 10,
+              color: '#8B7355',
+              fontWeight: 600,
+            }}
+          >
+            Closed
+          </div>
         </div>
-        {data.map((row, dayIdx) => (
+        {data.rows.map((row, dayIdx) => (
           <div key={dayIdx} style={{ display: 'flex', alignItems: 'center', gap }}>
-            <span style={{ width: isMobile ? 24 : 36, fontSize: isMobile ? 10 : 12, color: '#8B7355', fontWeight: 500, textAlign: 'right', paddingRight: 4 }}>
+            <span
+              style={{
+                width: isMobile ? 24 : 36,
+                fontSize: isMobile ? 10 : 12,
+                color: '#8B7355',
+                fontWeight: 500,
+                textAlign: 'right',
+                paddingRight: 4,
+              }}
+            >
               {DAYS[dayIdx]}
             </span>
-            {row.map((count, hourIdx) => {
+            {row.workingHours.map(({ hour, count }) => {
               const intensity = max > 0 ? count / max : 0
               const hasCalls = count > 0
               return (
                 <div
-                  key={hourIdx}
+                  key={hour}
+                  role="img"
+                  aria-label={`${DAYS[dayIdx]} ${formatHourLabel(hour)}, ${count} call${count !== 1 ? 's' : ''}`}
                   style={{
                     width: cellSize,
                     height: cellSize,
@@ -376,12 +472,37 @@ function Heatmap({ data, max, isMobile }: { data: number[][]; max: number; isMob
                       : `rgba(224,96,42,${Math.max(intensity * 0.9, 0.1)})`,
                     cursor: hasCalls ? 'pointer' : 'default',
                   }}
-                  onMouseEnter={(e) => showCell(e, dayIdx, hourIdx, count)}
+                  onMouseEnter={(e) => showWorking(e, dayIdx, hour, count)}
                   onMouseLeave={() => setTooltip(null)}
-                  onTouchStart={(e) => showCell(e, dayIdx, hourIdx, count)}
+                  onTouchStart={(e) => showWorking(e, dayIdx, hour, count)}
                 />
               )
             })}
+            {(() => {
+              const count = row.closedCount
+              const intensity = max > 0 ? count / max : 0
+              const hasCalls = count > 0
+              return (
+                <div
+                  key="closed"
+                  role="img"
+                  aria-label={`${DAYS[dayIdx]} closed hours, ${count} call${count !== 1 ? 's' : ''}`}
+                  style={{
+                    width: cellSize,
+                    height: cellSize,
+                    borderRadius: 6,
+                    backgroundColor: !hasCalls
+                      ? 'rgba(0,0,0,0.02)'
+                      : `rgba(224,96,42,${Math.max(intensity * 0.9, 0.1)})`,
+                    cursor: 'pointer',
+                    ...CLOSED_OUTLINE,
+                  }}
+                  onMouseEnter={(e) => showClosed(e, dayIdx, count)}
+                  onMouseLeave={() => setTooltip(null)}
+                  onTouchStart={(e) => showClosed(e, dayIdx, count)}
+                />
+              )
+            })()}
           </div>
         ))}
       </div>
@@ -626,20 +747,25 @@ function TrendLine({ data, timezone }: { data: { date: Date; total: number; miss
 // Peak Hours Bar Chart
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function PeakHoursChart({ data }: { data: number[] }) {
+function PeakHoursChart({ data }: { data: BucketedHours }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null)
-  const max = Math.max(...data, 1)
-  const totalInWindow = data.reduce((acc, n) => acc + n, 0)
-  // Find top 3 hours
-  const sorted = [...data].sort((a, b) => b - a)
-  const top3Threshold = sorted[2] || 0
 
-  const hourLabels = Array.from({ length: 24 }, (_, i) =>
-    i === 0 ? '12a' : i < 12 ? `${i}a` : i === 12 ? '12p' : `${i - 12}p`
-  )
+  const workingCounts = data.workingHours.map(w => w.count)
+  const max = Math.max(...workingCounts, data.closedCount, 1)
+  const totalInWindow = workingCounts.reduce((acc, n) => acc + n, 0) + data.closedCount
 
-  const showBar = (e: React.SyntheticEvent<HTMLDivElement>, hour: number, count: number) => {
+  // Top-3 highlight applies to working hours only. The closed bar is the
+  // catch-all for hours the restaurant is shut, so highlighting it as a
+  // "peak hour" would mislead the reader.
+  const sortedWorking = [...workingCounts].sort((a, b) => b - a)
+  const top3Threshold = sortedWorking[2] || 0
+
+  const showWorking = (
+    e: React.SyntheticEvent<HTMLDivElement>,
+    hour: number,
+    count: number,
+  ) => {
     const pos = positionTooltip(e.currentTarget, containerRef.current)
     if (!pos) return
     const pctStr = totalInWindow > 0 ? `${((count / totalInWindow) * 100).toFixed(0)}%` : '0%'
@@ -649,31 +775,72 @@ function PeakHoursChart({ data }: { data: number[] }) {
     })
   }
 
+  const showClosed = (
+    e: React.SyntheticEvent<HTMLDivElement>,
+    count: number,
+  ) => {
+    const pos = positionTooltip(e.currentTarget, containerRef.current)
+    if (!pos) return
+    setTooltip({
+      ...pos,
+      content: `Closed hours: ${count} call${count !== 1 ? 's' : ''}`,
+    })
+  }
+
+  const barHeight = (count: number) => Math.max(max > 0 ? (count / max) * 120 : 2, 2)
+
   return (
     <div ref={containerRef} className="relative overflow-x-auto">
       <div className="flex items-end gap-1" style={{ minWidth: 480, height: 140 }}>
-        {data.map((count, i) => {
-          const barH = max > 0 ? (count / max) * 120 : 2
+        {data.workingHours.map(({ hour, count }) => {
           const isTop = count >= top3Threshold && count > 0
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+            <div key={hour} className="flex-1 flex flex-col items-center gap-1">
               <div
+                role="img"
+                aria-label={`${formatHourLabel(hour)}, ${count} call${count !== 1 ? 's' : ''}`}
                 style={{
                   width: '100%',
-                  height: Math.max(barH, 2),
+                  height: barHeight(count),
                   borderRadius: '4px 4px 0 0',
-                  backgroundColor: isTop ? '#E0602A' : `rgba(224,96,42,${Math.max(count / max * 0.5, 0.08)})`,
+                  backgroundColor: isTop
+                    ? '#E0602A'
+                    : `rgba(224,96,42,${Math.max((count / max) * 0.5, 0.08)})`,
                   transition: 'height 300ms ease',
                   cursor: count > 0 ? 'pointer' : 'default',
                 }}
-                onMouseEnter={(e) => showBar(e, i, count)}
+                onMouseEnter={(e) => showWorking(e, hour, count)}
                 onMouseLeave={() => setTooltip(null)}
-                onTouchStart={(e) => showBar(e, i, count)}
+                onTouchStart={(e) => showWorking(e, hour, count)}
               />
-              <span style={{ fontSize: 8, color: '#B0A090', fontWeight: 500 }}>{hourLabels[i]}</span>
+              <span style={{ fontSize: 8, color: '#B0A090', fontWeight: 500 }}>
+                {formatHourLabelShort(hour)}
+              </span>
             </div>
           )
         })}
+        {/* Closed bucket: same color scale as working bars, with a dashed
+            outline so the reader can tell it is the all-closed-hours
+            catch-all rather than a peak hour. */}
+        <div key="closed" className="flex-1 flex flex-col items-center gap-1">
+          <div
+            role="img"
+            aria-label={`Closed hours, ${data.closedCount} call${data.closedCount !== 1 ? 's' : ''}`}
+            style={{
+              width: '100%',
+              height: barHeight(data.closedCount),
+              borderRadius: '4px 4px 0 0',
+              backgroundColor: `rgba(224,96,42,${Math.max((data.closedCount / max) * 0.5, 0.08)})`,
+              transition: 'height 300ms ease',
+              cursor: 'pointer',
+              ...CLOSED_OUTLINE,
+            }}
+            onMouseEnter={(e) => showClosed(e, data.closedCount)}
+            onMouseLeave={() => setTooltip(null)}
+            onTouchStart={(e) => showClosed(e, data.closedCount)}
+          />
+          <span style={{ fontSize: 8, color: '#8B7355', fontWeight: 600 }}>Closed</span>
+        </div>
       </div>
       <ChartTooltip state={tooltip} />
     </div>
