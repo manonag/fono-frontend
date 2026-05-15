@@ -15,7 +15,7 @@ import type { TenantStats } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { config } from '@/lib/config'
-import { formatPhoneNumber, formatDuration, timeAgo } from '@/lib/utils'
+import { formatPhoneNumber, formatDuration, formatCallTime } from '@/lib/utils'
 import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
 import type { CallRecord, ChartDataPoint, DateFilter } from '@/types'
 
@@ -477,7 +477,12 @@ export default function DashboardPage() {
               ) : (
                 <div>
                   {calls.map((call, i) => (
-                    <ActivityRow key={call.id} call={call} isLast={i === calls.length - 1} />
+                    <ActivityRow
+                      key={call.id}
+                      call={call}
+                      isLast={i === calls.length - 1}
+                      tenantTimezone={activeTimezone}
+                    />
                   ))}
                 </div>
               )}
@@ -665,9 +670,12 @@ function MiniChart({ bars, color, height = 48, width, loading }: {
 // Activity Row
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
+function ActivityRow({ call, isLast, tenantTimezone }: {
+  call: CallRecord; isLast: boolean; tenantTimezone: string
+}) {
   const isMissed = call.status === 'missed'
   const isInProgress = call.status === 'in_progress'
+  const time = formatCallTime(call.created_at, tenantTimezone)
 
   const statusIconBg = isMissed
     ? 'rgba(239,68,68,0.08)'
@@ -714,8 +722,11 @@ function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
 
       <Badge status={call.status} />
 
-      <span style={{ fontSize: 12, color: '#B0A090', minWidth: 50, textAlign: 'right' }}>
-        {timeAgo(call.created_at)}
+      <span
+        style={{ fontSize: 12, color: '#B0A090', textAlign: 'right' }}
+        title={time.absolute}
+      >
+        {time.combined}
       </span>
 
       {call.recording_url ? (

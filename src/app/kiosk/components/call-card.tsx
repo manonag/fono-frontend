@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { SLATimer } from './sla-timer'
-import { timeAgo } from '@/lib/utils'
+import { formatCallTime } from '@/lib/utils'
 
 export interface KioskCall {
   id: string
@@ -27,9 +27,16 @@ interface CallCardProps {
   onCallBack?: (call: KioskCall) => void
   onIgnore?: (call: KioskCall) => void
   animateOut?: boolean
+  tenantTimezone: string
 }
 
-export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, onIgnore, animateOut }: CallCardProps) {
+export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, onIgnore, animateOut, tenantTimezone }: CallCardProps) {
+  const startedTime = formatCallTime(call.started_at, tenantTimezone)
+  // callback_at is only set on rows the kiosk operator (or auto-sweep) has
+  // acted on, so render its relative-only label conditionally below.
+  const callbackTime = call.callback_at
+    ? formatCallTime(call.callback_at, tenantTimezone)
+    : null
   const isBreached = call.sla_breached || (call.sla_deadline && new Date(call.sla_deadline).getTime() < Date.now())
   const isApproaching = !isBreached && call.sla_deadline &&
     (new Date(call.sla_deadline).getTime() - Date.now()) < 5 * 60 * 1000
@@ -125,16 +132,19 @@ export function CallCard({ call, dark, variant, selected, onSelect, onCallBack, 
         <div style={{ fontSize: 22, fontWeight: 900, color: textPrimary, lineHeight: 1.2 }}>
           {call.caller_phone}
         </div>
-        <div style={{ fontSize: 12, fontWeight: 500, color: textSecondary, marginTop: 4 }}>
-          {timeAgo(call.started_at)}
-          {variant === 'recovered' && call.callback_at && (
+        <div
+          style={{ fontSize: 12, fontWeight: 500, color: textSecondary, marginTop: 4 }}
+          title={startedTime.absolute}
+        >
+          {startedTime.combined}
+          {variant === 'recovered' && callbackTime && (
             <span style={{ color: '#22C55E', marginLeft: 8 }}>
-              Recovered {timeAgo(call.callback_at)}
+              Recovered {callbackTime.relative}
             </span>
           )}
-          {variant === 'ignored' && call.callback_at && (
+          {variant === 'ignored' && callbackTime && (
             <span style={{ marginLeft: 8 }}>
-              Attempted {timeAgo(call.callback_at)}
+              Attempted {callbackTime.relative}
             </span>
           )}
         </div>

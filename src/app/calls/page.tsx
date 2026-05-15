@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { formatInTimeZone } from 'date-fns-tz'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -13,7 +14,7 @@ import { useCallEvents } from '@/hooks/use-call-events'
 import { fetchCallLog, fetchDashboardSummary, fetchCombinedCallLog, fetchCombinedSummary } from '@/lib/api'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useFonoToken } from '@/hooks/use-fono-token'
-import { formatPhoneNumber, formatDuration } from '@/lib/utils'
+import { formatPhoneNumber, formatDuration, formatCallTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { CallRecord } from '@/types'
 
@@ -53,6 +54,9 @@ function CallsContent() {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null)
 
   const { tenantId, isAll, allTenantIds, current } = useRestaurant()
+  // Single source of truth for tenant TZ on every row in this page —
+  // matches the same pattern wired into dashboard/page.tsx in Task 3.
+  const activeTimezone = current.timezone
   const token = useFonoToken()
 
   const loadCalls = useCallback(async (reset = false) => {
@@ -115,7 +119,11 @@ function CallsContent() {
           <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Call Details</span>
         </div>
         <main className="flex-1 p-4">
-          <CallDetailContent call={selectedCall} callerCount={callerHistory.get(selectedCall.caller_number) || 1} />
+          <CallDetailContent
+            call={selectedCall}
+            callerCount={callerHistory.get(selectedCall.caller_number) || 1}
+            tenantTimezone={activeTimezone}
+          />
         </main>
         <MobileNav missedCount={missedCalls} />
       </div>
@@ -215,6 +223,7 @@ function CallsContent() {
               call={call}
               active={selectedCall?.id === call.id}
               onClick={() => setSelectedCall(call)}
+              tenantTimezone={activeTimezone}
             />
           ))}
           {hasMore && (
@@ -291,7 +300,11 @@ function CallsContent() {
                     </svg>
                   </button>
                 </div>
-                <CallDetailContent call={selectedCall} callerCount={callerHistory.get(selectedCall.caller_number) || 1} />
+                <CallDetailContent
+                  call={selectedCall}
+                  callerCount={callerHistory.get(selectedCall.caller_number) || 1}
+                  tenantTimezone={activeTimezone}
+                />
               </div>
             )}
           </div>
@@ -319,10 +332,12 @@ export default function CallsPage() {
 // Call Row
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean; onClick: () => void }) {
+function CallRow({ call, active, onClick, tenantTimezone }: {
+  call: CallRecord; active: boolean; onClick: () => void; tenantTimezone: string
+}) {
   const isMissed = call.status === 'missed'
   const statusColor = isMissed ? '#EF4444' : call.status === 'recovered' ? '#22C55E' : call.status === 'in_progress' ? '#F59E0B' : '#22C55E'
-  const time = new Date(call.created_at)
+  const time = formatCallTime(call.created_at, tenantTimezone)
 
   return (
     <button
@@ -359,8 +374,11 @@ function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean;
       {/* Badge + time */}
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         <Badge status={call.status} />
-        <span style={{ fontSize: 11, color: '#B0A090' }}>
-          {time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+        <span
+          style={{ fontSize: 11, color: '#B0A090', whiteSpace: 'nowrap' }}
+          title={time.absolute}
+        >
+          {time.combined}
         </span>
       </div>
 
@@ -383,15 +401,24 @@ function CallRow({ call, active, onClick }: { call: CallRecord; active: boolean;
 // Call Detail Content
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCount: number }) {
+function CallDetailContent({ call, callerCount, tenantTimezone }: {
+  call: CallRecord; callerCount: number; tenantTimezone: string
+}) {
   const isMissed = call.status === 'missed'
-  const time = new Date(call.created_at)
+  // All visible strings on this panel render in tenant TZ. formatCallTime
+  // gives us the {relative · absolute} header line; formatInTimeZone is
+  // re-imported below for the Timeline + Details rows which have their
+  // own format strings.
+  const time = formatCallTime(call.created_at, tenantTimezone)
 
   return (
     <div>
       {/* Phone number */}
-      <p style={{ fontSize: 22, fontWeight: 800, color: '#1E0E00', letterSpacing: '-0.02em', marginBottom: 8 }}>
+      <p style={{ fontSize: 22, fontWeight: 800, color: '#1E0E00', letterSpacing: '-0.02em', marginBottom: 4 }}>
         {formatPhoneNumber(call.caller_number)}
+      </p>
+      <p style={{ fontSize: 12, color: '#8B7355', marginBottom: 10 }} title={time.absolute}>
+        {time.combined}
       </p>
       <div style={{ marginBottom: 24 }}>
         <Badge status={call.status} />
@@ -403,7 +430,11 @@ function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCoun
           Call Timeline
         </h4>
         <div className="flex flex-col gap-0" style={{ paddingLeft: 8 }}>
-          <TimelineItem label="Ring" time={time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })} active />
+          <TimelineItem
+            label="Ring"
+            time={formatInTimeZone(call.created_at, tenantTimezone, 'h:mm:ss a')}
+            active
+          />
           {!isMissed && (
             <TimelineItem label="Answered" time="Connected" active />
           )}
@@ -435,8 +466,14 @@ function CallDetailContent({ call, callerCount }: { call: CallRecord; callerCoun
           Details
         </h4>
         <div className="space-y-2">
-          <MetaRow label="Date" value={time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} />
-          <MetaRow label="Time" value={time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} />
+          <MetaRow
+            label="Date"
+            value={formatInTimeZone(call.created_at, tenantTimezone, 'EEEE, MMMM d, yyyy')}
+          />
+          <MetaRow
+            label="Time"
+            value={formatInTimeZone(call.created_at, tenantTimezone, 'h:mm a')}
+          />
           <MetaRow label="Direction" value="Inbound" />
           <MetaRow label="Duration" value={call.duration_seconds != null && call.duration_seconds > 0 ? formatDuration(call.duration_seconds) : '—'} />
           <MetaRow label="Status" value={call.status} />

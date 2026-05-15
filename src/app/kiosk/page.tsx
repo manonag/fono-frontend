@@ -11,6 +11,7 @@ import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
+import { useRestaurant } from '@/lib/restaurant-context'
 import { fetchTenantVoicemailConfig } from '@/lib/api'
 import { KioskPage as VoicemailKioskPage } from '@/components/kiosk/voicemail/KioskPage'
 import type { Tenant } from '@/components/kiosk/voicemail/types'
@@ -76,6 +77,11 @@ function KioskContent() {
   const { data: session } = useSession()
   const token = useFonoToken()
   const imp = useImpersonation()
+  // useRestaurant resolves through the impersonation hash branch when
+  // the kiosk is loaded inside the admin View-as iframe, so this is the
+  // single source of truth for both flavors.
+  const { current } = useRestaurant()
+  const activeTimezone = current.timezone
   const searchParams = useSearchParams()
   const urlTenantId = searchParams.get('tenant')
   const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
@@ -398,6 +404,7 @@ function KioskContent() {
                 onCallBack={activeTab === 'missed' && !imp.readOnly ? handleCallBack : undefined}
                 onIgnore={activeTab === 'missed' && !imp.readOnly ? handleIgnore : undefined}
                 animateOut={animatingOut === call.id}
+                tenantTimezone={activeTimezone}
               />
             ))}
           </div>
