@@ -7,12 +7,16 @@ import type { DateFilter } from '@/types'
 /**
  * Mobile-only filter drawer for the tenant dashboard home.
  *
- * The desktop surface uses `<DateFilterBar>` inline; mobile gets cards
- * across the entire viewport and didn't render filters at all (sprint
- * follow-up to Task 4). This drawer slides up from the bottom, hosts the
- * same date filter the desktop surface drives, and writes back to the
- * page's state only when the user taps Apply — so partial taps don't
- * trigger network fetches.
+ * Interaction model (sprint follow-up to PR #5):
+ *   - Preset pills (Today / Yesterday / Week / Month) commit and close on
+ *     tap. Brief highlight (~100ms) gives a visual ack before dismiss.
+ *   - Custom keeps the staged-then-Apply pattern because mobile date
+ *     pickers are fiddly and partial taps mid-selection should not yet
+ *     trigger a refetch.
+ *   - "Clear" link in the header restores Today on tap, closes
+ *     immediately. Surfaces only when the committed state is non-default.
+ *   - Sticky footer (with the Apply button) renders only while Custom is
+ *     the active draft; presets need no footer at all.
  *
  * State contract (kept identical to DashboardPage):
  *   { dateFilter: DateFilter, customRange?: { from, to } }
@@ -32,7 +36,7 @@ interface FilterDrawerProps {
   /** Current committed state. Drawer seeds its draft from this on open. */
   value: DateFilter
   customRange?: FilterDrawerCustomRange
-  /** Called when the user taps Apply with the draft values. */
+  /** Called with the resolved selection — by preset tap or Custom Apply. */
   onApply: (next: DateFilter, range?: FilterDrawerCustomRange) => void
   onClose: () => void
 }
@@ -44,6 +48,11 @@ const PILLS: { id: DateFilter; label: string }[] = [
   { id: 'month', label: 'This Month' },
   { id: 'custom', label: 'Custom' },
 ]
+
+// Visual-ack delay before a preset tap dismisses the drawer. Short enough
+// that it never feels like a hang, long enough that the highlight
+// register on slow displays.
+const PRESET_COMMIT_DELAY_MS = 100
 
 /**
  * Predicate used by both the page and the trigger pill: a filter is
@@ -69,9 +78,14 @@ export function FilterDrawer({
   const [draftFilter, setDraftFilter] = useState<DateFilter>(value)
   const [draftFrom, setDraftFrom] = useState(customRange?.from ?? '')
   const [draftTo, setDraftTo] = useState(customRange?.to ?? '')
+  // Suppress further preset taps during the brief visual-ack window so a
+  // double-tap can't fire two commits in the same gesture.
+  const [committing, setCommitting] = useState(false)
+
   const overlayRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
+  const commitTimerRef = useRef<number | null>(null)
 
   // Re-seed every time the drawer opens so a Cancel + reopen shows the
   // committed state, not the prior abandoned draft.
@@ -80,7 +94,18 @@ export function FilterDrawer({
     setDraftFilter(value)
     setDraftFrom(customRange?.from ?? '')
     setDraftTo(customRange?.to ?? '')
+    setCommitting(false)
   }, [open, value, customRange])
+
+  // Clear any in-flight commit timer when the drawer unmounts/closes so a
+  // late callback can't fire after the parent already moved on.
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current !== null) {
+        window.clearTimeout(commitTimerRef.current)
+      }
+    }
+  }, [])
 
   // Esc closes; basic Tab focus cycling stays inside the panel.
   useEffect(() => {
@@ -130,25 +155,48 @@ export function FilterDrawer({
     }
   }, [open])
 
-  const customRangeReady = draftFilter === 'custom' && draftFrom && draftTo
-  const applyDisabled = draftFilter === 'custom' && !customRangeReady
+  // Custom-range validity: both ends present AND From <= To. The string
+  // comparison is safe because <input type="date"> values are ISO
+  // YYYY-MM-DD which sorts lexicographically.
+  const customDatesValid =
+    !!draftFrom && !!draftTo && draftFrom <= draftTo
+  const applyDisabled = !customDatesValid
+  const showFooter = draftFilter === 'custom'
+  const showClear = isFilterActive(value, customRange)
 
-  function handleApply() {
-    if (draftFilter === 'custom') {
-      if (!draftFrom || !draftTo) return
-      onApply('custom', { from: draftFrom, to: draftTo })
-    } else {
-      // Non-custom filters clear any prior custom range so the drawer
-      // is the single source of truth for what runs after Apply.
-      onApply(draftFilter, undefined)
+  function handlePresetTap(filter: DateFilter) {
+    if (committing) return
+    if (filter === 'custom') {
+      // Custom is a mode switch — reveal the From/To inputs and wait for
+      // Apply. No commit yet, drawer stays open.
+      setDraftFilter('custom')
+      return
     }
+    // Visual ack: paint the selection, then commit + dismiss after a
+    // tiny delay so the user sees their tap register. Capture `filter`
+    // by closure rather than reading draftFilter inside the timeout
+    // (state update from setDraftFilter may not flush by then).
+    setDraftFilter(filter)
+    setCommitting(true)
+    commitTimerRef.current = window.setTimeout(() => {
+      onApply(filter, undefined)
+      onClose()
+      commitTimerRef.current = null
+    }, PRESET_COMMIT_DELAY_MS)
+  }
+
+  function handleApplyCustom() {
+    if (!customDatesValid) return
+    onApply('custom', { from: draftFrom, to: draftTo })
     onClose()
   }
 
-  function handleReset() {
-    setDraftFilter('today')
-    setDraftFrom('')
-    setDraftTo('')
+  function handleClear() {
+    // One-shot reset: commit defaults and dismiss. Skip the visual-ack
+    // delay because the drawer is dismissing entirely, not switching
+    // between staged options.
+    onApply('today', undefined)
+    onClose()
   }
 
   if (!open) return null
@@ -181,37 +229,58 @@ export function FilterDrawer({
           <div style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.12)' }} />
         </div>
 
-        {/* Header */}
+        {/* Header: title (left), Clear (middle-right, conditional), Close (right) */}
         <div
-          className="flex items-center justify-between"
+          className="flex items-center justify-between gap-2"
           style={{ padding: '12px 20px 16px' }}
         >
           <h2 id="filter-drawer-title" style={{ fontSize: 17, fontWeight: 700, color: '#1E0E00' }}>
             Filter calls
           </h2>
-          <button
-            ref={closeBtnRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close filter drawer"
-            className="flex items-center justify-center"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              backgroundColor: 'rgba(0,0,0,0.04)',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5C3D22" strokeWidth="2">
-              <path d="M18 6L6 18" />
-              <path d="M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {showClear && (
+              <button
+                type="button"
+                onClick={handleClear}
+                aria-label="Clear filter, reset to Today"
+                className="transition-colors hover:text-ink"
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#E0602A',
+                  background: 'none',
+                  border: 'none',
+                  padding: '6px 4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              ref={closeBtnRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Close filter drawer"
+              className="flex items-center justify-center"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                backgroundColor: 'rgba(0,0,0,0.04)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5C3D22" strokeWidth="2">
+                <path d="M18 6L6 18" />
+                <path d="M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Body — scrollable when content overflows */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto" style={{ padding: '0 20px 8px' }}>
           <div style={{ marginBottom: 8 }}>
             <p
@@ -226,15 +295,22 @@ export function FilterDrawer({
             >
               Date range
             </p>
-            <div className="flex flex-col gap-2">
+            <div
+              role="radiogroup"
+              aria-labelledby="filter-drawer-title"
+              className="flex flex-col gap-2"
+            >
               {PILLS.map((pill) => {
                 const selected = draftFilter === pill.id
                 return (
                   <button
                     key={pill.id}
                     type="button"
-                    onClick={() => setDraftFilter(pill.id)}
-                    className="transition-all text-left"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => handlePresetTap(pill.id)}
+                    disabled={committing}
+                    className="transition-all text-left disabled:cursor-default"
                     style={{
                       padding: '14px 18px',
                       borderRadius: 12,
@@ -244,7 +320,7 @@ export function FilterDrawer({
                       color: selected ? '#fff' : '#1E0E00',
                       border: selected ? 'none' : '1px solid rgba(0,0,0,0.08)',
                       boxShadow: selected ? '0 2px 8px rgba(224,96,42,0.25)' : 'none',
-                      cursor: 'pointer',
+                      cursor: committing ? 'default' : 'pointer',
                     }}
                   >
                     {pill.label}
@@ -275,6 +351,7 @@ export function FilterDrawer({
                   <input
                     type="date"
                     value={draftFrom}
+                    max={draftTo || undefined}
                     onChange={(e) => setDraftFrom(e.target.value)}
                     className="focus:outline-none"
                     style={{
@@ -293,6 +370,7 @@ export function FilterDrawer({
                   <input
                     type="date"
                     value={draftTo}
+                    min={draftFrom || undefined}
                     onChange={(e) => setDraftTo(e.target.value)}
                     className="focus:outline-none"
                     style={{
@@ -306,58 +384,53 @@ export function FilterDrawer({
                     onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
                   />
                 </label>
+                {/* From/To order hint surfaces only when both are set and
+                    out of order. The Apply button is gated by the same
+                    rule, so this just explains why. */}
+                {draftFrom && draftTo && draftFrom > draftTo && (
+                  <p style={{ fontSize: 12, color: '#EF4444', fontWeight: 500 }}>
+                    From must be on or before To.
+                  </p>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* Sticky footer */}
-        <div
-          className="flex items-center gap-3"
-          style={{
-            padding: '12px 20px',
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            borderTop: '1px solid rgba(0,0,0,0.06)',
-            backgroundColor: '#fff',
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleReset}
+        {/* Footer — only when Custom needs an explicit Apply step. Preset
+            taps commit and close directly, so they don't render this. */}
+        {showFooter && (
+          <div
+            className="flex items-center"
             style={{
-              flex: 1,
-              padding: '14px 0',
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 600,
-              color: '#8B7355',
-              backgroundColor: 'rgba(0,0,0,0.04)',
-              border: 'none',
-              cursor: 'pointer',
+              padding: '12px 20px',
+              paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+              borderTop: '1px solid rgba(0,0,0,0.06)',
+              backgroundColor: '#fff',
             }}
           >
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            disabled={applyDisabled}
-            className="transition-colors hover:bg-terra-dark disabled:opacity-50"
-            style={{
-              flex: 2,
-              padding: '14px 0',
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 700,
-              color: '#fff',
-              backgroundColor: '#E0602A',
-              border: 'none',
-              cursor: applyDisabled ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Apply
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={handleApplyCustom}
+              disabled={applyDisabled}
+              aria-disabled={applyDisabled}
+              className="transition-colors hover:bg-terra-dark disabled:opacity-50"
+              style={{
+                flex: 1,
+                padding: '14px 0',
+                borderRadius: 12,
+                fontSize: 15,
+                fontWeight: 700,
+                color: '#fff',
+                backgroundColor: '#E0602A',
+                border: 'none',
+                cursor: applyDisabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
