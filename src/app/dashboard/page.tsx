@@ -17,6 +17,8 @@ import { useFonoToken } from '@/hooks/use-fono-token'
 import { config } from '@/lib/config'
 import { formatPhoneNumber, formatDuration, formatCallTime } from '@/lib/utils'
 import { DateFilterBar, getDateRangeForFilter } from '@/components/date-filter'
+import { FilterDrawer, isFilterActive } from '@/components/filter-drawer'
+import { resolveFilterWindow } from '@/lib/analytics-filter'
 import type { CallRecord, ChartDataPoint, DateFilter } from '@/types'
 
 function safeNum(n: unknown): number {
@@ -30,6 +32,7 @@ export default function DashboardPage() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [dateFilter, setDateFilter] = useState<DateFilter>('today')
   const [customRange, setCustomRange] = useState<CustomDateRange | undefined>()
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
 
   const [summary, setSummary] = useState<{ total_calls: number; missed_calls: number; answered_calls: number; total_duration_seconds: number; total_recordings: number; period: string } | null>(null)
   const [calls, setCalls] = useState<CallRecord[]>([])
@@ -135,6 +138,15 @@ export default function DashboardPage() {
   const totalCallsNum = safeNum(summary?.total_calls)
   const recoveredCalls = allCalls.filter(c => c.status === 'recovered').length
 
+  // Short label for the mobile filter trigger pill ("Today", "Yesterday",
+  // "May 14", or "May 13 – May 14" for ranges). Resolved in tenant TZ so
+  // the label matches the calendar boundary the backend is filtering on.
+  const filterShortLabel = useMemo(
+    () => resolveFilterWindow(dateFilter, customRange, activeTimezone).shortLabel,
+    [dateFilter, customRange, activeTimezone],
+  )
+  const filterIsActive = isFilterActive(dateFilter, customRange)
+
   // Build mini chart bar data per card
   const miniChartBars = useMemo(() => {
     if (chartData.length === 0) return { total: [], missed: [], recovered: [] }
@@ -190,6 +202,54 @@ export default function DashboardPage() {
         <Header variant="dashboard" restaurantName={isAll ? 'All Restaurants' : current.name} connected={connected} isMobile userMenu={<UserMenu />} />
 
         <main className="flex-1 px-4 pt-5 pb-4">
+          {/* Mobile filter trigger — opens the bottom-sheet drawer.
+              Desktop renders <DateFilterBar> inline; mobile gets cards
+              edge-to-edge and only this pill so the home view stays clean. */}
+          <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+            <button
+              type="button"
+              onClick={() => setMobileFilterOpen(true)}
+              aria-label="Open filters"
+              aria-expanded={mobileFilterOpen}
+              aria-haspopup="dialog"
+              className="flex items-center gap-2 bg-white transition-colors hover:bg-cream/60"
+              style={{
+                padding: '8px 14px',
+                borderRadius: 999,
+                border: '1px solid rgba(0,0,0,0.08)',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#1E0E00',
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2">
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="14" y2="12" />
+                <line x1="4" y1="18" x2="9" y2="18" />
+                <circle cx="17" cy="12" r="2" fill="#8B7355" stroke="#8B7355" />
+                <circle cx="12" cy="18" r="2" fill="#8B7355" stroke="#8B7355" />
+              </svg>
+              <span>{filterShortLabel}</span>
+              {filterIsActive && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 8,
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    backgroundColor: '#E0602A',
+                    border: '2px solid #fff',
+                  }}
+                />
+              )}
+            </button>
+          </div>
+
           {/* Forwarding Setup Banner (Mobile) */}
           {!forwardingVerified && (
             <Link
@@ -291,6 +351,17 @@ export default function DashboardPage() {
         </main>
 
         <MobileNav missedCount={missedCalls} />
+
+        <FilterDrawer
+          open={mobileFilterOpen}
+          value={dateFilter}
+          customRange={customRange}
+          onApply={(nextFilter, nextRange) => {
+            setDateFilter(nextFilter)
+            setCustomRange(nextRange)
+          }}
+          onClose={() => setMobileFilterOpen(false)}
+        />
       </div>
     )
   }
