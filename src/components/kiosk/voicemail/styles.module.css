@@ -803,7 +803,12 @@
   border: 1px solid var(--rcp-paper-edge);
   border-radius: 6px;
   cursor: pointer;
-  overflow: hidden;
+  /* Height is content-driven - no overflow clip on the card itself. Long
+     expanded cards (full transcripts, many extracted-detail rows) grow
+     vertically; the card grid (.cardGridC) is the page-level scroll. The
+     rounded corners still clip the card's background (border-box clip), and
+     child elements have no backgrounds at the bottom so the paper colour
+     shows through the corner triangles naturally. */
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 2px 8px rgba(94, 35, 10, 0.06),
     0 14px 30px rgba(94, 35, 10, 0.05);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -833,11 +838,11 @@
   box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.45),
     0 2px 8px rgba(220, 38, 38, 0.2), 0 18px 38px rgba(94, 35, 10, 0.08);
 }
-/* The reclassify popover (unchanged from v1) opens downward out of the
- * header band; lift overflow + z-index while it is open so the card's
- * rounded-corner clip does not cut it off. */
+/* While the reclassify popover is open, lift the card's stacking context so
+ * the popover paints above adjacent cards in the grid (the popover itself is
+ * z-index: 20 inside this scope). The card no longer needs `overflow: visible`
+ * here because the base .cardC is no longer overflow: hidden. */
 .cardC[data-reclassify-open='true'] {
-  overflow: visible;
   z-index: 5;
 }
 /* Processing cards are not expandable - nothing to reveal yet. */
@@ -1030,6 +1035,11 @@
   gap: 12px;
   padding: 12px 16px 20px 28px;
   align-content: start;
+  /* Cards keep their natural (content-driven) height instead of stretching
+     to the row's max. Asymmetric heights between an expanded card and its
+     row neighbour are the natural masonry behaviour; top-aligning avoids the
+     short card growing a weird empty band below its content. */
+  align-items: start;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
 }
