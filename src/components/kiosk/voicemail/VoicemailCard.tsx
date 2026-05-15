@@ -16,11 +16,14 @@
 // list so a voicemail that finishes transcribing mid-mount does not change
 // the hook order.
 //
-// Tap behavior: tapping the card body toggles expand (per brief Step 10's
-// acceptance test and v1's documented decision - the CD prototype's blanket
-// body stopPropagation is intentionally NOT ported). Interactive descendants
-// - the stamp, the action buttons, the audio player, the expanded section -
-// stop propagation so they never also fold the card.
+// Tap behavior: only the card *chrome* - the structural wrappers marked
+// `data-card-chrome` (the header band, the body wrapper, the foot caption) -
+// toggles expand. Card *content* (summary, transcript, the action buttons,
+// the reclassify popover, the audio player) is inert for the toggle: tapping
+// it is for reading or acting, never for folding the card. The <article>
+// onClick gates on `e.target`, which is robust where the earlier
+// per-descendant stopPropagation web missed cases - the reclassify popover,
+// and the always-rendered body rows when the card is expanded.
 //
 // CALL is confirm-in-place: the first tap arms the phone icon red and shows
 // the CallArmBar; a second tap within 3s fires the tel: link (the production
@@ -59,7 +62,10 @@ function FootCaption({
   now: number
 }) {
   return (
-    <div className={styles.footCaption}>
+    // Chrome: the caption strip is a structural wrapper, so tapping it
+    // toggles expand (harmless on the processing card, whose article has
+    // no onClick). data-card-chrome is read by VoicemailCard's e.target gate.
+    <div className={styles.footCaption} data-card-chrome>
       <span>{ticketId(index)}</span>
       <span aria-hidden="true" className={styles.footCaptionDot}>
         &middot;
@@ -143,6 +149,21 @@ export function VoicemailCard({
     },
     [callArmed, vm.caller_phone],
   )
+
+  // Expand toggle, gated on e.target: only the card *chrome* (a structural
+  // wrapper marked data-card-chrome, or the bare <article>) folds the card.
+  // Content - summary, transcript, action buttons, the reclassify popover,
+  // the audio player - is inert. This replaces the v1-style per-descendant
+  // stopPropagation web, which missed the popover and the expanded body.
+  const handleCardClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const t = e.target
+    if (
+      t === e.currentTarget ||
+      (t instanceof HTMLElement && t.hasAttribute('data-card-chrome'))
+    ) {
+      setExpanded((v) => !v)
+    }
+  }, [])
 
   const cat = vm.intent_category_key
   const dataC = cat ?? 'pending'
@@ -248,11 +269,12 @@ export function VoicemailCard({
       data-c={dataC}
       data-call-armed={callArmed ? 'true' : undefined}
       data-reclassify-open={reclassifyOpen ? 'true' : undefined}
-      onClick={() => setExpanded((v) => !v)}
+      onClick={handleCardClick}
       className={styles.cardC}
     >
-      {/* Header band - tinted per category. */}
-      <div className={styles.thC}>
+      {/* Header band - tinted per category. Chrome: tapping the band's bare
+          area toggles expand; the stamp + action buttons do not. */}
+      <div className={styles.thC} data-card-chrome>
         <button
           ref={stampRef}
           type="button"
@@ -288,8 +310,10 @@ export function VoicemailCard({
       {/* Arm-bar - only while CALL is armed. */}
       {callArmed ? <CallArmBar phone={formatPhone(vm.caller_phone)} /> : null}
 
-      {/* Body - content-first: summary, then phone byline, then meta, audio. */}
-      <div className="px-2.5 pb-2.5 pt-2">
+      {/* Body - content-first: summary, then phone byline, then meta, audio.
+          Chrome: tapping the body's padding / inter-row gaps toggles expand;
+          tapping the content rows themselves does not. */}
+      <div className="px-2.5 pb-2.5 pt-2" data-card-chrome>
         <p className="mb-2 text-[17px] font-semibold leading-[1.3] tracking-[-0.01em] text-rcp-text-strong [text-wrap:pretty]">
           {vm.summary}
         </p>
@@ -340,8 +364,9 @@ export function VoicemailCard({
           ) : null}
         </div>
 
-        {/* Audio sits on every card so staff can hit play instantly. */}
-        <div className={styles.audioWrap} onClick={(e) => e.stopPropagation()}>
+        {/* Audio sits on every card so staff can hit play instantly. Not
+            chrome - the e.target gate keeps player clicks from toggling. */}
+        <div className={styles.audioWrap}>
           <AudioPlayer
             audioUrl={vm.audio_url}
             durationSeconds={vm.audio_duration_seconds}
@@ -349,9 +374,11 @@ export function VoicemailCard({
         </div>
       </div>
 
-      {/* Expanded - full transcript + extracted details (same as v1). */}
+      {/* Expanded - full transcript + extracted details (same as v1). Not
+          chrome: tapping the transcript / details / HIDE never folds the
+          card out from under the reader. */}
       {expanded ? (
-        <div className="px-3 pb-2.5" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 pb-2.5">
           <div className="mb-2.5 mt-1 flex items-center gap-2.5 font-rcp-mono text-[10px] uppercase tracking-[0.15em] text-rcp-brown before:h-0 before:flex-1 before:border-t before:border-dashed before:border-rcp-rule before:content-[''] after:h-0 after:flex-1 after:border-t after:border-dashed after:border-rcp-rule after:content-['']">
             <span>full transcript</span>
           </div>

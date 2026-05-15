@@ -6,6 +6,14 @@
 // the close button, outside the popover, or Escape cancels. Ported from
 // design_handoff_voicemail_kiosk common.jsx; outside-click + Escape close
 // added per the CD README "Screen 3" interaction spec.
+//
+// v2.3 Layout C: the popover root now stops both onClick and onPointerDown
+// from bubbling. The card's e.target gate already keeps popover taps from
+// folding the card, but stopping it at the popover root is the direct fix
+// and also covers the case where the popover visually overflows onto an
+// adjacent card. This relaxes the v1 "do not modify" rule for this file -
+// architect-approved: that rule existed to prevent scope creep, not to
+// preserve a propagation bug.
 
 import { useEffect, useRef, type RefObject } from 'react'
 import { cn } from '@/lib/utils'
@@ -58,8 +66,10 @@ export function ReclassifyMenu({
   return (
     <div
       ref={popoverRef}
-      // Taps inside the popover must not bubble to the card body and fold it.
+      // Taps inside the popover must not bubble out to the card - neither the
+      // click (which would hit the card's expand gate) nor the pointerdown.
       onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       role="dialog"
       aria-label="Reclassify intent"
       className={cn(
