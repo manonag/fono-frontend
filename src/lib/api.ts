@@ -8,6 +8,15 @@ import type {
   AnalyticsSummary,
   PeakHoursResponse,
 } from '@/types'
+// DEV ONLY: dev fixtures for the voicemail-route kiosk. Removed once the
+// voicemail backend endpoints ship (see the voicemail kiosk section below).
+import { mockTenant, mockVoicemails } from '@/components/kiosk/voicemail/mockData'
+import type {
+  IntentKey,
+  Status,
+  Tenant,
+  Voicemail,
+} from '@/components/kiosk/voicemail/types'
 
 const baseUrl = config.apiUrl
 
@@ -238,4 +247,128 @@ export async function fetchChartData(
   return Array.from(hourMap.values()).filter(
     (p) => p.hour >= 6 && p.hour <= 23
   )
+}
+
+// ---------------------------------------------------------------------------
+// Voicemail-route kiosk
+//
+// DEV ONLY scaffolding. The voicemail-route backend endpoints do not exist
+// yet:
+//   GET   /api/v1/tenants/:id              -> routing_mode + categories
+//   GET   /api/v1/tenants/:id/voicemails   -> voicemail list
+//   PATCH /api/v1/voicemails/:id/status    -> { status, reason? }
+//   PATCH /api/v1/voicemails/:id/intent    -> { intent_category_key }
+//
+// Each function attempts the real endpoint (production data-flow shape) and
+// falls back to the dev fixtures in
+// src/components/kiosk/voicemail/mockData.ts. When the backend ships:
+//   - delete the mockTenant / mockVoicemails fallbacks and the import above
+//   - change patchVoicemail* to throw on a non-ok / failed response, so the
+//     optimistic-rollback + toast path already wired in KioskPage activates
+// Tracked in the feature PR description.
+// ---------------------------------------------------------------------------
+
+function isTenantConfig(value: unknown): value is Tenant {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.id === 'string' &&
+    typeof v.routing_mode === 'string' &&
+    Array.isArray(v.categories)
+  )
+}
+
+/**
+ * Tenant config for the kiosk route branch: routing_mode + per-tenant
+ * category display names. Falls back to the dev fixture, keeping the real
+ * id / name from the session or impersonation context.
+ */
+export async function fetchTenantVoicemailConfig(
+  tenantId: string,
+  tenantName: string,
+  token?: string,
+): Promise<Tenant> {
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}`, {
+      headers: authHeaders(token),
+    })
+    if (res.ok) {
+      const data: unknown = await res.json()
+      if (isTenantConfig(data)) return data
+    }
+  } catch {
+    // fall through to the dev fixture
+  }
+  return {
+    ...mockTenant,
+    id: tenantId || mockTenant.id,
+    name: tenantName || mockTenant.name,
+  }
+}
+
+/** Voicemail list for a tenant. Falls back to the dev fixtures. */
+export async function fetchVoicemails(
+  tenantId: string,
+  token?: string,
+): Promise<Voicemail[]> {
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/voicemails`, {
+      headers: authHeaders(token),
+    })
+    if (res.ok) {
+      const data: unknown = await res.json()
+      if (Array.isArray(data)) return data as Voicemail[]
+      const wrapped = data as { voicemails?: unknown }
+      if (wrapped && Array.isArray(wrapped.voicemails)) {
+        return wrapped.voicemails as Voicemail[]
+      }
+    }
+  } catch {
+    // fall through to the dev fixtures
+  }
+  return mockVoicemails
+}
+
+/**
+ * DEV ONLY: persist a voicemail status change. Attempts the real endpoint
+ * for shape, but swallows failures so optimistic updates stick on mock
+ * data. Change both early returns to `throw` once the endpoint ships.
+ */
+export async function patchVoicemailStatus(
+  id: string,
+  status: Status,
+  token?: string,
+  reason?: string,
+): Promise<void> {
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify(reason ? { status, reason } : { status }),
+    })
+    if (!res.ok) return
+  } catch {
+    return
+  }
+}
+
+/**
+ * DEV ONLY: persist a voicemail intent reclassification. See
+ * patchVoicemailStatus for the dev-stub behavior.
+ */
+export async function patchVoicemailIntent(
+  id: string,
+  intentCategoryKey: IntentKey,
+  token?: string,
+): Promise<void> {
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/intent`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ intent_category_key: intentCategoryKey }),
+    })
+    if (!res.ok) return
+  } catch {
+    return
+  }
 }

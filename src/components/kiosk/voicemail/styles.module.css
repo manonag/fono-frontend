@@ -1,0 +1,1054 @@
+/* Voicemail-route kiosk - Direction A (receipt / kitchen ticket).
+ *
+ * This module holds only what Tailwind utilities cannot express cleanly:
+ *   1. The --rcp-* design tokens, with the [data-theme="dark"] swap. The
+ *      Tailwind config maps `rcp-*` color / shadow utilities onto these
+ *      variables, so component files style with plain utilities while the
+ *      light/dark values resolve here. Cream stays warm in both themes.
+ *   2. The receipt card surface: perforated top edge, dark-mode paper
+ *      gradient, theme-variant shadows.
+ *   3. The action-footer perforated bottom edge.
+ *   4. Keyframe animations (brand-dot pulse, live-sync pulse, typewriter
+ *      caret blink, waveform bar pulse) and their carrier classes.
+ *
+ * Everything else - spacing, type, layout, flat colors, radii - lives in
+ * Tailwind utilities on the components.
+ *
+ * Token values: per the CD source-of-truth hierarchy, the receipt
+ * direction's scoped values win (README "Design tokens" + the .rcp-* rules
+ * in kiosk/styles.css). These intentionally differ from the repo-global
+ * :root tokens for --success (#16A34A vs #22C55E), --danger (#DC2626 vs
+ * #EF4444) and --cream-2 (#F6E7DA vs #F3EBE4); the difference is scoped to
+ * this surface only.
+ */
+
+.root {
+  /* --- base tokens (light) --- */
+  --rcp-terra: #e0602a;
+  --rcp-terra-warm: #d4652c;
+  --rcp-terra-dark: #c84e20;
+  --rcp-cream: #fdf0e8;
+  --rcp-cream-2: #f6e7da;
+  --rcp-paper: #f7ebde;
+  --rcp-paper-edge: #e5d6c2;
+  /* Layout C binder spine: a quieter paper tone so the spine reads as a
+     separate surface from the cards. */
+  --rcp-rail-bg: #efe2d3;
+  --rcp-rail-edge: #e5d6c2;
+  --rcp-ink: #1e0e00;
+  --rcp-ink-3: #3a2814;
+  --rcp-cocoa: #5c3d22;
+  --rcp-brown: #8b7355;
+  --rcp-bone: #b0a090;
+  --rcp-sand: #e8e0d8;
+  --rcp-rule: rgba(0, 0, 0, 0.08);
+  --rcp-rule-soft: rgba(0, 0, 0, 0.04);
+  --rcp-success: #16a34a;
+  --rcp-danger: #dc2626;
+
+  /* --- semantic tokens (light) --- */
+  --rcp-text-strong: #1e0e00;
+  --rcp-text-body: #5c3d22;
+  --rcp-card-border: #e5d6c2;
+  --rcp-stamp-hover: rgba(0, 0, 0, 0.02);
+  --rcp-act-fg: #5c3d22;
+  --rcp-act-border: rgba(0, 0, 0, 0.08);
+  --rcp-act-hover-bg: rgba(0, 0, 0, 0.03);
+  --rcp-act-hover-border: #1e0e00;
+  --rcp-act-primary-bg: #1e0e00;
+  --rcp-act-primary-fg: #f7ebde;
+  --rcp-act-primary-hover-bg: #3a2814;
+  --rcp-play-bg: #1e0e00;
+  --rcp-play-fg: #f7ebde;
+  --rcp-play-hover-bg: #3a2814;
+  --rcp-bar-played: #1e0e00;
+  --rcp-chip-active-bg: #1e0e00;
+  --rcp-chip-active-fg: #f7ebde;
+  --rcp-chip-active-key: rgba(255, 255, 255, 0.7);
+  --rcp-tab-count-bg: #f6e7da;
+  --rcp-popover-bg: #f7ebde;
+  --rcp-popover-border: #e5d6c2;
+  --rcp-repeat-bg: rgba(212, 101, 44, 0.1);
+  --rcp-repeat-fg: #c84e20;
+
+  /* --- card shadows (light) --- */
+  --rcp-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.04), 0 2px 8px rgba(94, 35, 10, 0.06),
+    0 14px 30px rgba(94, 35, 10, 0.05);
+  --rcp-shadow-card-hover: 0 2px 0 rgba(0, 0, 0, 0.04), 0 4px 14px rgba(94, 35, 10, 0.1),
+    0 18px 38px rgba(94, 35, 10, 0.08);
+  --rcp-shadow-card-expanded: 0 2px 0 rgba(0, 0, 0, 0.04), 0 6px 18px rgba(94, 35, 10, 0.12),
+    0 24px 50px rgba(94, 35, 10, 0.1);
+
+  position: relative;
+  height: 100dvh;
+  /* Layout C owns its own internal scroll - the card grid scrolls while the
+     binder spine and the top strip stay pinned - so the page shell itself
+     does not scroll, and it becomes the [spine | main] grid container. */
+  overflow: hidden;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  background-color: var(--rcp-paper);
+  /* Paper-grain backdrop: warm radial wash + SVG turbulence noise at ~6%. */
+  background-image: radial-gradient(
+      ellipse 900px 700px at 90% -10%,
+      rgba(212, 101, 44, 0.1),
+      transparent 60%
+    ),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.4  0 0 0 0 0.25  0 0 0 0 0.1  0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  color: var(--rcp-ink);
+  isolation: isolate;
+}
+
+.root[data-theme='dark'] {
+  /* --- base tokens (dark) --- cream + cream-2 stay warm by design. */
+  --rcp-terra-warm: #e07b4a;
+  --rcp-paper: #161920;
+  --rcp-paper-edge: #0e1117;
+  --rcp-rail-bg: #0e1117;
+  --rcp-rail-edge: rgba(255, 255, 255, 0.1);
+  --rcp-ink: #f6e7da;
+  --rcp-ink-3: #c9b7a6;
+  --rcp-cocoa: #d8c7b6;
+  --rcp-brown: #9c8772;
+  --rcp-bone: #6b5d4d;
+  --rcp-sand: #20242c;
+  --rcp-rule: rgba(255, 255, 255, 0.1);
+  --rcp-rule-soft: rgba(255, 255, 255, 0.05);
+
+  /* --- semantic tokens (dark) --- */
+  --rcp-text-strong: #fdf0e8;
+  --rcp-text-body: #f6e7da;
+  --rcp-card-border: rgba(255, 255, 255, 0.06);
+  --rcp-stamp-hover: rgba(255, 255, 255, 0.03);
+  --rcp-act-fg: #f6e7da;
+  --rcp-act-border: rgba(255, 255, 255, 0.14);
+  --rcp-act-hover-bg: rgba(255, 255, 255, 0.05);
+  --rcp-act-hover-border: #fdf0e8;
+  --rcp-act-primary-bg: #e07b4a;
+  --rcp-act-primary-fg: #ffffff;
+  --rcp-act-primary-hover-bg: #c84e20;
+  --rcp-play-bg: #e07b4a;
+  --rcp-play-fg: #ffffff;
+  --rcp-play-hover-bg: #c84e20;
+  --rcp-bar-played: #e07b4a;
+  --rcp-chip-active-bg: #fdf0e8;
+  --rcp-chip-active-fg: #1e0e00;
+  --rcp-chip-active-key: rgba(0, 0, 0, 0.55);
+  --rcp-tab-count-bg: rgba(255, 255, 255, 0.04);
+  --rcp-popover-bg: #2b1f14;
+  --rcp-popover-border: rgba(255, 255, 255, 0.1);
+  --rcp-repeat-bg: rgba(212, 101, 44, 0.2);
+  --rcp-repeat-fg: #e89570;
+
+  /* --- card shadows (dark) --- */
+  --rcp-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.45);
+  --rcp-shadow-card-hover: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 10px 28px rgba(0, 0, 0, 0.5);
+  --rcp-shadow-card-expanded: 0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 12px 32px rgba(0, 0, 0, 0.55);
+
+  background-image: radial-gradient(
+      ellipse 900px 700px at 90% -10%,
+      rgba(212, 101, 44, 0.16),
+      transparent 60%
+    ),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.7  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* --- receipt card surface --------------------------------------------- */
+
+.card {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--rcp-paper);
+  /* Perforated top edge: three dot cutouts repeating every 48px. */
+  background-image: radial-gradient(
+      circle at 8px 8px,
+      rgba(0, 0, 0, 0.06) 1.5px,
+      transparent 2px
+    ),
+    radial-gradient(circle at 24px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px),
+    radial-gradient(circle at 40px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px);
+  background-position: 0 0, 16px 0, 32px 0;
+  background-repeat: repeat-x;
+  background-size: 48px 1px;
+  box-shadow: var(--rcp-shadow-card);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Hover lift is desktop-only; the kiosk tablet has no hover. */
+.card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--rcp-shadow-card-hover);
+}
+
+.cardExpanded,
+.cardExpanded:hover {
+  transform: none;
+  box-shadow: var(--rcp-shadow-card-expanded);
+}
+
+/* Dark mode: warm low-luminance ticket stock, no perforation dots. */
+.root[data-theme='dark'] .card {
+  background-color: transparent;
+  background-image: linear-gradient(180deg, #2a1e13 0%, #241910 100%);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: auto;
+}
+
+/* --- action-footer perforated bottom edge ----------------------------- */
+
+.cardFoot {
+  background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(0, 0, 0, 0.015) 50%,
+      transparent
+    ),
+    radial-gradient(circle at 8px 100%, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px);
+  background-repeat: no-repeat, repeat-x;
+  background-size: auto, 24px 1px;
+  background-position: 0 0, 0 100%;
+}
+
+.root[data-theme='dark'] .cardFoot {
+  background-image: radial-gradient(
+    circle at 8px 100%,
+    rgba(255, 255, 255, 0.1) 1.5px,
+    transparent 2px
+  );
+  background-repeat: repeat-x;
+  background-size: 24px 1px;
+  background-position: 0 100%;
+}
+
+/* --- touch targets ---------------------------------------------------- */
+
+/* Expands an interactive element's hit area to at least 48x48px without
+ * changing its visual size or shifting siblings. The CD README product
+ * context mandates >=48px tap targets while styles.css specifies smaller
+ * visual sizes for a few controls (36px play button, 24px popover close,
+ * 36px filter chips); this reconciles both. The transparent ::before is
+ * inside the element, so clicks on it still trigger the element. */
+.tap48 {
+  position: relative;
+}
+.tap48::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+/* --- motion ----------------------------------------------------------- */
+
+/* Brand-dot pulse in the header chrome. */
+.brandDot {
+  box-shadow: 0 0 0 4px rgba(212, 101, 44, 0.18), 0 0 0 8px rgba(212, 101, 44, 0.08);
+  animation: rcpBrandPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes rcpBrandPulse {
+  0%,
+  100% {
+    transform: translateY(-1px) scale(1);
+  }
+  20% {
+    transform: translateY(-1px) scale(1.18);
+  }
+  40% {
+    transform: translateY(-1px) scale(1);
+  }
+}
+
+/* Live-sync dot pulse. */
+.syncDot {
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  animation: rcpSync 2s ease-in-out infinite;
+}
+
+@keyframes rcpSync {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.8);
+  }
+}
+
+/* Typewriter caret blink on the processing card. */
+.caret {
+  animation: rcpBlink 1.1s steps(2, end) infinite;
+}
+
+@keyframes rcpBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Waveform bar pulse while audio is playing. Per-bar animation-delay is set
+ * inline on each bar; this class carries the shared animation. */
+.waveBarLive {
+  animation: rcpApPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rcpApPulse {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.7);
+  }
+}
+
+/* Respect reduced-motion preferences: hold the steady state. */
+@media (prefers-reduced-motion: reduce) {
+  .brandDot,
+  .syncDot,
+  .caret,
+  .waveBarLive {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * LAYOUT C (v2.3 - binder-tab scrub filter)
+ * ═══════════════════════════════════════════════════════════════════════
+ * Ported from the CD v2 bundle (kiosk-v2/styles.css, v2.3 sections). The
+ * CD prototype's unprefixed tokens (--terra-warm, --paper, --rule ...) are
+ * remapped onto this surface's --rcp-* token set; its .kiosk-v2-frame[...]
+ * dark selector is remapped onto .root[data-theme='dark']; and its stateful
+ * .is-* classes become [data-*] attributes so the CSS-module hashing only
+ * touches the base class names. Pixel values are verbatim from the v2.3
+ * spec. The receipt aesthetic (perforated edges, dashed rules, paper grain)
+ * is unchanged - only the shell architecture and card chrome are new.
+ */
+
+/* --- HeaderIconBtn: 32x32 compact icon button (card action cluster) ---- */
+
+.hib {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--rcp-rule);
+  border-radius: 6px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rcp-cocoa);
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.15s ease,
+    border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.hib:hover {
+  background: var(--rcp-act-hover-bg);
+  border-color: var(--rcp-brown);
+}
+.hib:active {
+  transform: scale(0.96);
+}
+
+/* RESOLVE check - quietly emphasized (the most common action). */
+.hibCheck {
+  color: var(--rcp-success);
+  border-color: var(--rcp-success-soft);
+  border-style: dashed;
+}
+.hibCheck:hover {
+  background: rgba(22, 163, 74, 0.1);
+  border-style: solid;
+  border-color: var(--rcp-success);
+}
+
+/* EXPAND chevron - fully neutral. */
+.hibChev {
+  color: var(--rcp-cocoa);
+}
+
+/* CALL phone - dashed terra at rest, solid red while armed. */
+.hibPhone {
+  color: var(--rcp-terra-dark);
+  border-color: rgba(212, 101, 44, 0.35);
+  border-style: dashed;
+}
+.root[data-theme='dark'] .hibPhone {
+  color: #e89570;
+  border-color: rgba(232, 149, 112, 0.45);
+}
+.hibPhone:hover {
+  background: rgba(212, 101, 44, 0.1);
+  border-style: solid;
+}
+.hibPhone[data-armed='true'],
+.hibPhone[data-armed='true']:hover {
+  background: var(--rcp-danger);
+  color: #fff;
+  border-color: var(--rcp-danger);
+  border-style: solid;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+  animation: rcpArmPulse 1s ease-in-out infinite;
+}
+@keyframes rcpArmPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.1);
+  }
+}
+
+/* REOPEN / RESTORE - the lone action on resolved / hidden cards. Rendered
+ * inline by VoicemailCard (not a HeaderIconBtn variant), shares .hib. */
+.hibRestore {
+  color: var(--rcp-brown);
+  border-style: dashed;
+}
+
+/* --- CallArmBar: red strip below the header while CALL is armed -------- */
+
+.callArm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(220, 38, 38, 0.1);
+  border-bottom: 1px dashed rgba(220, 38, 38, 0.3);
+  color: var(--rcp-danger);
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.root[data-theme='dark'] .callArm {
+  background: rgba(220, 38, 38, 0.16);
+}
+
+/* Layout C additions to the reduced-motion contract. The armed phone button
+ * keeps its solid red fill + ring; only the pulse animation is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .hibPhone[data-armed='true'] {
+    animation: none;
+  }
+}
+
+/* --- Binder spine: the left edge (replaces the v1 rail) --------------- */
+
+.spine {
+  display: flex;
+  flex-direction: column;
+  background: var(--rcp-rail-bg);
+  border-right: 1px dashed var(--rcp-rail-edge);
+  position: relative;
+  z-index: 4;
+  min-height: 0;
+}
+.spineTop {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--rcp-rail-edge);
+}
+.spineFoot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--rcp-rail-edge);
+}
+.spineTenant {
+  width: 32px;
+  height: 32px;
+  background: var(--rcp-ink);
+  color: var(--rcp-paper);
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.root[data-theme='dark'] .spineTenant {
+  background: var(--rcp-terra-warm);
+  color: #fff;
+}
+.spineLive {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.spineLiveDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--rcp-success);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  animation: rcpSync 2s ease-in-out infinite;
+}
+.spineLiveNum {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  color: var(--rcp-brown);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.spineClock {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--rcp-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+.spineTheme {
+  appearance: none;
+  border: 1px solid var(--rcp-rule);
+  background: transparent;
+  width: 28px;
+  height: 26px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rcp-cocoa);
+  cursor: pointer;
+}
+.root[data-theme='dark'] .spineTheme {
+  color: var(--rcp-cream-2);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.spineTheme:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* --- Binder strips: shared base + drag-scrub cursor line ------------- */
+
+.binderStrip {
+  position: relative;
+  user-select: none;
+  /* Keep the drag-scrub gesture from fighting native scroll. The card grid
+   * is a separate element and keeps its own scroll. */
+  touch-action: none;
+}
+
+/* A thin Terra rule that follows the pointer along the strip during a drag. */
+.binderCursor {
+  position: absolute;
+  background: var(--rcp-terra-warm);
+  box-shadow: 0 0 0 3px rgba(212, 101, 44, 0.2);
+  pointer-events: none;
+  border-radius: 2px;
+  z-index: 4;
+}
+.binderCursorV {
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+.binderCursorH {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+}
+
+/* --- Vertical binder strip: category tabs, inside the spine ---------- */
+
+.binderStripV {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  gap: 3px;
+  cursor: grab;
+}
+.binderStripV[data-dragging='true'] {
+  cursor: grabbing;
+}
+.bvtab {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  padding: 8px 4px 8px 3px;
+  cursor: pointer;
+  transition: transform 0.18s ease, background-color 0.18s ease,
+    color 0.18s ease, box-shadow 0.18s ease;
+  transform: translateX(0);
+  box-shadow: 2px 0 4px rgba(94, 35, 10, 0.06);
+}
+.root[data-theme='dark'] .bvtab {
+  background: #2a1e13;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.35);
+}
+/* Inactive: a thin category-colored stripe along the inner (left) edge. */
+.bvtab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--tab-c, var(--rcp-brown));
+  border-radius: 0 2px 2px 0;
+  opacity: 0.75;
+}
+.bvtabLabel {
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--rcp-cocoa);
+  letter-spacing: 0.005em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  transform: rotate(180deg);
+  line-height: 1;
+}
+.root[data-theme='dark'] .bvtabLabel {
+  color: var(--rcp-cream-2);
+}
+.bvtabCount {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--rcp-brown);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+}
+.bvtab:hover {
+  transform: translateX(8px);
+}
+.bvtab[data-active='true'] {
+  background: var(--tab-c);
+  border-color: var(--tab-c);
+  transform: translateX(14px);
+  box-shadow: 8px 0 14px var(--tab-shadow, rgba(212, 101, 44, 0.3));
+  z-index: 3;
+}
+.bvtab[data-active='true']::before {
+  opacity: 0;
+}
+.bvtab[data-active='true'] .bvtabLabel,
+.bvtab[data-active='true'] .bvtabCount {
+  color: #fff;
+}
+/* Palette A - warm restaurant chits. */
+.bvtab[data-c='all'] {
+  --tab-c: #5c3d22;
+  --tab-shadow: rgba(92, 61, 34, 0.28);
+}
+.bvtab[data-c='order'] {
+  --tab-c: #d4652c;
+  --tab-shadow: rgba(212, 101, 44, 0.3);
+}
+.bvtab[data-c='catering'] {
+  --tab-c: #7b9c68;
+  --tab-shadow: rgba(123, 156, 104, 0.28);
+}
+.bvtab[data-c='banquet_hall'] {
+  --tab-c: #4a6d86;
+  --tab-shadow: rgba(74, 109, 134, 0.28);
+}
+.bvtab[data-c='others'] {
+  --tab-c: #b0a090;
+  --tab-shadow: rgba(176, 160, 144, 0.28);
+}
+
+/* --- Horizontal binder strip: status tabs, top of the cards area ----- */
+
+.binderStripH {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 0 16px 0 20px;
+  height: 28px;
+  border-bottom: 1px dashed var(--rcp-rule);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.03) 0%, transparent 100%);
+  cursor: grab;
+  z-index: 3;
+}
+.root[data-theme='dark'] .binderStripH {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, transparent 100%);
+}
+.binderStripH[data-dragging='true'] {
+  cursor: grabbing;
+}
+.bhtab {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rcp-cocoa);
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  margin-top: -4px;
+  transition: padding-bottom 0.15s ease, color 0.15s ease,
+    background-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 4px rgba(94, 35, 10, 0.08);
+}
+.root[data-theme='dark'] .bhtab {
+  background: #2a1e13;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--rcp-cream-2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.bhtab::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 2px;
+  background: var(--tab-c, var(--rcp-brown));
+  border-radius: 0 0 2px 2px;
+  opacity: 0.75;
+}
+.bhtabLabel {
+  line-height: 1;
+}
+.bhtabCount {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--rcp-brown);
+  padding: 1px 5px;
+  border: 1px solid var(--rcp-rule);
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+  text-align: center;
+}
+.bhtab:hover {
+  padding-bottom: 6px;
+}
+.bhtab[data-active='true'] {
+  color: #fff;
+  background: var(--tab-c);
+  border-color: var(--tab-c);
+  padding-bottom: 8px;
+  box-shadow: 0 6px 14px var(--tab-shadow, rgba(212, 101, 44, 0.3));
+}
+.bhtab[data-active='true']::before {
+  opacity: 0;
+}
+.bhtab[data-active='true'] .bhtabCount {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border-color: transparent;
+}
+/* Palette A - status colors. */
+.bhtab[data-s='new'] {
+  --tab-c: #d4652c;
+  --tab-shadow: rgba(212, 101, 44, 0.3);
+}
+.bhtab[data-s='resolved'] {
+  --tab-c: #7b9c68;
+  --tab-shadow: rgba(123, 156, 104, 0.28);
+}
+.bhtab[data-s='hidden'] {
+  --tab-c: #b0a090;
+  --tab-shadow: rgba(176, 160, 144, 0.28);
+}
+
+/* --- Layout C card: shell, tinted header band, stamp, foot caption --- */
+
+.cardC {
+  position: relative;
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-radius: 6px;
+  cursor: pointer;
+  /* Height is content-driven - no overflow clip on the card itself. Long
+     expanded cards (full transcripts, many extracted-detail rows) grow
+     vertically; the card grid (.cardGridC) is the page-level scroll. The
+     rounded corners still clip the card's background (border-box clip), and
+     child elements have no backgrounds at the bottom so the paper colour
+     shows through the corner triangles naturally. */
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 2px 8px rgba(94, 35, 10, 0.06),
+    0 14px 30px rgba(94, 35, 10, 0.05);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  /* Perforated top edge - preserved from v1's receipt card. */
+  background-image: radial-gradient(
+      circle at 8px 8px,
+      rgba(0, 0, 0, 0.06) 1.5px,
+      transparent 2px
+    ),
+    radial-gradient(circle at 24px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px),
+    radial-gradient(circle at 40px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px);
+  background-position: 0 0, 16px 0, 32px 0;
+  background-repeat: repeat-x;
+  background-size: 48px 1px;
+}
+.root[data-theme='dark'] .cardC {
+  background: linear-gradient(180deg, #2a1e13 0%, #241910 100%);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cardC:hover {
+  transform: translateY(-1px);
+}
+/* Confirm-in-place CALL: a red ring around the whole card while armed. */
+.cardC[data-call-armed='true'] {
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.45),
+    0 2px 8px rgba(220, 38, 38, 0.2), 0 18px 38px rgba(94, 35, 10, 0.08);
+}
+/* While the reclassify popover is open, lift the card's stacking context so
+ * the popover paints above adjacent cards in the grid (the popover itself is
+ * z-index: 20 inside this scope). The card no longer needs `overflow: visible`
+ * here because the base .cardC is no longer overflow: hidden. */
+.cardC[data-reclassify-open='true'] {
+  z-index: 5;
+}
+/* Processing cards are not expandable - nothing to reveal yet. */
+.cardC[data-processing='true'] {
+  cursor: default;
+}
+.cardC[data-processing='true']:hover {
+  transform: none;
+}
+
+/* Header band - single row, category-tinted background. */
+.thC {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 10px;
+  border-bottom: 1px dashed var(--th-rule, var(--rcp-rule));
+  background: var(--th-tint, transparent);
+  border-radius: 5px 5px 0 0;
+  transition: background-color 0.15s ease;
+}
+.thCActions {
+  display: inline-flex;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+/* Per-category tint - the strongest across-the-counter scan signal. */
+.cardC[data-c='order'] .thC {
+  --th-tint: rgba(212, 101, 44, 0.1);
+  --th-rule: rgba(212, 101, 44, 0.3);
+}
+.cardC[data-c='catering'] .thC {
+  --th-tint: rgba(123, 156, 104, 0.12);
+  --th-rule: rgba(123, 156, 104, 0.32);
+}
+.cardC[data-c='banquet_hall'] .thC {
+  --th-tint: rgba(74, 109, 134, 0.12);
+  --th-rule: rgba(74, 109, 134, 0.3);
+}
+.cardC[data-c='others'] .thC {
+  --th-tint: rgba(176, 160, 144, 0.18);
+  --th-rule: rgba(176, 160, 144, 0.4);
+}
+.cardC[data-c='pending'] .thC {
+  --th-tint: rgba(176, 160, 144, 0.08);
+  --th-rule: var(--rcp-rule);
+}
+/* Dark-mode tints sit a touch stronger on the darker card surface. */
+.root[data-theme='dark'] .cardC[data-c='order'] .thC {
+  --th-tint: rgba(212, 101, 44, 0.18);
+}
+.root[data-theme='dark'] .cardC[data-c='catering'] .thC {
+  --th-tint: rgba(123, 156, 104, 0.2);
+}
+.root[data-theme='dark'] .cardC[data-c='banquet_hall'] .thC {
+  --th-tint: rgba(74, 109, 134, 0.22);
+}
+.root[data-theme='dark'] .cardC[data-c='others'] .thC {
+  --th-tint: rgba(176, 160, 144, 0.18);
+}
+
+/* Simplified stamp - one swatch + one word. The reclassify trigger. */
+.stampSimple {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px;
+  border-radius: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+  cursor: pointer;
+}
+.stampSimple:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.root[data-theme='dark'] .stampSimple:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+/* Pending stamp is informational only, not an interactive button. */
+.stampStatic {
+  cursor: default;
+}
+.stampStatic:hover {
+  background: transparent;
+}
+.stampSwatch {
+  width: 10px;
+  height: 10px;
+  background: var(--stamp-c, var(--rcp-brown));
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.stampWord {
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rcp-ink);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.stampSimple[data-c='order'] {
+  --stamp-c: #d4652c;
+}
+.stampSimple[data-c='catering'] {
+  --stamp-c: #7b9c68;
+}
+.stampSimple[data-c='banquet_hall'] {
+  --stamp-c: #4a6d86;
+}
+.stampSimple[data-c='others'] {
+  --stamp-c: #b0a090;
+}
+.stampSimple[data-c='pending'] {
+  --stamp-c: #b0a090;
+}
+.stampSimple[data-c='pending'] .stampWord {
+  color: var(--rcp-brown);
+  font-style: italic;
+  font-weight: 500;
+}
+
+/* Foot caption - demoted ticket id + capture time, smallest on the card. */
+.footCaption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px 8px;
+  border-top: 1px dashed var(--rcp-rule);
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--rcp-bone);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.footCaptionDot {
+  opacity: 0.6;
+}
+
+/* Resolved / hidden state footer. */
+.footC {
+  padding: 8px 12px;
+  border-top: 1px dashed var(--rcp-rule);
+}
+
+/* Audio waveform overflow fix (CD v2.3 bugfix). Applied from the card side
+ * so AudioPlayer.tsx stays untouched (brief section 3): the 56 waveform
+ * bars sit in a flex item whose default min-width:auto can push past a
+ * narrow 2-up card's right edge - min-width:0 lets it shrink to fit. */
+.audioWrap {
+  min-width: 0;
+}
+.audioWrap > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.audioWrap [role='slider'] {
+  min-width: 0;
+}
+
+/* --- Layout C shell: main column + scrolling card grid -------------- */
+
+/* The right column. Flex so the top strip stays pinned and the card grid
+ * takes the rest; overflow:hidden so only the grid (below) scrolls. */
+.layoutMainC {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The 2-up card grid - the one scrolling region in Layout C. The left
+ * padding (28px) leaves room for the active spine tab's protrusion. */
+.cardGridC {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px 20px 28px;
+  align-content: start;
+  /* Cards keep their natural (content-driven) height instead of stretching
+     to the row's max. Asymmetric heights between an expanded card and its
+     row neighbour are the natural masonry behaviour; top-aligning avoids the
+     short card growing a weird empty band below its content. */
+  align-items: start;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+.cardGridC::-webkit-scrollbar {
+  width: 10px;
+}
+.cardGridC::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

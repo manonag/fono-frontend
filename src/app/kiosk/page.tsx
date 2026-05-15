@@ -11,6 +11,9 @@ import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
+import { fetchTenantVoicemailConfig } from '@/lib/api'
+import { KioskPage as VoicemailKioskPage } from '@/components/kiosk/voicemail/KioskPage'
+import type { Tenant } from '@/components/kiosk/voicemail/types'
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
 
@@ -556,10 +559,73 @@ function KioskContent() {
   )
 }
 
+// ── Route branch ──────────────────────────────────────────────────────────────
+// Resolves the tenant's routing_mode and dispatches: voicemail-route tenants
+// get the new Direction A kiosk, SLA-route tenants get the existing UI
+// (KioskContent) unchanged. Tenant id/name are resolved the same way
+// KioskContent and restaurant-context resolve them - the impersonation
+// context wins, otherwise the session - and the resolved Tenant is passed
+// down as a prop (brief section 7 / CHIRAN principle #49).
+
+function KioskRouteLoading() {
+  return (
+    <div className="flex h-[100dvh] items-center justify-center bg-cream">
+      <span className="text-[13px] font-medium text-brown">Loading kiosk...</span>
+    </div>
+  )
+}
+
+function KioskRouter() {
+  const { data: session, status } = useSession()
+  const token = useFonoToken()
+  const imp = useImpersonation()
+  const searchParams = useSearchParams()
+  const urlTenantId = searchParams.get('tenant')
+  const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
+  const tenantId = imp.readOnly
+    ? imp.tenantId
+    : urlTenantId && userTenants.some((t) => t.id === urlTenantId)
+      ? urlTenantId
+      : userTenants[0]?.id
+  const tenantName = imp.readOnly
+    ? imp.tenantName ?? ''
+    : userTenants.find((t) => t.id === tenantId)?.name || ''
+
+  const [tenant, setTenant] = useState<Tenant | null>(null)
+  const [resolving, setResolving] = useState(true)
+
+  useEffect(() => {
+    if (!tenantId) return
+    let cancelled = false
+    setResolving(true)
+    fetchTenantVoicemailConfig(tenantId, tenantName, token).then((cfg) => {
+      if (cancelled) return
+      setTenant(cfg)
+      setResolving(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tenantId, tenantName, token])
+
+  // Session still settling.
+  if (status === 'loading') return <KioskRouteLoading />
+  // No tenant resolvable: fall back to the existing SLA kiosk, which
+  // degrades gracefully to empty states.
+  if (!tenantId) return <KioskContent />
+  // Resolving the tenant config.
+  if (resolving || !tenant) return <KioskRouteLoading />
+  // Branch at the page level so neither side carries the other's cost.
+  if (tenant.routing_mode === 'voicemail') {
+    return <VoicemailKioskPage tenant={tenant} />
+  }
+  return <KioskContent />
+}
+
 export default function KioskPage() {
   return (
     <Suspense>
-      <KioskContent />
+      <KioskRouter />
     </Suspense>
   )
 }
