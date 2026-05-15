@@ -43,6 +43,14 @@ export default function DashboardPage() {
   const token = useFonoToken()
   const [forwardingVerified, setForwardingVerified] = useState(true)
 
+  // Single-tenant view uses the tenant's TZ for calendar-day math. The
+  // All-Restaurants view picks one anchor — see fetchCombinedSummary's
+  // contract — and we use the admin viewer's resolved TZ from the first
+  // tenant in the portfolio as that anchor. Browser TZ would also be
+  // defensible; this is consistent with how the iframe impersonation
+  // path inherits the impersonated tenant's TZ.
+  const activeTimezone = current.timezone
+
   useEffect(() => {
     const tid = isAll ? allTenantIds[0] : tenantId
     if (!tid || tid === 'all' || !token) return
@@ -59,13 +67,18 @@ export default function DashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const { dateFrom, dateTo, days } = getDateRangeForFilter(dateFilter, customRange)
+      const { dateFrom, dateTo } = getDateRangeForFilter(
+        dateFilter,
+        customRange,
+        activeTimezone,
+      )
+      const summaryWindow = { dateFrom, dateTo }
       if (isAll) {
         const [summaryData, callData, allCallData, statsData] = await Promise.all([
-          fetchCombinedSummary(allTenantIds, days, token),
+          fetchCombinedSummary(allTenantIds, summaryWindow, token),
           fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
           fetchCombinedCallLog(allTenantIds, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
-          fetchCombinedStats(allTenantIds, days, token).catch(() => null),
+          fetchCombinedStats(allTenantIds, summaryWindow, token).catch(() => null),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
@@ -73,10 +86,10 @@ export default function DashboardPage() {
         setStats(statsData)
       } else {
         const [summaryData, callData, allCallData, statsData] = await Promise.all([
-          fetchDashboardSummary(tenantId, days, token),
+          fetchDashboardSummary(tenantId, summaryWindow, token),
           fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 5, dateFrom, dateTo }, token),
           fetchCallLog(tenantId, { status: 'all', page: 1, perPage: 100, dateFrom, dateTo }, token),
-          fetchTenantStats(tenantId, days, token).catch(() => null),
+          fetchTenantStats(tenantId, summaryWindow, token).catch(() => null),
         ])
         setSummary(summaryData)
         setCalls(callData.calls)
@@ -88,20 +101,25 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [tenantId, isAll, allTenantIds, dateFilter, customRange, token])
+  }, [tenantId, isAll, allTenantIds, dateFilter, customRange, activeTimezone, token])
 
   const loadChart = useCallback(async () => {
     setChartLoading(true)
     try {
       const tid = isAll ? allTenantIds[0] : tenantId
-      const data = await fetchChartData(tid, dateFilter, token)
+      const { dateFrom, dateTo } = getDateRangeForFilter(
+        dateFilter,
+        customRange,
+        activeTimezone,
+      )
+      const data = await fetchChartData(tid, { dateFrom, dateTo }, token)
       setChartData(data)
     } catch {
       // silently fail
     } finally {
       setChartLoading(false)
     }
-  }, [tenantId, dateFilter, isAll, allTenantIds, token])
+  }, [tenantId, dateFilter, customRange, activeTimezone, isAll, allTenantIds, token])
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => { loadChart() }, [loadChart])
@@ -140,11 +158,12 @@ export default function DashboardPage() {
     const peakLabel = peakHour ? peakHour.label : '—'
     const peakCount = peakHour ? peakHour.answered + peakHour.missed + peakHour.recovered : 0
 
-    const recoveryRate = stats
-      ? Math.round(stats.recovery_rate)
-      : totalCallsNum > 0 && missedCalls > 0
-        ? Math.round((recoveredCalls / missedCalls) * 100)
-        : totalCallsNum > 0 ? 100 : 0
+    // Recovery rate comes from /tenants/{id}/stats only. The previous
+    // client-side fallback used summary.missed_calls (NO_ANSWER + FAILED)
+    // as the denominator while the primary uses NO_ANSWER-only — those
+    // produce different numbers, and showing a "made-up" rate was worse
+    // UX than admitting the metric is unavailable. Sprint c630d5f1 A5.
+    const recoveryRate: number | null = stats ? Math.round(stats.recovery_rate) : null
 
     const avgCallSecs = stats
       ? Math.round(stats.avg_duration_seconds)
@@ -160,7 +179,7 @@ export default function DashboardPage() {
     const repeatCallers = Array.from(callerCounts.values()).filter(c => c > 1).length
 
     return { peakLabel, peakCount, recoveryRate, avgCallSecs, repeatCallers }
-  }, [chartData, stats, summary, totalCallsNum, missedCalls, recoveredCalls, allCalls])
+  }, [chartData, stats, summary, allCalls])
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MOBILE LAYOUT
@@ -252,8 +271,8 @@ export default function DashboardPage() {
               <InsightBox
                 icon={<PercentIcon />}
                 label="Recovery Rate"
-                value={`${insights.recoveryRate}%`}
-                sub="of missed"
+                value={insights.recoveryRate === null ? '—' : `${insights.recoveryRate}%`}
+                sub={insights.recoveryRate === null ? 'unavailable' : 'of missed'}
               />
               <InsightBox
                 icon={<TimerIcon />}
@@ -392,8 +411,8 @@ export default function DashboardPage() {
                 <InsightBox
                   icon={<PercentIcon />}
                   label="Recovery Rate"
-                  value={`${insights.recoveryRate}%`}
-                  sub="of missed"
+                  value={insights.recoveryRate === null ? '—' : `${insights.recoveryRate}%`}
+                  sub={insights.recoveryRate === null ? 'unavailable' : 'of missed'}
                 />
                 <InsightBox
                   icon={<TimerIcon />}
@@ -647,7 +666,7 @@ function MiniChart({ bars, color, height = 48, width, loading }: {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function ActivityRow({ call, isLast }: { call: CallRecord; isLast: boolean }) {
-  const isMissed = call.status === 'missed' || call.status === 'no-answer'
+  const isMissed = call.status === 'missed'
   const isInProgress = call.status === 'in_progress'
 
   const statusIconBg = isMissed

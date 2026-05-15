@@ -112,7 +112,7 @@ export default function AnalyticsPage() {
     let completed = 0, missed = 0, recovered = 0
     filteredCalls.forEach(c => {
       if (c.status === 'completed') completed++
-      else if (c.status === 'missed' || c.status === 'no-answer' || c.status === 'ignored') missed++
+      else if (c.status === 'missed' || c.status === 'ignored') missed++
       else if (c.status === 'recovered') recovered++
     })
     return { completed, missed, recovered, total: completed + missed + recovered }
@@ -137,7 +137,7 @@ export default function AnalyticsPage() {
       const entry = keyToBucket.get(key)
       if (entry) {
         entry.total++
-        if (call.status === 'missed' || call.status === 'no-answer' || call.status === 'ignored') entry.missed++
+        if (call.status === 'missed' || call.status === 'ignored') entry.missed++
       }
     })
     return buckets
