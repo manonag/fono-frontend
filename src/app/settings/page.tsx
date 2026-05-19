@@ -1,16 +1,19 @@
 'use client'
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
 import { MobileNav } from '@/components/mobile-nav'
 import { UserMenu } from '@/components/user-menu'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useFonoToken } from '@/hooks/use-fono-token'
+import { useTenantSetupState } from '@/hooks/use-tenant-setup-state'
 import { cn } from '@/lib/utils'
 import { config } from '@/lib/config'
 import { ConfirmModal } from '@/components/confirm-modal'
+import { LockedPreview } from '@/components/locked-preview'
+import { PathCard } from '@/components/path-card'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useImpersonation } from '@/lib/impersonation'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
@@ -65,7 +68,7 @@ function SettingsContent() {
       </div>
 
       {activeTab === 'restaurant' && <RestaurantTab />}
-      {activeTab === 'call-setup' && <CallSetupTab />}
+      {activeTab === 'call-setup' && <CallsSettings />}
       {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'forwarding' && <ForwardingTab />}
       {activeTab === 'greeting' && <GreetingTab />}
@@ -437,9 +440,9 @@ function RestaurantTab() {
 
 const FONO_NUMBER = '(209) 437-6888'
 
-function getForwardingCode(carrierName: string | null, path: 'A' | 'B'): { code: string; note: string } {
+function getForwardingCode(carrierName: string | null, path: 'live' | 'voicemail'): { code: string; note: string } {
   const cn = (carrierName || '').toLowerCase()
-  const isUnconditional = path === 'A'
+  const isUnconditional = path === 'live'
   const star = isUnconditional ? '*72' : '*71'
 
   if (cn.includes('t-mobile') || cn.includes('tmobile')) {
@@ -471,6 +474,198 @@ function formatPhone(phone?: string | null): string {
   return phone
 }
 
+// v3.3 Settings -> Calls dispatcher. Renders one of three views based on
+// the tenant's call_setup_path + call_forwarding_verified flags (CD §1
+// state model; tracked in CHIRAN fact #319). State A is the new path
+// picker; State B reuses the existing ForwardingTab content (forwarding
+// code setup with carrier instructions); State C reuses the existing
+// CallSetupTab body (callback number editor + path toggle). The B and C
+// content is unchanged from pre-v3.3; this PR only adds the A entry
+// point and the dispatch.
+function CallsSettings() {
+  const { loaded, variant, verified } = useTenantSetupState()
+
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center" style={{ padding: 60 }}>
+        <div
+          className="animate-spin"
+          style={{
+            width: 24,
+            height: 24,
+            border: '2.5px solid rgba(0,0,0,0.08)',
+            borderTopColor: '#E0602A',
+            borderRadius: '50%',
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (variant === 'no-path') return <CallsStateANoPath />
+  if (!verified) return <ForwardingTab />
+  return <CallSetupTab />
+}
+
+function CallsStateANoPath() {
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+  const imp = useImpersonation()
+  const router = useRouter()
+  const [submitting, setSubmitting] = useState<'live' | 'voicemail' | null>(null)
+  const [error, setError] = useState<string>('')
+
+  const tid = isAll ? tenantId : current.id
+
+  const handlePick = async (path: 'live' | 'voicemail') => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
+    setSubmitting(path)
+    setError('')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ call_setup_path: path }),
+      })
+      if (res.ok) {
+        router.refresh()
+        return
+      }
+      const detail = await res.json().catch(() => null)
+      setError(detail?.detail || 'Could not save your choice. Please try again.')
+    } catch {
+      setError('Could not reach the server. Please try again.')
+    }
+    setSubmitting(null)
+  }
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h2
+          style={{
+            fontSize: 22,
+            fontWeight: 800,
+            color: '#1E0E00',
+            letterSpacing: '-0.02em',
+            margin: 0,
+            marginBottom: 6,
+          }}
+        >
+          How should Fono answer your calls?
+        </h2>
+        <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.5, margin: 0 }}>
+          Pick a path so Fono can route incoming calls. You can change this any
+          time.
+        </p>
+      </header>
+
+      <div className="flex flex-col md:flex-row" style={{ gap: 12 }}>
+        <PathCard
+          path="live"
+          pick={false}
+          recommended
+          disabled={!!submitting || imp.readOnly}
+          onSelect={() => handlePick('live')}
+        />
+        <PathCard
+          path="voicemail"
+          pick={false}
+          disabled={!!submitting || imp.readOnly}
+          onSelect={() => handlePick('voicemail')}
+        />
+      </div>
+
+      {error ? (
+        <p
+          role="alert"
+          style={{
+            fontSize: 13,
+            color: '#92400E',
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.20)',
+            borderRadius: 12,
+            padding: '10px 14px',
+          }}
+        >
+          {error}
+        </p>
+      ) : null}
+
+      <LockedPreview
+        title="Connect"
+        blurb="Dial the carrier forwarding code so calls reach Fono."
+        blockedReason="Unlocks once you pick a path"
+      >
+        <div
+          style={{
+            padding: 24,
+            background: '#fff',
+            borderRadius: 16,
+            border: '1px solid rgba(0,0,0,0.06)',
+          }}
+        >
+          <div style={{ height: 60 }} />
+        </div>
+      </LockedPreview>
+
+      <LockedPreview
+        title="How Fono Answers"
+        blurb="Greeting voice, language, and recorded disclosure."
+        blockedReason="Unlocks once you pick a path"
+      >
+        <div
+          style={{
+            padding: 24,
+            background: '#fff',
+            borderRadius: 16,
+            border: '1px solid rgba(0,0,0,0.06)',
+          }}
+        >
+          <div style={{ height: 60 }} />
+        </div>
+      </LockedPreview>
+
+      <LockedPreview
+        title="Categories"
+        blurb="Intent buckets used to route voicemails (Order, Catering, Banquet hall, Others)."
+        blockedReason="Unlocks once you pick a path"
+      >
+        <div
+          style={{
+            padding: 24,
+            background: '#fff',
+            borderRadius: 16,
+            border: '1px solid rgba(0,0,0,0.06)',
+          }}
+        >
+          <div style={{ height: 60 }} />
+        </div>
+      </LockedPreview>
+
+      <LockedPreview
+        title="Notifications"
+        blurb="Where you receive call recordings and missed-call alerts."
+        blockedReason="Unlocks once you pick a path"
+      >
+        <div
+          style={{
+            padding: 24,
+            background: '#fff',
+            borderRadius: 16,
+            border: '1px solid rgba(0,0,0,0.06)',
+          }}
+        >
+          <div style={{ height: 60 }} />
+        </div>
+      </LockedPreview>
+    </div>
+  )
+}
+
 function CallSetupTab() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
@@ -481,15 +676,15 @@ function CallSetupTab() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [selectedPath, setSelectedPath] = useState<'A' | 'B' | null>(null)
+  const [selectedPath, setSelectedPath] = useState<'live' | 'voicemail' | null>(null)
   const [callbackNumber, setCallbackNumber] = useState('')
   const [callbackError, setCallbackError] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [carrierName, setCarrierName] = useState<string | null>(null)
   const [lineType, setLineType] = useState<string | null>(null)
   const [carrierLoading, setCarrierLoading] = useState(true)
-  const [originalPath, setOriginalPath] = useState<'A' | 'B' | null>(null)
-  const [openAccordion, setOpenAccordion] = useState<'A' | 'B' | null>(null)
+  const [originalPath, setOriginalPath] = useState<'live' | 'voicemail' | null>(null)
+  const [openAccordion, setOpenAccordion] = useState<'live' | 'voicemail' | null>(null)
   const [switchWarning, setSwitchWarning] = useState(false)
 
   const tid = isAll ? tenantId : current.id
@@ -505,7 +700,7 @@ function CallSetupTab() {
         if (data) {
           setPhoneNumber(data.phone_number || '')
           setCallbackNumber(data.callback_number || '')
-          if (data.call_setup_path === 'A' || data.call_setup_path === 'B') {
+          if (data.call_setup_path === 'live' || data.call_setup_path === 'voicemail') {
             setSelectedPath(data.call_setup_path)
             setOriginalPath(data.call_setup_path)
           }
@@ -553,14 +748,15 @@ function CallSetupTab() {
   }
 
   // Handle path selection
-  const handleSelectPath = (path: 'A' | 'B') => {
+  const handleSelectPath = (path: 'live' | 'voicemail') => {
     if (imp.readOnly) return
 
     setSelectedPath(path)
     setSaveError('')
     setSaved(false)
-    // Show switch warning if switching from A to B
-    if (originalPath === 'A' && path === 'B') {
+    // Show switch warning if downgrading from 'live' (bridges every call)
+    // to 'voicemail' (captures only).
+    if (originalPath === 'live' && path === 'voicemail') {
       setSwitchWarning(true)
     } else {
       setSwitchWarning(false)
@@ -571,8 +767,8 @@ function CallSetupTab() {
   const handleSave = async () => {
     if (imp.readOnly) return
     if (!selectedPath || !tid || !token) return
-    if (selectedPath === 'A' && !callbackNumber.trim()) {
-      setCallbackError('Callback number is required for Path A')
+    if (selectedPath === 'live' && !callbackNumber.trim()) {
+      setCallbackError("Callback number is required for the 'live' path")
       return
     }
     if (callbackError) return
@@ -581,7 +777,7 @@ function CallSetupTab() {
     setSaveError('')
     try {
       const body: Record<string, string> = { call_setup_path: selectedPath }
-      if (selectedPath === 'A' && callbackNumber.trim()) {
+      if (selectedPath === 'live' && callbackNumber.trim()) {
         body.callback_number = callbackNumber.trim()
       }
       const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
@@ -612,7 +808,7 @@ function CallSetupTab() {
     )
   }
 
-  const canSave = selectedPath !== null && !callbackError && !(selectedPath === 'A' && !callbackNumber.trim())
+  const canSave = selectedPath !== null && !callbackError && !(selectedPath === 'live' && !callbackNumber.trim())
   const forwarding = selectedPath ? getForwardingCode(carrierName, selectedPath) : null
 
   return (
@@ -641,21 +837,21 @@ function CallSetupTab() {
         {/* Path A: Full call recording */}
         <button
           type="button"
-          onClick={() => handleSelectPath('A')}
+          onClick={() => handleSelectPath('live')}
           disabled={imp.readOnly}
           className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             borderRadius: 16,
             padding: '20px 22px',
-            border: selectedPath === 'A' ? '2px solid #D4652C' : '2px solid rgba(0,0,0,0.06)',
-            backgroundColor: selectedPath === 'A' ? '#FFF7F3' : '#FFFFFF',
+            border: selectedPath === 'live' ? '2px solid #D4652C' : '2px solid rgba(0,0,0,0.06)',
+            backgroundColor: selectedPath === 'live' ? '#FFF7F3' : '#FFFFFF',
             cursor: imp.readOnly ? 'not-allowed' : 'pointer',
           }}
         >
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
             <div style={{
               width: 20, height: 20, borderRadius: '50%',
-              border: selectedPath === 'A' ? '6px solid #D4652C' : '2px solid rgba(0,0,0,0.15)',
+              border: selectedPath === 'live' ? '6px solid #D4652C' : '2px solid rgba(0,0,0,0.15)',
               flexShrink: 0,
             }} />
             <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Full call recording</span>
@@ -684,21 +880,21 @@ function CallSetupTab() {
         {/* Path B: Missed call recovery only */}
         <button
           type="button"
-          onClick={() => handleSelectPath('B')}
+          onClick={() => handleSelectPath('voicemail')}
           disabled={imp.readOnly}
           className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             borderRadius: 16,
             padding: '20px 22px',
-            border: selectedPath === 'B' ? '2px solid #3B82F6' : '2px solid rgba(0,0,0,0.06)',
-            backgroundColor: selectedPath === 'B' ? '#F0F7FF' : '#FFFFFF',
+            border: selectedPath === 'voicemail' ? '2px solid #3B82F6' : '2px solid rgba(0,0,0,0.06)',
+            backgroundColor: selectedPath === 'voicemail' ? '#F0F7FF' : '#FFFFFF',
             cursor: imp.readOnly ? 'not-allowed' : 'pointer',
           }}
         >
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
             <div style={{
               width: 20, height: 20, borderRadius: '50%',
-              border: selectedPath === 'B' ? '6px solid #3B82F6' : '2px solid rgba(0,0,0,0.15)',
+              border: selectedPath === 'voicemail' ? '6px solid #3B82F6' : '2px solid rgba(0,0,0,0.15)',
               flexShrink: 0,
             }} />
             <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Missed call recovery only</span>
@@ -737,7 +933,7 @@ function CallSetupTab() {
       )}
 
       {/* Path A: Callback Number Input */}
-      {selectedPath === 'A' && (
+      {selectedPath === 'live' && (
         <div style={{
           overflow: 'hidden',
           maxHeight: 300,
@@ -796,20 +992,20 @@ function CallSetupTab() {
       )}
 
       {/* Accordion: How does this work? */}
-      {selectedPath === 'A' && (
+      {selectedPath === 'live' && (
         <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
           <button
-            onClick={() => setOpenAccordion(openAccordion === 'A' ? null : 'A')}
+            onClick={() => setOpenAccordion(openAccordion === 'live' ? null : 'live')}
             className="flex items-center justify-between w-full text-left"
             style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
           >
             <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
-              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'A' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'live' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
               <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
-          <div style={{ maxHeight: openAccordion === 'A' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+          <div style={{ maxHeight: openAccordion === 'live' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
             <div style={{ padding: '0 22px 20px' }}>
               <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
                 When a customer calls your restaurant number, the call is forwarded to Fono. Fono answers with a short greeting, then rings your second phone number to connect the customer to your staff. The entire conversation is recorded.
@@ -825,20 +1021,20 @@ function CallSetupTab() {
         </div>
       )}
 
-      {selectedPath === 'B' && (
+      {selectedPath === 'voicemail' && (
         <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
           <button
-            onClick={() => setOpenAccordion(openAccordion === 'B' ? null : 'B')}
+            onClick={() => setOpenAccordion(openAccordion === 'voicemail' ? null : 'voicemail')}
             className="flex items-center justify-between w-full text-left"
             style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
           >
             <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
-              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'B' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'voicemail' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
               <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
-          <div style={{ maxHeight: openAccordion === 'B' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+          <div style={{ maxHeight: openAccordion === 'voicemail' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
             <div style={{ padding: '0 22px 20px' }}>
               <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
                 Your restaurant phone rings normally. If nobody picks up after a few rings, the call forwards to Fono. Fono records the missed call and texts the customer with your callback promise. Calls that your staff answers go directly to them and are not recorded by Fono.
