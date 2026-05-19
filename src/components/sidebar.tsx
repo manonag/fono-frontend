@@ -201,13 +201,9 @@ function NavItem({ href, icon, label, active, badge, showDot }: {
           height: 36,
           borderRadius: 10,
           backgroundColor: active ? 'rgba(224,96,42,0.1)' : 'rgba(0,0,0,0.03)',
-          position: 'relative',
         }}
       >
         <span style={{ color: active ? '#E0602A' : '#5C3D22' }}>{icon}</span>
-        {showDot && (
-          <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: '50%', backgroundColor: '#EF4444', border: '2px solid #fff' }} />
-        )}
       </div>
       <span
         style={{
@@ -218,6 +214,21 @@ function NavItem({ href, icon, label, active, badge, showDot }: {
       >
         {label}
       </span>
+      {showDot && (
+        <span
+          aria-label="Setup incomplete"
+          className="ml-auto"
+          style={{
+            // CD hand-off §5.3: 8x8 Terra dot with a soft Terra glow ring,
+            // right-aligned within the sidebar item.
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            backgroundColor: '#E0602A',
+            boxShadow: '0 0 0 3px rgba(224,96,42,0.18)',
+          }}
+        />
+      )}
       {badge !== undefined && (
         <span
           className="ml-auto flex items-center justify-center text-white rounded-full"

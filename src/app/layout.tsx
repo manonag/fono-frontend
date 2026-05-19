@@ -11,6 +11,7 @@ import { Providers } from './providers'
 import { ImpersonationProvider } from '@/lib/impersonation'
 import { RestaurantProvider } from '@/lib/restaurant-context'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
+import { SetupBanner } from '@/components/setup-banner'
 import './globals.css'
 
 const jakarta = Plus_Jakarta_Sans({
@@ -77,6 +78,7 @@ export default function RootLayout({
           <ImpersonationProvider>
             <RestaurantProvider>
               <ImpersonationBanner />
+              <SetupBanner />
               {children}
             </RestaurantProvider>
           </ImpersonationProvider>
