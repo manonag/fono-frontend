@@ -13,18 +13,15 @@ const config: Config = {
         cream: '#FDF0E8',
         ink: '#1E0E00',
         brown: '#8B7355',
-        // Palette A - voicemail kiosk Layout C (binder-tab) category colors.
-        // Receipt-faithful, low-chroma. Scoped to the kiosk for now; CHIRAN
-        // T-229 tracks formalizing them as official brand additions.
-        sage: '#7B9C68',
-        'dusty-blue': '#4A6D86',
-        bone: '#B0A090',
         // v3.3 design tokens (Onboarding + Settings hand-off §3, M6 lock).
-        // Pure-additive; existing terra/cream/ink/brown/sage/dusty-blue/bone
-        // stay so legacy surfaces keep working unchanged.
+        // Pure-additive; existing terra/cream/ink/brown stay so legacy
+        // surfaces keep working unchanged.
         //
-        // Palette A category swatches. pa.terra is intentionally a distinct
-        // hex from brand terra (#E0602A vs #D4652C) per CD §3.1; never alias.
+        // Palette A category swatches (formalized as official brand
+        // additions in T-229). pa.terra is intentionally a distinct hex
+        // from brand terra (#E0602A vs #D4652C) per CD §3.1; never alias.
+        // The kiosk continues to use its own rcp.* namespace for its
+        // theme-swap-aware variant; pa.* is the brand-level canonical set.
         pa: {
           terra: '#D4652C',
           sage: '#7B9C68',

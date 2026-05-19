@@ -24,16 +24,31 @@ Fono — AI voice assistant for restaurant phone calls. This is the customer-fac
   - POST /api/v1/calls/bridge — Twilio callback bridge
 
 ## Brand Colors
+
+### Chrome (primary brand surface)
 ```
 Terra:      #E0602A  (primary brand, CTAs, logo)
 Terra Dark: #C84E20  (navbar backgrounds, hover states)
 Cream:      #FDF0E8  (page backgrounds)
 Ink:        #1E0E00  (primary text, dark backgrounds)
-Brown:      #8B7355  (secondary text)
+Brown:      #8B7355  (secondary text; v3.3 semantic name: muted)
 Success:    #22C55E  (recovered, live indicator)
-Warning:    #F59E0B  (timer warnings)
+Warning:    #F59E0B  (timer warnings; v3.3 semantic name: amber)
 Danger:     #EF4444  (missed calls, errors)
 ```
+
+### Palette A (category swatches, M6 lock, formalized T-229)
+Seven low-chroma swatches used for category chips (voicemail intent categories, kiosk binder tabs, future category lists). Tailwind tokens live under the `pa.*` namespace; JS lookup via `paletteA` in `src/lib/colors.ts`. Chip render colors derive from a swatch via `chipTint(swatch)` in `src/lib/palette.ts`.
+```
+pa.terra:      #D4652C  (Order, default seed; distinct from brand Terra)
+pa.sage:       #7B9C68  (Catering, default seed)
+pa.dusty-blue: #4A6D86  (Banquet hall, default seed)
+pa.bone:       #B0A090  (Others, required seed)
+pa.clay:       #9C7B68  (5th rotation slot)
+pa.olive:      #866D4A  (6th rotation slot)
+pa.plum:       #7B6868  (7th rotation slot)
+```
+Chip tint formula (CD §3.2): bg = swatch + 1A (10% alpha), border = swatch + 40 (25% alpha), dot = solid swatch. Backend assigns the next unused index on category add; deleted slots recycle to the end so existing categories never re-color.
 
 ## Logo Specification — CRITICAL
 The Fono logo is "fon" text + an animated pulsing circle that replaces the last "o".
