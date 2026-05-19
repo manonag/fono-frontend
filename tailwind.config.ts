@@ -19,6 +19,51 @@ const config: Config = {
         sage: '#7B9C68',
         'dusty-blue': '#4A6D86',
         bone: '#B0A090',
+        // v3.3 design tokens (Onboarding + Settings hand-off §3, M6 lock).
+        // Pure-additive; existing terra/cream/ink/brown/sage/dusty-blue/bone
+        // stay so legacy surfaces keep working unchanged.
+        //
+        // Palette A category swatches. pa.terra is intentionally a distinct
+        // hex from brand terra (#E0602A vs #D4652C) per CD §3.1; never alias.
+        pa: {
+          terra: '#D4652C',
+          sage: '#7B9C68',
+          'dusty-blue': '#4A6D86',
+          bone: '#B0A090',
+          clay: '#9C7B68',
+          olive: '#866D4A',
+          plum: '#7B6868',
+        },
+        // Neutrals used by Settings + wizard chrome (cards, helper text,
+        // muted secondary lines, field bg, hairline rules).
+        body: '#5C3D22',
+        muted: '#8B7355',
+        hint: '#B0A090',
+        'field-bg': '#F5F0EB',
+        rule: 'rgba(0,0,0,0.06)',
+        'rule-soft': 'rgba(0,0,0,0.04)',
+        'input-border': 'rgba(0,0,0,0.08)',
+        // Status families. Each lives as a triple: solid hex (saturated
+        // base) + foreground (dark, used for text on the tint) + bg/edge
+        // alphas (for the soft banner backgrounds). Danger keeps its
+        // legacy single-shade form; amber and success expand to triples.
+        amber: {
+          DEFAULT: '#F59E0B',
+          fg: '#92400E',
+          bg: 'rgba(245,158,11,0.08)',
+          edge: 'rgba(245,158,11,0.20)',
+        },
+        success: {
+          DEFAULT: '#22C55E',
+          fg: '#0F7B3E',
+          bg: 'rgba(34,197,94,0.10)',
+        },
+        info: {
+          fg: '#26425A',
+          bg: 'rgba(74,109,134,0.08)',
+          edge: 'rgba(74,109,134,0.18)',
+        },
+        danger: '#EF4444',
         // Voicemail-route kiosk (Direction A - receipt). CSS-variable backed
         // so the [data-theme="dark"] swap defined in
         // src/components/kiosk/voicemail/styles.module.css cascades through
@@ -88,6 +133,16 @@ const config: Config = {
         'rcp-card-expanded': 'var(--rcp-shadow-card-expanded)',
         'rcp-popover':
           '0 24px 60px rgba(94,35,10,0.18), 0 4px 12px rgba(0,0,0,0.08)',
+      },
+      borderRadius: {
+        // v3.3 radii (CD hand-off §3 cheat sheet). pill keeps Tailwind's
+        // built-in `rounded-full` semantics. `tile` and `card` are the
+        // two settings-card sizes; `input` is the field/dial-code radius;
+        // `pill-sm` is the locked-pill / status-badge radius.
+        card: '20px',
+        tile: '16px',
+        input: '12px',
+        'pill-sm': '5px',
       },
       fontFamily: {
         sans: [
