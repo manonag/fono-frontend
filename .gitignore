@@ -34,3 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# secrets - OAuth client secret files must never enter the tree (T-291)
+client_secret_*.json
+*.apps.googleusercontent.com.json
