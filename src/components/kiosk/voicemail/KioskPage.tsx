@@ -21,7 +21,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchVoicemails, patchVoicemailIntent, patchVoicemailStatus } from '@/lib/api'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { BinderSpine } from './BinderSpine'
+import { DensityToggle } from './DensityToggle'
 import { STATUSES, TAB_LABELS, tabCount } from './helpers'
+import { useKioskDensity } from './hooks'
 import { HorizontalBinderStrip } from './HorizontalBinderStrip'
 import styles from './styles.module.css'
 import { Toast } from './Toast'
@@ -60,6 +62,8 @@ export function KioskPage({ tenant }: KioskPageProps) {
   // The receipt aesthetic is paper-first, so light is the default theme.
   const [dark, setDark] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  // T-228: card density (1-up / 2-up / list), persisted to localStorage.
+  const [density, setDensity] = useKioskDensity()
 
   // --- data load (mock-backed until the voicemail backend ships) + poll ---
   const load = useCallback(async () => {
@@ -162,7 +166,10 @@ export function KioskPage({ tenant }: KioskPageProps) {
       />
 
       <main className={styles.layoutMainC}>
-        <HorizontalBinderStrip value={tab} onChange={setTab} options={statusOptions} />
+        <div className={styles.topBarC}>
+          <HorizontalBinderStrip value={tab} onChange={setTab} options={statusOptions} />
+          <DensityToggle value={density} onChange={setDensity} />
+        </div>
 
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
@@ -176,6 +183,7 @@ export function KioskPage({ tenant }: KioskPageProps) {
             category={category}
             voicemails={voicemails}
             categories={tenant.categories}
+            density={density}
             onStatusChange={onStatusChange}
             onReclassify={onReclassify}
           />

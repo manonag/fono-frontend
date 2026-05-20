@@ -7,11 +7,12 @@
 // Filtering happens here - by the status `tab` (top strip) and the spine
 // `category` - both arriving as props now that KioskPage owns that state.
 //
-// Density is locked to 2-up (the toggle is deferred - brief section 8 /
-// T-228) and the sort is locked to newest-first (the oldest-first toggle is
-// deferred for Layout C - brief section 8). The v1 CategoryFilterRow and the
-// isProcessing -> ProcessingCard branch are both gone: filters live on the
-// spine now, and VoicemailCard renders its own processing state internally.
+// Density is user-controlled via the top-bar toggle (T-228): 1-up / 2-up /
+// list, arriving as the `density` prop. The sort is locked to newest-first
+// (the oldest-first toggle is deferred for Layout C - brief section 8). The
+// v1 CategoryFilterRow and the isProcessing -> ProcessingCard branch are both
+// gone: filters live on the spine now, and VoicemailCard renders its own
+// processing state internally.
 
 import { EmptyState } from './EmptyState'
 import { filterAndSort } from './helpers'
@@ -20,6 +21,7 @@ import { VoicemailCard } from './VoicemailCard'
 import type {
   Category,
   CategoryFilter,
+  Density,
   IntentKey,
   Status,
   Voicemail,
@@ -30,6 +32,7 @@ interface VoicemailListProps {
   category: CategoryFilter
   voicemails: Voicemail[]
   categories: Category[]
+  density: Density
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
 }
@@ -39,15 +42,18 @@ export function VoicemailList({
   category,
   voicemails,
   categories,
+  density,
   onStatusChange,
   onReclassify,
 }: VoicemailListProps) {
   const list = filterAndSort(voicemails, { status: tab, category, sort: 'newest' })
 
   return (
-    <div className={styles.cardGridC}>
+    <div className={styles.cardGridC} data-density={density}>
       {list.length === 0 ? (
-        <div className="col-span-2">
+        // The grid is two columns only at 2-up density; the empty state
+        // spans the full row in every case.
+        <div className={density === 'two' ? 'col-span-2' : 'col-span-1'}>
           <EmptyState tab={tab} />
         </div>
       ) : (
@@ -57,6 +63,7 @@ export function VoicemailList({
             voicemail={vm}
             index={i}
             categories={categories}
+            density={density}
             onStatusChange={onStatusChange}
             onReclassify={onReclassify}
           />

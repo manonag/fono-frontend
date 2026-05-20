@@ -1052,3 +1052,74 @@
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+/* --- T-228: density toggle + density-driven card grid ------------------ */
+
+/* Top bar row: the horizontal status strip (flex 1) plus the density toggle
+ * pinned at the right edge. */
+.topBarC {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+}
+.topBarC .binderStripH {
+  flex: 1 1 auto;
+}
+
+/* Density toggle container - shares the strip's 28px height, dashed bottom
+ * rule, and top-shadow gradient so the two read as one continuous bar. */
+.densityToggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 16px 0 10px;
+  border-bottom: 1px dashed var(--rcp-rule);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.03) 0%, transparent 100%);
+}
+.root[data-theme='dark'] .densityToggle {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, transparent 100%);
+}
+
+/* Each density chip. Visible size fits the 28px strip; the shared .tap48
+ * helper expands the real hit target to at least 48px. Colors are driven by
+ * the theme-swapped --rcp-* variables, so no separate dark rule is needed. */
+.densityBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 22px;
+  padding: 0 8px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rcp-brown);
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.densityBtn:hover {
+  color: var(--rcp-cocoa);
+}
+.densityBtn[data-active='true'] {
+  color: #fff;
+  background: var(--rcp-terra);
+  border-color: var(--rcp-terra);
+}
+
+/* Density-driven grid. The base .cardGridC is the 2-up default; 1-up and
+ * list collapse to a single column, and list tightens the inter-row gap. */
+.cardGridC[data-density='one'] {
+  grid-template-columns: 1fr;
+}
+.cardGridC[data-density='list'] {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
