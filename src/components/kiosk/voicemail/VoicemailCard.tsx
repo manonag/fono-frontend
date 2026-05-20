@@ -83,11 +83,18 @@ export function VoicemailCard({
   voicemail,
   index,
   categories,
+  density,
   onStatusChange,
   onReclassify,
 }: VoicemailCardProps) {
   const vm = voicemail
   const processing = isProcessing(vm)
+  // T-228 list density: compact rows show key fields only (summary + phone),
+  // dropping the inline audio player and the caller-meta row and tightening
+  // the body padding. The card stays expandable, so full detail (transcript,
+  // extracted details, audio) remains one tap away.
+  const compact = density === 'list'
+  const bodyPad = compact ? 'px-2.5 pb-1.5 pt-1.5' : 'px-2.5 pb-2.5 pt-2'
 
   // All hooks unconditional - the processing branch returns AFTER this list.
   const now = useClock()
@@ -173,7 +180,12 @@ export function VoicemailCard({
   // --- Processing state: patient typewriter, Layout C chrome --------------
   if (processing) {
     return (
-      <article className={styles.cardC} data-c="pending" data-processing="true">
+      <article
+        className={styles.cardC}
+        data-c="pending"
+        data-processing="true"
+        data-density={density}
+      >
         <div className={styles.thC}>
           <span
             data-c="pending"
@@ -183,10 +195,15 @@ export function VoicemailCard({
             <span className={styles.stampWord}>Transcribing</span>
           </span>
         </div>
-        <div className="px-2.5 pb-2.5 pt-2">
+        <div className={bodyPad}>
           {/* The transcribing line stands in for the eventual summary - it
               takes the same hero slot, content-first. */}
-          <p className="mb-2 text-[16px] italic leading-[1.35] text-rcp-brown">
+          <p
+            className={cn(
+              'text-[16px] italic leading-[1.35] text-rcp-brown',
+              compact ? 'mb-0' : 'mb-2',
+            )}
+          >
             <em>{typed}</em>
             <span
               aria-hidden="true"
@@ -198,7 +215,12 @@ export function VoicemailCard({
               |
             </span>
           </p>
-          <div className="mb-[3px] flex items-baseline justify-between gap-3">
+          <div
+            className={cn(
+              'flex items-baseline justify-between gap-3',
+              compact ? 'mt-1' : 'mb-[3px]',
+            )}
+          >
             <span className="font-rcp-mono text-[12.5px] font-semibold tabular-nums text-rcp-text-body">
               {formatPhone(vm.caller_phone)}
             </span>
@@ -206,15 +228,19 @@ export function VoicemailCard({
               {formatDuration(vm.audio_duration_seconds)}
             </span>
           </div>
-          <div className="mb-2 font-rcp-mono text-[10px] lowercase tracking-[0.02em] text-rcp-brown">
-            <span>new caller</span>
-          </div>
-          <div className={styles.audioWrap}>
-            <AudioPlayer
-              audioUrl={vm.audio_url}
-              durationSeconds={vm.audio_duration_seconds}
-            />
-          </div>
+          {compact ? null : (
+            <>
+              <div className="mb-2 font-rcp-mono text-[10px] lowercase tracking-[0.02em] text-rcp-brown">
+                <span>new caller</span>
+              </div>
+              <div className={styles.audioWrap}>
+                <AudioPlayer
+                  audioUrl={vm.audio_url}
+                  durationSeconds={vm.audio_duration_seconds}
+                />
+              </div>
+            </>
+          )}
         </div>
         <FootCaption vm={vm} index={index} now={now} />
       </article>
@@ -269,6 +295,7 @@ export function VoicemailCard({
       data-c={dataC}
       data-call-armed={callArmed ? 'true' : undefined}
       data-reclassify-open={reclassifyOpen ? 'true' : undefined}
+      data-density={density}
       onClick={handleCardClick}
       className={styles.cardC}
     >
@@ -312,13 +339,25 @@ export function VoicemailCard({
 
       {/* Body - content-first: summary, then phone byline, then meta, audio.
           Chrome: tapping the body's padding / inter-row gaps toggles expand;
-          tapping the content rows themselves does not. */}
-      <div className="px-2.5 pb-2.5 pt-2" data-card-chrome>
-        <p className="mb-2 text-[17px] font-semibold leading-[1.3] tracking-[-0.01em] text-rcp-text-strong [text-wrap:pretty]">
+          tapping the content rows themselves does not. In list density the
+          meta row and the audio player are dropped (key fields only); they
+          stay one tap away via expand. */}
+      <div className={cn(bodyPad)} data-card-chrome>
+        <p
+          className={cn(
+            'text-[17px] font-semibold leading-[1.3] tracking-[-0.01em] text-rcp-text-strong [text-wrap:pretty]',
+            compact ? 'mb-0' : 'mb-2',
+          )}
+        >
           {vm.summary}
         </p>
 
-        <div className="mb-[3px] flex items-baseline justify-between gap-3">
+        <div
+          className={cn(
+            'flex items-baseline justify-between gap-3',
+            compact ? 'mt-1' : 'mb-[3px]',
+          )}
+        >
           <span className="font-rcp-mono text-[12.5px] font-semibold tabular-nums text-rcp-text-body">
             {formatPhone(vm.caller_phone)}
           </span>
@@ -327,51 +366,56 @@ export function VoicemailCard({
           </span>
         </div>
 
-        <div className="mb-2 inline-flex flex-wrap items-center gap-1.5 font-rcp-mono text-[10px] lowercase tracking-[0.02em] text-rcp-brown">
-          {vm.caller_name ? (
-            <span className="font-semibold normal-case text-rcp-text-strong">
-              {vm.caller_name}
-            </span>
-          ) : (
-            <span>new caller</span>
-          )}
-          {repeat ? (
-            <>
-              <span aria-hidden="true" className="text-rcp-bone">
-                &middot;
-              </span>
-              <span
-                className="rounded-[3px] bg-rcp-repeat-bg px-1.5 py-0.5 font-semibold text-rcp-repeat-fg"
-                title={
-                  now > 0 && vm.repeat_caller_last_seen
-                    ? `last seen ${formatExact(vm.repeat_caller_last_seen)}`
-                    : undefined
-                }
-              >
-                returning &middot; {vm.repeat_caller_count}&times; in 30d
-              </span>
-            </>
-          ) : null}
-          {vm.callback_preference ? (
-            <>
-              <span aria-hidden="true" className="text-rcp-bone">
-                &middot;
-              </span>
-              <span className="text-rcp-text-body">
-                prefers: {vm.callback_preference}
-              </span>
-            </>
-          ) : null}
-        </div>
+        {compact ? null : (
+          <>
+            <div className="mb-2 inline-flex flex-wrap items-center gap-1.5 font-rcp-mono text-[10px] lowercase tracking-[0.02em] text-rcp-brown">
+              {vm.caller_name ? (
+                <span className="font-semibold normal-case text-rcp-text-strong">
+                  {vm.caller_name}
+                </span>
+              ) : (
+                <span>new caller</span>
+              )}
+              {repeat ? (
+                <>
+                  <span aria-hidden="true" className="text-rcp-bone">
+                    &middot;
+                  </span>
+                  <span
+                    className="rounded-[3px] bg-rcp-repeat-bg px-1.5 py-0.5 font-semibold text-rcp-repeat-fg"
+                    title={
+                      now > 0 && vm.repeat_caller_last_seen
+                        ? `last seen ${formatExact(vm.repeat_caller_last_seen)}`
+                        : undefined
+                    }
+                  >
+                    returning &middot; {vm.repeat_caller_count}&times; in 30d
+                  </span>
+                </>
+              ) : null}
+              {vm.callback_preference ? (
+                <>
+                  <span aria-hidden="true" className="text-rcp-bone">
+                    &middot;
+                  </span>
+                  <span className="text-rcp-text-body">
+                    prefers: {vm.callback_preference}
+                  </span>
+                </>
+              ) : null}
+            </div>
 
-        {/* Audio sits on every card so staff can hit play instantly. Not
-            chrome - the e.target gate keeps player clicks from toggling. */}
-        <div className={styles.audioWrap}>
-          <AudioPlayer
-            audioUrl={vm.audio_url}
-            durationSeconds={vm.audio_duration_seconds}
-          />
-        </div>
+            {/* Audio sits on every full card so staff can hit play instantly.
+                Not chrome - the e.target gate keeps player clicks from
+                toggling. */}
+            <div className={styles.audioWrap}>
+              <AudioPlayer
+                audioUrl={vm.audio_url}
+                durationSeconds={vm.audio_duration_seconds}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Expanded - full transcript + extracted details (same as v1). Not

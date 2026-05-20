@@ -2,9 +2,10 @@
 //
 // IntentKey / Status / Category / Tenant / Voicemail / KioskPageProps /
 // VoicemailCardProps originate from the CD design handoff. The v2.3 Layout C
-// revision (binder-tab) extends Category with Palette A swatch + tint and
-// drops `density` from VoicemailCardProps (the grid is locked to 2-up). Do
-// not widen or narrow these without updating the design contract first.
+// revision (binder-tab) extends Category with Palette A swatch + tint. T-228
+// re-introduces `density` on VoicemailCardProps: the kiosk now has a
+// user-facing 1-up / 2-up / list density toggle. Do not widen or narrow
+// these without updating the design contract first.
 
 export type IntentKey = 'order' | 'catering' | 'banquet_hall' | 'others'
 export type Status = 'new' | 'resolved' | 'hidden'
@@ -67,6 +68,7 @@ export interface VoicemailCardProps {
   categories: Category[]
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
+  density: Density
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,12 @@ export type CategoryFilter = IntentKey | 'all'
 
 // Sort order on the New tab.
 export type SortOrder = 'newest' | 'oldest'
+
+// Card density (T-228 user-facing toggle, persisted to localStorage):
+//   one  - single column of full cards
+//   two  - two-column grid of full cards (default)
+//   list - single column of compact rows (key fields only)
+export type Density = 'one' | 'two' | 'list'
 
 // Tab counts surfaced in VoicemailTabs.
 export interface TabCounts {
