@@ -8,6 +8,7 @@ import { QueuePane } from './components/QueuePane'
 import { ResizableSplit } from './components/ResizableSplit'
 import { ReviewPane } from './components/ReviewPane'
 import { StatsHeader } from './components/StatsHeader'
+import { AdjudicateMode } from './adjudicate/AdjudicateMode'
 import {
   LabelingApiError,
   fetchActiveLabelers,
@@ -45,6 +46,12 @@ function useMinViewport(min: number): boolean {
 export default function LabelingPage() {
   const token = useFonoToken()
   const [authState, setAuthState] = useState<AuthState>('loading')
+  // T-299: Verify | Adjudicate toggle. Default to Verify so the page
+  // continues to render the labeling queue as before. Adjudicate switches
+  // the body to the backend-fed eval gold-adjudication view; the verify
+  // effects below are gated on this state so adjudicate mode does not
+  // wastefully heartbeat locks or refetch the labeling queue.
+  const [mode, setMode] = useState<'verify' | 'adjudicate'>('verify')
   const viewportOk = useMinViewport(MIN_VIEWPORT_PX)
 
   const [filter, setFilter] = useState<QueueFilter>('auto_labeled')
@@ -94,10 +101,10 @@ export default function LabelingPage() {
     }
   }, [token])
 
-  useHeartbeat(token, authState === 'allowed')
+  useHeartbeat(token, authState === 'allowed' && mode === 'verify')
 
   useEffect(() => {
-    if (authState !== 'allowed' || !token) return
+    if (authState !== 'allowed' || !token || mode !== 'verify') return
     let cancelled = false
     const load = () => {
       void fetchActiveLabelers(token)
@@ -114,7 +121,7 @@ export default function LabelingPage() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [authState, token])
+  }, [authState, token, mode])
 
   const loadQueue = useCallback(
     async (opts?: { keepSelection?: boolean }) => {
@@ -153,14 +160,14 @@ export default function LabelingPage() {
   }, [token])
 
   useEffect(() => {
-    if (authState !== 'allowed') return
+    if (authState !== 'allowed' || mode !== 'verify') return
     initialAutoSelectDone.current = false
     void loadQueue()
     void loadStats()
-  }, [authState, loadQueue, loadStats])
+  }, [authState, mode, loadQueue, loadStats])
 
   useEffect(() => {
-    if (authState !== 'allowed' || !token || !selectedId) {
+    if (authState !== 'allowed' || !token || !selectedId || mode !== 'verify') {
       setRecording(null)
       return
     }
@@ -184,7 +191,7 @@ export default function LabelingPage() {
     return () => {
       cancelled = true
     }
-  }, [authState, token, selectedId])
+  }, [authState, mode, token, selectedId])
 
   const handleFilterChange = useCallback((next: QueueFilter) => {
     setFilter(next)
@@ -363,8 +370,34 @@ export default function LabelingPage() {
           <div>
             <h1 className="text-xl font-bold">Labeling Queue</h1>
             <p className="text-xs text-cream/70">
-              T-199 Phase A · Sarvam transcript verification
+              {mode === 'verify'
+                ? 'T-199 Phase A · Sarvam transcript verification'
+                : 'T-299 · Eval gold-adjudication overlay'}
             </p>
+          </div>
+          <div className="flex items-center bg-cream/10 rounded p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode('verify')}
+              className={
+                mode === 'verify'
+                  ? 'px-3 py-1 rounded text-sm font-semibold bg-cream text-ink'
+                  : 'px-3 py-1 rounded text-sm font-medium text-cream/80 hover:text-cream'
+              }
+            >
+              Verify
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('adjudicate')}
+              className={
+                mode === 'adjudicate'
+                  ? 'px-3 py-1 rounded text-sm font-semibold bg-cream text-ink'
+                  : 'px-3 py-1 rounded text-sm font-medium text-cream/80 hover:text-cream'
+              }
+            >
+              Adjudicate
+            </button>
           </div>
           <a
             href="/admin"
@@ -374,41 +407,46 @@ export default function LabelingPage() {
           </a>
         </div>
       </header>
-      <LabelerHeader
-        me={me}
-        myCounts={deriveMyCounts(me, stats?.by_labeler)}
-        activeLabelers={activeLabelers}
-      />
-      <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
-      <ResizableSplit
-        className="flex-1 min-h-0"
-        initialLeftWidth="33%"
-        minWidth={240}
-        left={
-          <QueuePane
-            items={queue}
-            total={queueTotal}
-            loading={queueLoading}
-            error={queueError}
-            filter={filter}
-            selectedId={selectedId}
-            currentUserId={me?.user_id ?? null}
-            onFilterChange={handleFilterChange}
-            onSelect={handleSelect}
-            onDemote={handleDemote}
+      {mode === 'verify' && (
+        <>
+          <LabelerHeader
+            me={me}
+            myCounts={deriveMyCounts(me, stats?.by_labeler)}
+            activeLabelers={activeLabelers}
           />
-        }
-        right={
-          <ReviewPane
-            recording={recording}
-            loading={recordingLoading}
-            error={recordingError}
-            hasNext={hasNext}
-            onSave={handleSave}
-            onDemote={handlePaneDemote}
+          <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
+          <ResizableSplit
+            className="flex-1 min-h-0"
+            initialLeftWidth="33%"
+            minWidth={240}
+            left={
+              <QueuePane
+                items={queue}
+                total={queueTotal}
+                loading={queueLoading}
+                error={queueError}
+                filter={filter}
+                selectedId={selectedId}
+                currentUserId={me?.user_id ?? null}
+                onFilterChange={handleFilterChange}
+                onSelect={handleSelect}
+                onDemote={handleDemote}
+              />
+            }
+            right={
+              <ReviewPane
+                recording={recording}
+                loading={recordingLoading}
+                error={recordingError}
+                hasNext={hasNext}
+                onSave={handleSave}
+                onDemote={handlePaneDemote}
+              />
+            }
           />
-        }
-      />
+        </>
+      )}
+      {mode === 'adjudicate' && token && <AdjudicateMode token={token} />}
       {queueComplete && (
         <div className="fixed inset-x-0 bottom-6 flex justify-center pointer-events-none">
           <div className="pointer-events-auto bg-ink text-cream px-6 py-3 rounded shadow-lg flex items-center gap-3">
