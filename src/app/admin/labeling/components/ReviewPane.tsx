@@ -8,6 +8,7 @@ import { type TagPanelValue } from './TagPanel'
 import { CollapsibleTagPanel } from './CollapsibleTagPanel'
 import { SaveControls } from './SaveControls'
 import { SuggestionsResolvePane } from './SuggestionsResolvePane'
+import { ConfirmModal } from '@/components/confirm-modal'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
 import type {
   PatchPayload,
@@ -31,6 +32,10 @@ interface ReviewPaneProps {
   onDemote: (
     target: 'auto_labeled' | 'verified',
   ) => Promise<{ ok: boolean; error?: string }>
+  // Sprint 1 bulk speaker swap. Parent POSTs to the swap endpoint and
+  // refetches the recording on success (mirrors handleDemote). Returns
+  // ok / error so the pane can surface a toast or inline error.
+  onSwapSpeakers: () => Promise<{ ok: boolean; error?: string }>
 }
 
 interface FormState {
@@ -190,6 +195,7 @@ export function ReviewPane({
   hasNext,
   onSave,
   onDemote,
+  onSwapSpeakers,
 }: ReviewPaneProps) {
   const initialRef = useRef<InitialSnapshot | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
@@ -198,6 +204,8 @@ export function ReviewPane({
   const [currentTime, setCurrentTime] = useState(0)
   const [saving, setSaving] = useState(false)
   const [demoting, setDemoting] = useState(false)
+  const [swapping, setSwapping] = useState(false)
+  const [showSwapConfirm, setShowSwapConfirm] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [textFocused, setTextFocused] = useState(false)
@@ -504,6 +512,38 @@ export function ReviewPane({
               setToast(target === 'auto_labeled' ? 'Sent back to Pending' : 'Demoted to Verified')
             } else {
               setSaveError(result.error ?? 'Demote failed')
+            }
+          })
+        }}
+        // Sprint 1: only surface swap-all on rows the backend will accept
+        // (auto_labeled, in_review). suggestions_pending takes the
+        // SuggestionsResolvePane branch above; verified/gold need a
+        // demote-first roundtrip per the backend status guard.
+        onSwapAllSpeakers={
+          recording.status === 'auto_labeled' || recording.status === 'in_review'
+            ? () => setShowSwapConfirm(true)
+            : undefined
+        }
+        swapping={swapping}
+      />
+      <ConfirmModal
+        open={showSwapConfirm}
+        title="Swap all speakers?"
+        description="This flips S1 and S2 for the ENTIRE recording. Use only when the whole recording is reversed, not for partial mislabels."
+        confirmLabel="Swap all"
+        cancelLabel="Cancel"
+        variant="warning"
+        onCancel={() => setShowSwapConfirm(false)}
+        onConfirm={() => {
+          setShowSwapConfirm(false)
+          setSwapping(true)
+          setSaveError(null)
+          void onSwapSpeakers().then((result) => {
+            setSwapping(false)
+            if (result.ok) {
+              setToast('Speakers swapped')
+            } else {
+              setSaveError(result.error ?? 'Swap failed')
             }
           })
         }}

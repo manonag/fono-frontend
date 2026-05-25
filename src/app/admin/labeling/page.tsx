@@ -17,6 +17,7 @@ import {
   fetchRecording,
   fetchStats,
   patchRecording,
+  swapAllSpeakers,
 } from './lib/api'
 import type {
   ActiveLabeler,
@@ -323,6 +324,28 @@ export default function LabelingPage() {
     [handleDemote, selectedId],
   )
 
+  // Sprint 1: bulk speaker swap on the currently selected row. The endpoint
+  // commits server-side and returns the full RecordingDetail, so we replace
+  // local state directly instead of refetching (no second round-trip; the
+  // lock stays held since swap is mid-edit and doesn't release it).
+  const handleSwapSpeakers = useCallback(async (): Promise<{
+    ok: boolean
+    error?: string
+  }> => {
+    if (!token) return { ok: false, error: 'Not authenticated' }
+    if (!selectedId) return { ok: false, error: 'No row selected' }
+    try {
+      const fresh = await swapAllSpeakers(token, selectedId)
+      setRecording(fresh)
+      return { ok: true }
+    } catch (err) {
+      if (err instanceof LabelingApiError) {
+        return { ok: false, error: `${err.status}: ${err.detail}` }
+      }
+      return { ok: false, error: 'Network error. Swap not applied.' }
+    }
+  }, [token, selectedId])
+
   if (!viewportOk) {
     return (
       <main className="min-h-screen bg-cream text-ink p-8 font-sans flex items-center justify-center">
@@ -441,6 +464,7 @@ export default function LabelingPage() {
                 hasNext={hasNext}
                 onSave={handleSave}
                 onDemote={handlePaneDemote}
+                onSwapSpeakers={handleSwapSpeakers}
               />
             }
           />

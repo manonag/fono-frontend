@@ -18,6 +18,13 @@ interface SaveControlsProps {
   // to surface (verified -> show send-back, gold -> show demote).
   onDemote?: (target: 'auto_labeled' | 'verified') => void
   demoting?: boolean
+  // Sprint 1 bulk speaker swap. Server-side commit; disabled while form
+  // is dirty so pending per-cell edits aren't silently dropped on refetch.
+  // Hidden by the parent on statuses that the backend refuses (verified,
+  // gold) so reviewers don't get a deceptive 422.
+  onSwapAllSpeakers?: () => void
+  swapping?: boolean
+  swapDisabledReason?: string | null
 }
 
 export function SaveControls({
@@ -32,6 +39,9 @@ export function SaveControls({
   hasNext,
   onDemote,
   demoting = false,
+  onSwapAllSpeakers,
+  swapping = false,
+  swapDisabledReason = null,
 }: SaveControlsProps) {
   // suggestions_pending is reached via owner review_action='send_back', not
   // a direct status promotion, so it should not appear in the labeler save
@@ -86,6 +96,23 @@ export function SaveControls({
             title="Steps this row back from Gold to Verified. Original verification stays valid."
           >
             {demoting ? 'Demoting...' : 'Demote to Verified'}
+          </button>
+        )}
+        {onSwapAllSpeakers && (
+          <button
+            type="button"
+            onClick={onSwapAllSpeakers}
+            disabled={swapping || saving || demoting || dirty}
+            className="text-xs text-brown hover:text-ink underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              dirty
+                ? 'Save pending edits before swap-all'
+                : swapDisabledReason
+                  ? swapDisabledReason
+                  : 'Flips S1 and S2 across the ENTIRE recording. Use only when the whole recording is reversed.'
+            }
+          >
+            {swapping ? 'Swapping...' : 'Swap all speakers'}
           </button>
         )}
         <div className="ml-auto flex items-center gap-2">
