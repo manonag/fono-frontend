@@ -102,6 +102,21 @@ export async function patchRecording(
   return res.json()
 }
 
+// Bulk speaker swap (Sprint 1). Flips 0<->1 across the entire recording's
+// reviewer working layer. Returns the full updated RecordingDetail so the
+// caller can replace local state without a second fetch.
+export async function swapAllSpeakers(
+  token: string,
+  recordingId: string,
+): Promise<RecordingDetail> {
+  const res = await fetch(`${BASE}/${recordingId}/swap-speakers`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  return res.json()
+}
+
 export async function fetchStats(
   token: string,
   signal?: AbortSignal,
