@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, Suspense, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -14,28 +14,48 @@ import { config } from '@/lib/config'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { LockedPreview } from '@/components/locked-preview'
 import { PathCard } from '@/components/path-card'
+import { ComparisonChart } from '@/components/comparison-chart'
+import { ForwardingCodeCard } from '@/components/forwarding-code-card'
+import { type Carrier } from '@/lib/forwarding-codes'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useImpersonation } from '@/lib/impersonation'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
 import type { Plan } from '@/lib/mock-data'
 
-type SettingsTab = 'restaurant' | 'call-setup' | 'notifications' | 'forwarding' | 'greeting' | 'plan'
+// v3.3 IA: three tabs (Restaurant / Calls / Account). The pre-v3.3 surface
+// had six (Restaurant, Call Setup, Notifications, Call Forwarding, Greeting,
+// Plan). FE-2 collapses to three; per the "collapse now, stash orphans"
+// call, Notifications + Greeting are temporarily reachable inside Calls and
+// Plan inside Account until FE-3 (Calls State C sections) and FE-6 (Account)
+// give them their permanent homes.
+type SettingsTab = 'restaurant' | 'calls' | 'account'
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'restaurant', label: 'Restaurant' },
-  { id: 'call-setup', label: 'Call Setup' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'forwarding', label: 'Call Forwarding' },
-  { id: 'greeting', label: 'Greeting' },
-  { id: 'plan', label: 'Plan' },
+  { id: 'calls', label: 'Calls' },
+  { id: 'account', label: 'Account' },
 ]
+
+// Map legacy ?tab= values (and the old setup-banner deep link) onto the new
+// three-tab IA so existing links don't 404 into the default tab silently.
+const LEGACY_TAB_ALIAS: Record<string, SettingsTab> = {
+  'call-setup': 'calls',
+  forwarding: 'calls',
+  notifications: 'calls',
+  greeting: 'calls',
+  plan: 'account',
+}
+
+function resolveTab(param: string | null): SettingsTab {
+  if (!param) return 'restaurant'
+  if (TABS.some((t) => t.id === param)) return param as SettingsTab
+  return LEGACY_TAB_ALIAS[param] ?? 'restaurant'
+}
 
 function SettingsContent() {
   const isMobile = useMediaQuery('(max-width: 767px)')
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState<SettingsTab>(
-    (tabParam && TABS.some(t => t.id === tabParam) ? tabParam : 'restaurant') as SettingsTab
-  )
+  const [activeTab, setActiveTab] = useState<SettingsTab>(resolveTab(tabParam))
   const { current, isAll } = useRestaurant()
   const restaurantName = isAll ? 'All Restaurants' : current.name
 
@@ -68,11 +88,8 @@ function SettingsContent() {
       </div>
 
       {activeTab === 'restaurant' && <RestaurantTab />}
-      {activeTab === 'call-setup' && <CallsSettings />}
-      {activeTab === 'notifications' && <NotificationsTab />}
-      {activeTab === 'forwarding' && <ForwardingTab />}
-      {activeTab === 'greeting' && <GreetingTab />}
-      {activeTab === 'plan' && <PlanTab isMobile={isMobile} />}
+      {activeTab === 'calls' && <CallsTab />}
+      {activeTab === 'account' && <AccountTab isMobile={isMobile} />}
     </div>
   )
 
@@ -102,6 +119,98 @@ export default function SettingsPage() {
     <Suspense>
       <SettingsContent />
     </Suspense>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 2: Calls — v3.3 three-state dispatcher + stashed orphans
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// The Calls tab is the v3.3 state machine (State A path picker / State B
+// finish-setup / State C configured). Until FE-3 folds Greeting +
+// Notifications into State C's sections, they live in a collapsed "More
+// call settings" drawer so they stay reachable for every tenant.
+function CallsTab() {
+  return (
+    <div className="space-y-6">
+      <CallsSettings />
+      <StashedSettings
+        label="More call settings"
+        note="Greeting and notifications are moving into the sections above in an upcoming update."
+      >
+        <GreetingTab />
+        <NotificationsTab />
+      </StashedSettings>
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 3: Account — temporary shell around the existing Plan content
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// FE-6 builds the real Account tab (founding member + sign out + delete).
+// Until then this keeps the existing Plan/billing content reachable.
+function AccountTab({ isMobile }: { isMobile: boolean }) {
+  return (
+    <div className="space-y-6">
+      <div
+        style={{
+          borderRadius: 12,
+          padding: '12px 16px',
+          background: 'rgba(74,109,134,0.08)',
+          border: '1px solid rgba(74,109,134,0.18)',
+          fontSize: 13,
+          color: '#26425A',
+          lineHeight: 1.5,
+        }}
+      >
+        The Account tab redesign is coming in a later update. Your plan and
+        billing details are below in the meantime.
+      </div>
+      <PlanTab isMobile={isMobile} />
+    </div>
+  )
+}
+
+// Collapsible holding spot for settings that have not yet moved to their
+// v3.3 home. Clearly labeled as temporary; reachable but out of the way.
+function StashedSettings({
+  label,
+  note,
+  children,
+}: {
+  label: string
+  note: string
+  children: ReactNode
+}) {
+  return (
+    <details
+      style={{
+        borderRadius: 16,
+        border: '1px dashed rgba(0,0,0,0.12)',
+        background: 'rgba(0,0,0,0.015)',
+        padding: '14px 18px',
+      }}
+    >
+      <summary
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#8B7355',
+          cursor: 'pointer',
+          listStyle: 'none',
+        }}
+      >
+        {label}
+      </summary>
+      <p style={{ fontSize: 12, color: '#B0A090', margin: '6px 0 0', lineHeight: 1.5 }}>
+        {note}
+      </p>
+      <div className="space-y-6" style={{ marginTop: 16 }}>
+        {children}
+      </div>
+    </details>
   )
 }
 
@@ -542,126 +651,124 @@ function CallsStateANoPath() {
     setSubmitting(null)
   }
 
+  const busy = !!submitting || imp.readOnly
+
   return (
     <div className="space-y-6">
-      <header>
-        <h2
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            color: '#1E0E00',
-            letterSpacing: '-0.02em',
-            margin: 0,
-            marginBottom: 6,
-          }}
-        >
-          How should Fono answer your calls?
-        </h2>
-        <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.5, margin: 0 }}>
-          Pick a path so Fono can route incoming calls. You can change this any
-          time.
-        </p>
-      </header>
+      {/* Hero — pick a path. The PathCards are the selector; the comparison
+          chart and FOMO line carry the per-path detail (CD State A). */}
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 20,
+          border: '1px solid rgba(224,96,42,0.25)',
+          boxShadow: '0 8px 28px -16px rgba(224,96,42,0.25)',
+          padding: '28px 32px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: '#E0602A',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+              padding: '5px 10px',
+              borderRadius: 5,
+              background: 'rgba(224,96,42,0.10)',
+              flex: '0 0 auto',
+              marginTop: 2,
+            }}
+          >
+            Start here
+          </span>
+          <div>
+            <h2 style={{ fontSize: 24, fontWeight: 800, color: '#1E0E00', letterSpacing: '-0.025em', margin: 0, lineHeight: 1.2 }}>
+              Set up your call path.
+            </h2>
+            <p style={{ fontSize: 14, color: '#5C3D22', margin: '6px 0 0', lineHeight: 1.55, maxWidth: 620 }}>
+              Choose how Fono answers your calls. Both paths keep your team on the
+              phone with customers. The difference is just{' '}
+              <em style={{ fontStyle: 'normal', color: '#1E0E00', fontWeight: 600 }}>when Fono shows up</em>{' '}
+              in the call flow.
+            </p>
+          </div>
+        </div>
 
-      <div className="flex flex-col md:flex-row" style={{ gap: 12 }}>
-        <PathCard
-          path="live"
-          pick={false}
-          recommended
-          disabled={!!submitting || imp.readOnly}
-          onSelect={() => handlePick('live')}
-        />
-        <PathCard
-          path="voicemail"
-          pick={false}
-          disabled={!!submitting || imp.readOnly}
-          onSelect={() => handlePick('voicemail')}
-        />
+        <div className="flex flex-col md:flex-row" style={{ gap: 12, marginBottom: 18 }}>
+          <PathCard path="live" pick={false} recommended disabled={busy} onSelect={() => handlePick('live')} />
+          <PathCard path="voicemail" pick={false} disabled={busy} onSelect={() => handlePick('voicemail')} />
+        </div>
+
+        <ComparisonChart currentPick={null} />
+
+        <p style={{ fontSize: 13.5, color: '#5C3D22', margin: '16px 4px 0', lineHeight: 1.55, textAlign: 'center', fontStyle: 'italic' }}>
+          Most owners pick <strong style={{ fontStyle: 'normal', color: '#1E0E00' }}>Fono Live</strong> once
+          they realize what they&rsquo;re missing in their conversations.
+        </p>
+
+        {error ? (
+          <p
+            role="alert"
+            style={{
+              fontSize: 13,
+              color: '#92400E',
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.20)',
+              borderRadius: 12,
+              padding: '10px 14px',
+              margin: '16px 0 0',
+            }}
+          >
+            {error}
+          </p>
+        ) : null}
       </div>
 
-      {error ? (
-        <p
-          role="alert"
-          style={{
-            fontSize: 13,
-            color: '#92400E',
-            background: 'rgba(245,158,11,0.08)',
-            border: '1px solid rgba(245,158,11,0.20)',
-            borderRadius: 12,
-            padding: '10px 14px',
-          }}
-        >
-          {error}
-        </p>
-      ) : null}
+      {/* Locked sections below the hero. Order per M5/§5.5: How Fono Answers
+          first, then Connect, Categories, Notifications. Numbers suppressed
+          while no path is picked. */}
+      <LockedPreview
+        title="How Fono Answers"
+        blurb="The path Fono takes on every call."
+        blockedReason="Unlocks once you pick a path"
+      >
+        <LockedPlaceholder />
+      </LockedPreview>
 
       <LockedPreview
         title="Connect"
         blurb="Dial the carrier forwarding code so calls reach Fono."
         blockedReason="Unlocks once you pick a path"
       >
-        <div
-          style={{
-            padding: 24,
-            background: '#fff',
-            borderRadius: 16,
-            border: '1px solid rgba(0,0,0,0.06)',
-          }}
-        >
-          <div style={{ height: 60 }} />
-        </div>
-      </LockedPreview>
-
-      <LockedPreview
-        title="How Fono Answers"
-        blurb="Greeting voice, language, and recorded disclosure."
-        blockedReason="Unlocks once you pick a path"
-      >
-        <div
-          style={{
-            padding: 24,
-            background: '#fff',
-            borderRadius: 16,
-            border: '1px solid rgba(0,0,0,0.06)',
-          }}
-        >
-          <div style={{ height: 60 }} />
-        </div>
+        <LockedPlaceholder />
       </LockedPreview>
 
       <LockedPreview
         title="Categories"
-        blurb="Intent buckets used to route voicemails (Order, Catering, Banquet hall, Others)."
+        blurb="How Fono labels voicemails on the kiosk and in SMS (Order, Catering, Banquet hall, Others)."
         blockedReason="Unlocks once you pick a path"
       >
-        <div
-          style={{
-            padding: 24,
-            background: '#fff',
-            borderRadius: 16,
-            border: '1px solid rgba(0,0,0,0.06)',
-          }}
-        >
-          <div style={{ height: 60 }} />
-        </div>
+        <LockedPlaceholder />
       </LockedPreview>
 
       <LockedPreview
         title="Notifications"
-        blurb="Where you receive call recordings and missed-call alerts."
+        blurb="When calls happen, how you find out."
         blockedReason="Unlocks once you pick a path"
       >
-        <div
-          style={{
-            padding: 24,
-            background: '#fff',
-            borderRadius: 16,
-            border: '1px solid rgba(0,0,0,0.06)',
-          }}
-        >
-          <div style={{ height: 60 }} />
-        </div>
+        <LockedPlaceholder />
       </LockedPreview>
+    </div>
+  )
+}
+
+function LockedPlaceholder() {
+  return (
+    <div style={{ padding: 24, background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
+      <div style={{ height: 60 }} />
     </div>
   )
 }
@@ -1180,31 +1287,132 @@ function NotificationsTab() {
 // Tab 3: Call Forwarding
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Map the backend's free-form carrier_name string onto our Carrier enum.
+function carrierToEnum(name: string | null | undefined): Carrier {
+  const cn = (name || '').toLowerCase()
+  if (cn.includes('at&t') || cn.includes('att') || cn.includes('cingular')) return 'att'
+  if (cn.includes('verizon')) return 'verizon'
+  if (cn.includes('t-mobile') || cn.includes('tmobile') || cn.includes('t mobile') || cn.includes('metro')) return 'tmobile'
+  if (cn.includes('sprint') || cn.includes('boost')) return 'sprint'
+  return 'other'
+}
+
+const CARRIER_CHOICES: { id: Carrier; label: string }[] = [
+  { id: 'att', label: 'AT&T' },
+  { id: 'verizon', label: 'Verizon' },
+  { id: 'tmobile', label: 'T-Mobile' },
+  { id: 'sprint', label: 'Sprint' },
+  { id: 'other', label: 'Other' },
+]
+
+// State B — path picked, forwarding not yet verified. The v3.3 FINISH SETUP
+// view: the ForwardingCodeCard hero (dial + verify state machine), a "change
+// my call path" affordance, and the locked sections below. The dispatcher
+// only routes here when call_setup_path is set and forwarding is unverified.
 function ForwardingTab() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
-  const [status, setStatus] = useState<{ verified: boolean; verified_at: string | null; fono_number: string } | null>(null)
-  const [loading, setLoading] = useState(true)
+  const imp = useImpersonation()
+  const router = useRouter()
+  const tid = isAll ? tenantId : current.id
 
-  const fetchStatus = useCallback(async () => {
-    const tid = isAll ? tenantId : current.id
-    if (!tid || !token) return
+  const [settings, setSettings] = useState<
+    { path: 'live' | 'voicemail'; carrier: Carrier; phone: string; name: string } | null
+  >(null)
+  const [fonoNumber, setFonoNumber] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [dialState, setDialState] = useState<'idle' | 'listening' | 'verified' | 'failed'>('idle')
+  const [carrierOverride, setCarrierOverride] = useState<Carrier | null>(null)
+  const [showCarrierPicker, setShowCarrierPicker] = useState(false)
+  const [switchError, setSwitchError] = useState('')
+
+  // Load path / carrier / phone / name once.
+  useEffect(() => {
+    if (!tid || tid === 'all' || !token) return
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && (data.call_setup_path === 'live' || data.call_setup_path === 'voicemail')) {
+          setSettings({
+            path: data.call_setup_path,
+            carrier: carrierToEnum(data.carrier_name),
+            phone: data.phone_number || '',
+            name: data.name || '',
+          })
+        }
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [tid, token])
+
+  // Poll forwarding-status: always once for the fono_number; while listening,
+  // every 3s to detect the first forwarded call, with a 5-minute failure cap.
+  const pollStatus = useCallback(async () => {
+    if (!tid || tid === 'all' || !token) return null
     try {
       const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.ok) setStatus(await res.json())
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [isAll, tenantId, current.id, token])
+      if (res.ok) {
+        const data = await res.json()
+        setFonoNumber(data.fono_number || '')
+        return data as { verified: boolean }
+      }
+    } catch {
+      /* ignore */
+    }
+    return null
+  }, [tid, token])
 
   useEffect(() => {
-    fetchStatus()
-    const id = setInterval(fetchStatus, 5000)
-    return () => clearInterval(id)
-  }, [fetchStatus])
+    pollStatus()
+  }, [pollStatus])
 
-  if (loading) {
+  useEffect(() => {
+    if (dialState !== 'listening') return
+    const start = Date.now()
+    const id = setInterval(async () => {
+      const data = await pollStatus()
+      if (data?.verified) {
+        clearInterval(id)
+        setDialState('verified')
+        setTimeout(() => router.refresh(), 1500)
+      } else if (Date.now() - start > 5 * 60 * 1000) {
+        clearInterval(id)
+        setDialState('failed')
+      }
+    }, 3000)
+    return () => clearInterval(id)
+  }, [dialState, pollStatus, router])
+
+  // "Change my call path" — the design clears the path and returns to State A.
+  // The backend PATCH cannot null call_setup_path yet, so for now this switches
+  // to the other path in place (still State B with the new code). Clearing to
+  // State A is filed as a backend follow-up.
+  const handleSwitchPath = async () => {
+    if (imp.readOnly || !settings || !tid || tid === 'all' || !token) return
+    const next = settings.path === 'live' ? 'voicemail' : 'live'
+    setSwitchError('')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ call_setup_path: next }),
+      })
+      if (res.ok) {
+        router.refresh()
+        return
+      }
+      const detail = await res.json().catch(() => null)
+      setSwitchError(detail?.detail || 'Could not switch your call path. Please try again.')
+    } catch {
+      setSwitchError('Could not reach the server. Please try again.')
+    }
+  }
+
+  if (loading || !settings) {
     return (
       <div className="flex items-center justify-center" style={{ padding: 60 }}>
         <div className="animate-spin" style={{ width: 24, height: 24, border: '2.5px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
@@ -1212,143 +1420,146 @@ function ForwardingTab() {
     )
   }
 
-  if (status?.verified) {
-    return (
-      <div className="space-y-6">
-        <SettingsCard>
-          <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
-            <div>
-              <p style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Call Forwarding Verified</p>
-              <p style={{ fontSize: 13, color: '#8B7355' }}>
-                Verified {status.verified_at ? new Date(status.verified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-              </p>
-            </div>
-          </div>
-          <p style={{ fontSize: 14, color: '#5C3D22', lineHeight: 1.6 }}>
-            Calls to your restaurant are being forwarded to your Fono number{status.fono_number ? ` (${status.fono_number})` : ''}. Fono is answering and recording incoming calls.
-          </p>
-        </SettingsCard>
-      </div>
-    )
-  }
-
-  const fonoNumber = status?.fono_number || ''
+  const path = settings.path
+  const isLive = path === 'live'
+  const carrier = carrierOverride ?? settings.carrier
+  const switchLabel = isLive ? 'Switch to Fono Voicemail' : 'Switch to Fono Live'
 
   return (
     <div className="space-y-6">
-      {/* Status banner */}
-      <div style={{ borderRadius: 14, padding: '16px 20px', backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F59E0B' }} />
-          <p style={{ fontSize: 14, fontWeight: 700, color: '#92400E' }}>Forwarding Not Set Up</p>
-        </div>
-        <p style={{ fontSize: 13, color: '#92400E' }}>
-          Set up call forwarding so Fono can answer your restaurant&apos;s calls. Follow the steps below, then call your restaurant number to verify.
-        </p>
-      </div>
-
-      {/* Fono number */}
-      <SettingsCard title="Your Fono Number">
-        <div style={{ padding: '12px 16px', borderRadius: 12, backgroundColor: '#F5F0EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 18, fontWeight: 800, color: '#1E0E00', letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums' }}>
-            {fonoNumber || 'Loading...'}
-          </span>
-          {fonoNumber && (
-            <button
-              onClick={() => navigator.clipboard.writeText(fonoNumber)}
-              style={{ fontSize: 12, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Copy
-            </button>
-          )}
-        </div>
-        <p style={{ fontSize: 12, color: '#8B7355', marginTop: 8 }}>
-          Forward your restaurant&apos;s calls to this number
-        </p>
-      </SettingsCard>
-
-      {/* Carrier instructions */}
-      <SettingsCard title="Setup Instructions">
-        <p style={{ fontSize: 13, color: '#5C3D22', marginBottom: 16, lineHeight: 1.5 }}>
-          From your restaurant&apos;s phone, dial the code for your carrier. This sets up call forwarding when you&apos;re busy or don&apos;t answer.
-        </p>
-
-        <div className="space-y-3">
-          <CarrierStep carrier="AT&T" code={`*92${fonoNumber}#`} note="Forwards unanswered calls" />
-          <CarrierStep carrier="T-Mobile" code={`**62*${fonoNumber}#`} note="Forwards when unreachable" />
-          <CarrierStep carrier="Verizon" code={`*71${fonoNumber}`} note="Forwards all calls" />
-          <CarrierStep carrier="Other / Landline" code="" note="Contact your phone provider and ask them to set up call forwarding to the Fono number above" />
-          <CarrierStep carrier="iPhone" steps={[
-            `Go to iPhone Settings → Phone → Call Forwarding → Toggle ON → Forward To: ${fonoNumber}`,
-            'Call your restaurant number to verify',
-          ]} />
-          <CarrierStep carrier="Android" steps={[
-            'Open the Phone app → Settings (3 dots or gear icon) → Calls → Call Forwarding',
-            `Select "When unanswered" → Enter: ${fonoNumber} → Enable`,
-            `Also set "When busy" → Enter: ${fonoNumber} → Enable`,
-            'Call your restaurant number to verify',
-          ]} />
-        </div>
-      </SettingsCard>
-
-      {/* Verify instructions */}
-      <SettingsCard title="Verify Setup">
-        <div className="space-y-3">
-          <StepItem step={1} text="Dial the forwarding code from your restaurant phone" />
-          <StepItem step={2} text="You should hear a confirmation tone or message" />
-          <StepItem step={3} text="Call your restaurant number from any other phone" />
-          <StepItem step={4} text="If Fono answers, verification will happen automatically" />
-        </div>
-        <div className="flex items-center gap-2" style={{ marginTop: 16, padding: '10px 14px', borderRadius: 10, backgroundColor: 'rgba(224,96,42,0.06)' }}>
-          <div className="animate-spin" style={{ width: 14, height: 14, border: '2px solid rgba(224,96,42,0.2)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#E0602A' }}>Waiting for verification call...</span>
-        </div>
-      </SettingsCard>
-    </div>
-  )
-}
-
-function CarrierStep({ carrier, code, note, steps }: { carrier: string; code?: string; note?: string; steps?: string[] }) {
-  return (
-    <div style={{ padding: '12px 16px', borderRadius: 12, border: '1px solid rgba(0,0,0,0.06)' }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: '#1E0E00' }}>{carrier}</span>
-        {code && (
-          <button
-            onClick={() => navigator.clipboard.writeText(code)}
-            style={{ fontSize: 11, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
+      {/* FINISH SETUP hero */}
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 20,
+          border: '1px solid rgba(224,96,42,0.25)',
+          boxShadow: '0 8px 28px -16px rgba(224,96,42,0.25)',
+          padding: '28px 32px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: '#E0602A',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+              padding: '5px 10px',
+              borderRadius: 5,
+              background: 'rgba(224,96,42,0.10)',
+              flex: '0 0 auto',
+              marginTop: 2,
+            }}
           >
-            Copy
-          </button>
-        )}
-      </div>
-      {code ? (
-        <p style={{ fontSize: 15, fontWeight: 600, color: '#5C3D22', fontFamily: 'monospace', letterSpacing: '0.02em' }}>{code}</p>
-      ) : null}
-      {note && <p style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.5, marginTop: 2 }}>{note}</p>}
-      {steps && (
-        <ol style={{ margin: 0, paddingLeft: 20, marginTop: 4 }}>
-          {steps.map((s, i) => (
-            <li key={i} style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.5 }}>{s}</li>
-          ))}
-        </ol>
-      )}
-    </div>
-  )
-}
+            Finish setup
+          </span>
+          <div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: '#1E0E00', letterSpacing: '-0.025em', margin: 0, lineHeight: 1.2 }}>
+              {isLive ? 'Send every call to Fono' : 'Send your missed calls to Fono'}
+            </h2>
+            <p style={{ fontSize: 13.5, color: '#5C3D22', margin: '6px 0 0', lineHeight: 1.55 }}>
+              {isLive
+                ? "You picked Fono Live. From your restaurant's phone, dial the code below to forward every call to Fono."
+                : "You picked Fono Voicemail. From your restaurant's phone, dial the code below to forward missed calls to Fono."}
+            </p>
+          </div>
+        </div>
 
-function StepItem({ step, text }: { step: number; text: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div style={{ width: 24, height: 24, borderRadius: 8, backgroundColor: 'rgba(224,96,42,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: '#E0602A' }}>{step}</span>
+        <ForwardingCodeCard
+          carrier={carrier}
+          path={path}
+          tenantPhone={formatPhone(settings.phone)}
+          tenantName={settings.name}
+          fonoNumber={fonoNumber || 'your Fono number'}
+          state={dialState}
+          onDialed={() => !imp.readOnly && setDialState('listening')}
+          onRetry={() => setDialState('listening')}
+          onCarrierChange={() => setShowCarrierPicker((v) => !v)}
+        />
+
+        {showCarrierPicker && (
+          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {CARRIER_CHOICES.map((c) => {
+              const active = c.id === carrier
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    setCarrierOverride(c.id)
+                    setShowCarrierPicker(false)
+                  }}
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    padding: '7px 14px',
+                    borderRadius: 999,
+                    cursor: 'pointer',
+                    border: active ? '1.5px solid #E0602A' : '1.5px solid rgba(0,0,0,0.08)',
+                    background: active ? 'rgba(224,96,42,0.08)' : '#fff',
+                    color: active ? '#E0602A' : '#1E0E00',
+                  }}
+                >
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Change my call path + about-this-card note */}
+        <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={handleSwitchPath}
+            disabled={imp.readOnly}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#8B7355',
+              fontSize: 12.5,
+              cursor: imp.readOnly ? 'not-allowed' : 'pointer',
+              padding: 0,
+              textDecoration: 'underline',
+              textDecorationThickness: 1,
+              textUnderlineOffset: 3,
+              opacity: imp.readOnly ? 0.5 : 1,
+            }}
+          >
+            {switchLabel}
+          </button>
+        </div>
+
+        {switchError ? (
+          <p role="alert" style={{ fontSize: 12.5, color: '#92400E', margin: '10px 0 0' }}>
+            {switchError}
+          </p>
+        ) : null}
+
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed rgba(0,0,0,0.06)', fontSize: 11.5, color: '#B0A090', lineHeight: 1.5 }}>
+          <strong style={{ color: '#8B7355', fontWeight: 700 }}>About this card:</strong> stands in for the{' '}
+          <code style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, padding: '1px 5px', borderRadius: 3, background: '#F5F0EB', color: '#5C3D22' }}>Connect</code>{' '}
+          section until forwarding is verified. Once verified it closes and Connect takes the top slot.
+        </div>
       </div>
-      <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.5, paddingTop: 2 }}>{text}</p>
+
+      {/* Locked sections below the hero. */}
+      <LockedPreview title="How Fono Answers" blurb="The path Fono takes on every call." blockedReason="Locked while forwarding is incomplete">
+        <LockedPlaceholder />
+      </LockedPreview>
+      {isLive && (
+        <LockedPreview title="Call routing" blurb="What happens when your team cannot pick up the bridged call." blockedReason="Locked while forwarding is incomplete">
+          <LockedPlaceholder />
+        </LockedPreview>
+      )}
+      <LockedPreview title="Categories" blurb="How Fono labels voicemails on the kiosk and in SMS." blockedReason="Locked while forwarding is incomplete">
+        <LockedPlaceholder />
+      </LockedPreview>
+      <LockedPreview title="Notifications" blurb="When calls happen, how you find out." blockedReason="Locked while forwarding is incomplete">
+        <LockedPlaceholder />
+      </LockedPreview>
     </div>
   )
 }
