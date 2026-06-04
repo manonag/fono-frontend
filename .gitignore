@@ -34,3 +34,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# v3.3 design handoff archive (13MB binary; unpacked locally, not tracked)
+_design_refs/v33_archive/
