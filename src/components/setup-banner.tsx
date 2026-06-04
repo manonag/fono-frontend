@@ -103,7 +103,7 @@ export function SetupBanner() {
 
       <button
         type="button"
-        onClick={() => router.push('/settings?tab=call-setup')}
+        onClick={() => router.push('/settings?tab=calls')}
         style={{
           padding: '7px 14px',
           fontSize: 13,
