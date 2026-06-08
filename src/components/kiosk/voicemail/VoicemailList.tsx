@@ -42,7 +42,7 @@ export function VoicemailList({
   onStatusChange,
   onReclassify,
 }: VoicemailListProps) {
-  const list = filterAndSort(voicemails, { status: tab, category, sort: 'newest' })
+  const list = filterAndSort(voicemails, { status: tab, category, sort: 'newest' }, categories)
 
   return (
     <div className={styles.cardGridC}>
