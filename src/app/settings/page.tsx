@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -16,7 +16,13 @@ import { LockedPreview } from '@/components/locked-preview'
 import { PathCard } from '@/components/path-card'
 import { ComparisonChart } from '@/components/comparison-chart'
 import { ForwardingCodeCard } from '@/components/forwarding-code-card'
+import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
+import { CategoriesChipCard } from '@/components/categories-chip-card'
+import { NotificationsMiniCard } from '@/components/notifications-mini-card'
+import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
+import { SettingsCard as VsCard, SettingsButton, tokens } from '@/components/settings-primitives'
 import { type Carrier } from '@/lib/forwarding-codes'
+import { displayNumberFor, type SectionId } from '@/lib/section-numbering'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { useImpersonation } from '@/lib/impersonation'
 import { MOCK_PLANS, MOCK_USAGE, MOCK_INVOICES, FEATURE_NAMES } from '@/lib/mock-data'
@@ -127,22 +133,11 @@ export default function SettingsPage() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // The Calls tab is the v3.3 state machine (State A path picker / State B
-// finish-setup / State C configured). Until FE-3 folds Greeting +
-// Notifications into State C's sections, they live in a collapsed "More
-// call settings" drawer so they stay reachable for every tenant.
+// finish-setup / State C configured). State C now renders Greeting and
+// Notifications as first-class sections, so the temporary "More call
+// settings" drawer is gone (FE-3).
 function CallsTab() {
-  return (
-    <div className="space-y-6">
-      <CallsSettings />
-      <StashedSettings
-        label="More call settings"
-        note="Greeting and notifications are moving into the sections above in an upcoming update."
-      >
-        <GreetingTab />
-        <NotificationsTab />
-      </StashedSettings>
-    </div>
-  )
+  return <CallsSettings />
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -173,46 +168,6 @@ function AccountTab({ isMobile }: { isMobile: boolean }) {
   )
 }
 
-// Collapsible holding spot for settings that have not yet moved to their
-// v3.3 home. Clearly labeled as temporary; reachable but out of the way.
-function StashedSettings({
-  label,
-  note,
-  children,
-}: {
-  label: string
-  note: string
-  children: ReactNode
-}) {
-  return (
-    <details
-      style={{
-        borderRadius: 16,
-        border: '1px dashed rgba(0,0,0,0.12)',
-        background: 'rgba(0,0,0,0.015)',
-        padding: '14px 18px',
-      }}
-    >
-      <summary
-        style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: '#8B7355',
-          cursor: 'pointer',
-          listStyle: 'none',
-        }}
-      >
-        {label}
-      </summary>
-      <p style={{ fontSize: 12, color: '#B0A090', margin: '6px 0 0', lineHeight: 1.5 }}>
-        {note}
-      </p>
-      <div className="space-y-6" style={{ marginTop: 16 }}>
-        {children}
-      </div>
-    </details>
-  )
-}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tab 1: Restaurant
@@ -547,30 +502,6 @@ function RestaurantTab() {
 // Tab 2: Call Setup (Path A/B)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const FONO_NUMBER = '(209) 437-6888'
-
-function getForwardingCode(carrierName: string | null, path: 'live' | 'voicemail'): { code: string; note: string } {
-  const cn = (carrierName || '').toLowerCase()
-  const isUnconditional = path === 'live'
-  const star = isUnconditional ? '*72' : '*71'
-
-  if (cn.includes('t-mobile') || cn.includes('tmobile')) {
-    return isUnconditional
-      ? { code: '', note: 'Open Settings > Phone > Call Forwarding > Forward to ' + FONO_NUMBER }
-      : { code: '', note: 'Open Settings > Phone > Call Forwarding > Forward when unanswered to ' + FONO_NUMBER }
-  }
-  if (cn.includes('comcast') || cn.includes('xfinity')) {
-    return isUnconditional
-      ? { code: '', note: 'Log into Xfinity account > Voice > Call Forwarding > Forward to ' + FONO_NUMBER }
-      : { code: '', note: 'Log into Xfinity > Voice > No Answer Forwarding > Forward to ' + FONO_NUMBER }
-  }
-
-  // AT&T, Verizon, CenturyLink, Frontier, Windstream, Sprint, unknown
-  const code = `${star} ${FONO_NUMBER}`
-  const fallback = !carrierName ? ' These codes work for most carriers. Check the Call Forwarding tab for your carrier.' : ''
-  return { code, note: `Dial from your restaurant phone.${fallback}` }
-}
-
 function formatPhone(phone?: string | null): string {
   if (!phone) return '—'
   const digits = phone.replace(/\D/g, '')
@@ -613,7 +544,7 @@ function CallsSettings() {
 
   if (variant === 'no-path') return <CallsStateANoPath />
   if (!verified) return <ForwardingTab />
-  return <CallSetupTab />
+  return <CallsStateC />
 }
 
 function CallsStateANoPath() {
@@ -773,141 +704,154 @@ function LockedPlaceholder() {
   )
 }
 
-function CallSetupTab() {
+const SECTION_MONO = "'JetBrains Mono', ui-monospace, monospace"
+
+// Numbered section header for State C. Number comes from displayNumberFor
+// (M4 stable per-path numbering); pass null for un-numbered sections.
+function SectionLabel({ num, title, blurb }: { num: string | null; title: string; blurb?: string }) {
+  return (
+    <div style={{ padding: '4px 4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+        {num && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#B0A090', fontFamily: SECTION_MONO, letterSpacing: '0.06em' }}>
+            {num}
+          </span>
+        )}
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1E0E00', margin: 0, letterSpacing: '-0.02em' }}>{title}</h2>
+      </div>
+      {blurb && <p style={{ fontSize: 13, color: '#8B7355', margin: 0, lineHeight: 1.5, maxWidth: 640 }}>{blurb}</p>}
+    </div>
+  )
+}
+
+type StateCSettings = {
+  path: 'live' | 'voicemail'
+  phone: string
+  name: string
+  callback: string
+  carrier: Carrier
+  fonoNumber: string
+  ownerWhatsapp: string
+  categories: { key: string; name: string; swatch: string; required?: boolean }[] | undefined
+}
+
+// Best-effort mapping of the backend voicemail_categories JSONB override onto
+// the chip model. NULL / unusable shapes fall back to the component default.
+function parseCategories(raw: unknown): StateCSettings['categories'] {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const out: { key: string; name: string; swatch: string; required?: boolean }[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return undefined
+    const o = item as Record<string, unknown>
+    const key = typeof o.key === 'string' ? o.key : undefined
+    const name = typeof o.display_name === 'string' ? o.display_name : typeof o.name === 'string' ? o.name : undefined
+    const swatch = typeof o.swatch === 'string' ? o.swatch : undefined
+    if (!key || !name || !swatch) return undefined
+    out.push({ key, name, swatch, required: o.required === true || key === 'others' })
+  }
+  return out
+}
+
+// v3.3 Settings -> Calls State C: fully-configured Calls tab. Renders the
+// stable per-path sections (M4 numbering) using the FE-1 component library,
+// with Greeting folded in as a real section and Notifications as the proper
+// NotificationsMiniCard. Reached only when call_setup_path is set AND
+// forwarding is verified (the dispatcher's State C branch).
+function CallsStateC() {
   const { current, isAll, tenantId } = useRestaurant()
   const token = useFonoToken()
   const imp = useImpersonation()
-
-  // State
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [saveError, setSaveError] = useState('')
-  const [selectedPath, setSelectedPath] = useState<'live' | 'voicemail' | null>(null)
-  const [callbackNumber, setCallbackNumber] = useState('')
-  const [callbackError, setCallbackError] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [carrierName, setCarrierName] = useState<string | null>(null)
-  const [lineType, setLineType] = useState<string | null>(null)
-  const [carrierLoading, setCarrierLoading] = useState(true)
-  const [originalPath, setOriginalPath] = useState<'live' | 'voicemail' | null>(null)
-  const [openAccordion, setOpenAccordion] = useState<'live' | 'voicemail' | null>(null)
-  const [switchWarning, setSwitchWarning] = useState(false)
-
+  const router = useRouter()
   const tid = isAll ? tenantId : current.id
 
-  // Load tenant settings
+  const [s, setS] = useState<StateCSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [staffPhone, setStaffPhone] = useState('')
+  const [samePhoneError, setSamePhoneError] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [notifyOn, setNotifyOn] = useState(true)
+  const [notifyPhone, setNotifyPhone] = useState('')
+
   useEffect(() => {
     if (!tid || tid === 'all' || !token) return
-    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setPhoneNumber(data.phone_number || '')
-          setCallbackNumber(data.callback_number || '')
-          if (data.call_setup_path === 'live' || data.call_setup_path === 'voicemail') {
-            setSelectedPath(data.call_setup_path)
-            setOriginalPath(data.call_setup_path)
-          }
-          if (data.carrier_name) {
-            setCarrierName(data.carrier_name)
-            setLineType(data.line_type)
-            setCarrierLoading(false)
-          }
-        }
-        setLoading(false)
+    let cancelled = false
+    Promise.all([
+      fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ]).then(([data, fwd]) => {
+      if (cancelled || !data) {
+        if (!cancelled) setLoading(false)
+        return
+      }
+      const path: 'live' | 'voicemail' = data.call_setup_path === 'voicemail' ? 'voicemail' : 'live'
+      setS({
+        path,
+        phone: data.phone_number || '',
+        name: data.name || current.name,
+        callback: data.callback_number || '',
+        carrier: carrierToEnum(data.carrier_name),
+        fonoNumber: fwd?.fono_number || '',
+        ownerWhatsapp: data.owner_whatsapp || '',
+        categories: parseCategories(data.voicemail_categories),
       })
-      .catch(() => setLoading(false))
-  }, [tid, token])
-
-  // Carrier lookup (lazy)
-  useEffect(() => {
-    if (!tid || tid === 'all' || !token || !carrierLoading) return
-    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/carrier-lookup`, {
-      headers: { Authorization: `Bearer ${token}` },
+      setStaffPhone(data.callback_number || '')
+      setNotifyPhone(data.owner_whatsapp || '')
+      setLoading(false)
     })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setCarrierName(data.carrier_name)
-          setLineType(data.line_type)
-        }
-        setCarrierLoading(false)
-      })
-      .catch(() => setCarrierLoading(false))
-  }, [tid, token, carrierLoading])
-
-  // Validate callback number on blur
-  const validateCallback = (value: string) => {
-    if (!value) {
-      setCallbackError('')
-      return
+    return () => {
+      cancelled = true
     }
-    const clean = value.replace(/\D/g, '')
-    const phoneClean = phoneNumber.replace(/\D/g, '')
-    if (clean === phoneClean || (clean.length === 11 && phoneClean.length === 10 && clean.slice(1) === phoneClean)) {
-      setCallbackError("This can't be the same as your restaurant number. Use a different phone like your cell or a second line.")
-    } else {
-      setCallbackError('')
-    }
-  }
+  }, [tid, token, current.name])
 
-  // Handle path selection
-  const handleSelectPath = (path: 'live' | 'voicemail') => {
-    if (imp.readOnly) return
-
-    setSelectedPath(path)
-    setSaveError('')
-    setSaved(false)
-    // Show switch warning if downgrading from 'live' (bridges every call)
-    // to 'voicemail' (captures only).
-    if (originalPath === 'live' && path === 'voicemail') {
-      setSwitchWarning(true)
-    } else {
-      setSwitchWarning(false)
-    }
-  }
-
-  // Save
-  const handleSave = async () => {
-    if (imp.readOnly) return
-    if (!selectedPath || !tid || !token) return
-    if (selectedPath === 'live' && !callbackNumber.trim()) {
-      setCallbackError("Callback number is required for the 'live' path")
-      return
-    }
-    if (callbackError) return
-
-    setSaving(true)
+  const patchPath = async (body: Record<string, string>) => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
     setSaveError('')
     try {
-      const body: Record<string, string> = { call_setup_path: selectedPath }
-      if (selectedPath === 'live' && callbackNumber.trim()) {
-        body.callback_number = callbackNumber.trim()
-      }
       const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       if (res.ok) {
-        setOriginalPath(selectedPath)
-        setSwitchWarning(false)
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
-      } else {
-        const err = await res.json().catch(() => null)
-        setSaveError(err?.detail || 'Failed to save. Please try again.')
+        router.refresh()
+        return
       }
+      const detail = await res.json().catch(() => null)
+      setSaveError(detail?.detail || 'Could not save. Please try again.')
     } catch {
-      setSaveError('Failed to save. Please try again.')
+      setSaveError('Could not reach the server. Please try again.')
     }
-    setSaving(false)
   }
 
-  if (loading) {
+  const handleSelectPath = (next: 'live' | 'voicemail') => {
+    if (!s || next === s.path) return
+    if (next === 'voicemail') {
+      patchPath({ call_setup_path: 'voicemail' })
+    } else {
+      // Switching to Live needs a staff phone; reveal the field and let the
+      // owner Verify (which PATCHes path + callback together).
+      setS({ ...s, path: 'live' })
+    }
+  }
+
+  const handleVerifyStaff = () => {
+    if (!s) return
+    const clean = staffPhone.replace(/\D/g, '')
+    const restaurant = s.phone.replace(/\D/g, '')
+    const same = clean.length > 0 && (clean === restaurant || (clean.length === 11 && clean.slice(1) === restaurant))
+    if (same || !clean) {
+      setSamePhoneError(true)
+      return
+    }
+    setSamePhoneError(false)
+    patchPath({ call_setup_path: 'live', callback_number: staffPhone.trim() })
+  }
+
+  if (loading || !s) {
     return (
       <div className="flex items-center justify-center" style={{ padding: 60 }}>
         <div className="animate-spin" style={{ width: 24, height: 24, border: '2.5px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
@@ -915,377 +859,95 @@ function CallSetupTab() {
     )
   }
 
-  const canSave = selectedPath !== null && !callbackError && !(selectedPath === 'live' && !callbackNumber.trim())
-  const forwarding = selectedPath ? getForwardingCode(carrierName, selectedPath) : null
+  const isLive = s.path === 'live'
+  const num = (id: SectionId) => displayNumberFor(id, s.path, false)
 
   return (
-    <div className="space-y-5">
-      {/* Restaurant Number Banner */}
-      <div style={{ padding: '16px 20px', borderRadius: 14, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
-        <div className="flex items-center gap-3 flex-wrap">
-          <span style={{ fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: '#1E0E00', letterSpacing: '0.02em' }}>
-            {formatPhone(phoneNumber)}
-          </span>
-          {carrierLoading ? (
-            <div style={{ width: 80, height: 22, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.06)' }} className="animate-pulse" />
-          ) : carrierName ? (
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#92400E', padding: '3px 10px', borderRadius: 6, backgroundColor: 'rgba(245,158,11,0.12)' }}>
-              {carrierName}{lineType ? ` ${lineType.charAt(0).toUpperCase() + lineType.slice(1)}` : ''}
-            </span>
-          ) : null}
-        </div>
-        <p style={{ fontSize: 13, color: '#92400E', marginTop: 6 }}>
-          Set up forwarding on this phone to route calls through Fono
+    <div className="space-y-6">
+      {saveError ? (
+        <p role="alert" style={{ fontSize: 13, color: '#92400E', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.20)', borderRadius: 12, padding: '10px 14px' }}>
+          {saveError}
         </p>
-      </div>
+      ) : null}
 
-      {/* Two-Card Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Path A: Full call recording */}
-        <button
-          type="button"
-          onClick={() => handleSelectPath('live')}
-          disabled={imp.readOnly}
-          className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            borderRadius: 16,
-            padding: '20px 22px',
-            border: selectedPath === 'live' ? '2px solid #D4652C' : '2px solid rgba(0,0,0,0.06)',
-            backgroundColor: selectedPath === 'live' ? '#FFF7F3' : '#FFFFFF',
-            cursor: imp.readOnly ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-            <div style={{
-              width: 20, height: 20, borderRadius: '50%',
-              border: selectedPath === 'live' ? '6px solid #D4652C' : '2px solid rgba(0,0,0,0.15)',
-              flexShrink: 0,
-            }} />
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Full call recording</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', backgroundColor: '#D4652C', padding: '2px 8px', borderRadius: 4 }}>
-              Recommended
-            </span>
-          </div>
-          <div className="space-y-2" style={{ paddingLeft: 32 }}>
-            {[
-              'Every call recorded for quality and training',
-              'Complete call analytics and insights',
-              'Missed call recovery with SMS',
-              'Live kiosk with SLA countdown timers',
-              'One-tap callback management',
-            ].map(item => (
-              <div key={item} className="flex items-start gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <span style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.4 }}>{item}</span>
-              </div>
-            ))}
-          </div>
-        </button>
+      {/* 01 Connect */}
+      <SectionLabel num={num('connect')} title="Connect" blurb="How your carrier sends calls to Fono." />
+      <ConnectSection tenantPhone={formatPhone(s.phone)} tenantName={s.name} fonoNumber={s.fonoNumber} isLive={isLive} />
 
-        {/* Path B: Missed call recovery only */}
-        <button
-          type="button"
-          onClick={() => handleSelectPath('voicemail')}
-          disabled={imp.readOnly}
-          className="text-left w-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            borderRadius: 16,
-            padding: '20px 22px',
-            border: selectedPath === 'voicemail' ? '2px solid #3B82F6' : '2px solid rgba(0,0,0,0.06)',
-            backgroundColor: selectedPath === 'voicemail' ? '#F0F7FF' : '#FFFFFF',
-            cursor: imp.readOnly ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-            <div style={{
-              width: 20, height: 20, borderRadius: '50%',
-              border: selectedPath === 'voicemail' ? '6px solid #3B82F6' : '2px solid rgba(0,0,0,0.15)',
-              flexShrink: 0,
-            }} />
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Missed call recovery only</span>
-          </div>
-          <div className="space-y-2" style={{ paddingLeft: 32 }}>
-            {[
-              { text: 'Missed call detection and alerts', ok: true },
-              { text: 'Automatic SMS to missed callers', ok: true },
-              { text: 'No call recordings', ok: false },
-              { text: 'No call analytics', ok: false },
-            ].map(item => (
-              <div key={item.text} className="flex items-start gap-2">
-                {item.ok ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                )}
-                <span style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.4 }}>{item.text}</span>
-              </div>
-            ))}
-          </div>
-        </button>
-      </div>
+      {/* 02 How Fono Answers */}
+      <SectionLabel num={num('how-fono-answers')} title="How Fono Answers" blurb="The path Fono takes on every call." />
+      <HowFonoAnswersCard
+        pick={s.path}
+        onSelectPath={imp.readOnly ? undefined : handleSelectPath}
+        staffPhone={staffPhone}
+        onStaffPhoneChange={(v) => {
+          setStaffPhone(v)
+          if (samePhoneError) setSamePhoneError(false)
+        }}
+        onVerifyStaff={imp.readOnly ? undefined : handleVerifyStaff}
+        samePhoneError={samePhoneError}
+      />
 
-      {/* Switch Warning (A → B) */}
-      {switchWarning && (
-        <div style={{ padding: '14px 18px', borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-          <p style={{ fontSize: 13, color: '#92400E', lineHeight: 1.5 }}>
-            <strong>Heads up:</strong> Switching to Path B means you&apos;ll lose these features going forward: full call recordings, complete call analytics, and callback management. Only missed calls will be tracked. Your existing recordings won&apos;t be deleted.
-          </p>
-        </div>
+      {/* 03 Call routing (Live only) — full editor lands in FE-4 (needs T-249) */}
+      {isLive && (
+        <>
+          <SectionLabel num={num('call-routing')} title="Call routing" blurb="What happens when your team cannot pick up the bridged call." />
+          <LockedPreview title="Call routing" blurb="Fallback numbers Fono tries before taking a voicemail." blockedReason="Coming in a later update">
+            <LockedPlaceholder />
+          </LockedPreview>
+        </>
       )}
 
-      {/* Path A: Callback Number Input */}
-      {selectedPath === 'live' && (
-        <div style={{
-          overflow: 'hidden',
-          maxHeight: 300,
-          transition: 'max-height 0.3s ease',
-        }}>
-          <SettingsCard>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>
-              Second phone number (owner&apos;s cell or second line)
-            </label>
-            <input
-              type="tel"
-              value={callbackNumber}
-              onChange={(e) => { setCallbackNumber(e.target.value); if (callbackError) setCallbackError('') }}
-              onBlur={(e) => validateCallback(e.target.value)}
-              placeholder="(555) 123-4567"
-              autoFocus={!imp.readOnly}
-              readOnly={imp.readOnly}
-              className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
-              style={{
-                padding: '12px 16px',
-                borderRadius: 12,
-                border: callbackError ? '1.5px solid #EF4444' : '1.5px solid rgba(0,0,0,0.08)',
-                fontSize: 14,
-              }}
-              onFocus={(e) => { if (!callbackError && !imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-            />
-            {callbackError ? (
-              <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{callbackError}</p>
-            ) : (
-              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
-                Fono will ring this number to connect calls to your staff
-              </p>
-            )}
-          </SettingsCard>
-        </div>
-      )}
+      {/* 04 Categories (display-only until the write CRUD backend lands, T-306) */}
+      <SectionLabel num={num('categories')} title="Categories" blurb="How Fono labels voicemails on the kiosk and in SMS." />
+      <CategoriesChipCard categories={s.categories} />
 
-      {/* Forwarding Instructions */}
-      {selectedPath && forwarding && (
-        <SettingsCard title="Forwarding Instructions">
-          {forwarding.code ? (
-            <div style={{ padding: '12px 16px', borderRadius: 12, backgroundColor: '#F5F0EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#1E0E00', letterSpacing: '0.02em' }}>
-                {forwarding.code}
-              </span>
-              <button
-                onClick={() => navigator.clipboard.writeText(forwarding.code)}
-                style={{ fontSize: 12, fontWeight: 600, color: '#E0602A', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                Copy
-              </button>
-            </div>
-          ) : null}
-          <p style={{ fontSize: 12, color: '#8B7355', marginTop: 8 }}>{forwarding.note}</p>
-        </SettingsCard>
-      )}
+      {/* 05 Notifications */}
+      <SectionLabel num={num('notifications')} title="Notifications" blurb="When calls happen, how you find out." />
+      <NotificationsMiniCard on={notifyOn} onToggle={setNotifyOn} phone={notifyPhone} onPhoneChange={setNotifyPhone} />
 
-      {/* Accordion: How does this work? */}
-      {selectedPath === 'live' && (
-        <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
-          <button
-            onClick={() => setOpenAccordion(openAccordion === 'live' ? null : 'live')}
-            className="flex items-center justify-between w-full text-left"
-            style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
-              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'live' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          <div style={{ maxHeight: openAccordion === 'live' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
-            <div style={{ padding: '0 22px 20px' }}>
-              <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
-                When a customer calls your restaurant number, the call is forwarded to Fono. Fono answers with a short greeting, then rings your second phone number to connect the customer to your staff. The entire conversation is recorded.
-              </p>
-              <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: '#F5F0EB' }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#8B7355', marginBottom: 6 }}>Friday night rush</p>
-                <p style={{ fontSize: 12, color: '#5C3D22', lineHeight: 1.6 }}>
-                  A customer calls to order biryani. You&apos;re busy at the counter. Fono picks up, greets them, and rings your cell phone. You answer, take the order, and the call is recorded. If you can&apos;t answer, Fono texts the customer: &quot;Sorry we missed your call! We&apos;ll call back within 15 minutes.&quot;
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedPath === 'voicemail' && (
-        <div className="bg-white" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.04)' }}>
-          <button
-            onClick={() => setOpenAccordion(openAccordion === 'voicemail' ? null : 'voicemail')}
-            className="flex items-center justify-between w-full text-left"
-            style={{ padding: '16px 22px', cursor: 'pointer', background: 'none', border: 'none' }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#5C3D22' }}>How does this work?</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
-              style={{ transition: 'transform 0.2s ease', transform: openAccordion === 'voicemail' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          <div style={{ maxHeight: openAccordion === 'voicemail' ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
-            <div style={{ padding: '0 22px 20px' }}>
-              <p style={{ fontSize: 13, color: '#5C3D22', lineHeight: 1.6, marginBottom: 12 }}>
-                Your restaurant phone rings normally. If nobody picks up after a few rings, the call forwards to Fono. Fono records the missed call and texts the customer with your callback promise. Calls that your staff answers go directly to them and are not recorded by Fono.
-              </p>
-              <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: '#F5F0EB' }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#8B7355', marginBottom: 6 }}>Friday night rush</p>
-                <p style={{ fontSize: 12, color: '#5C3D22', lineHeight: 1.6 }}>
-                  A customer calls. Your staff is busy and can&apos;t pick up after 4 rings. The call forwards to Fono, which logs it and texts the customer: &quot;Sorry we missed your call! We&apos;ll call back within 15 minutes.&quot; The missed call shows on your kiosk. Calls your staff answers go through normally without Fono.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save Button */}
-      <div className="flex items-center justify-end gap-3">
-        {saveError && (
-          <span style={{ fontSize: 13, color: '#EF4444' }}>{saveError}</span>
-        )}
-        {saved && (
-          <span style={{ fontSize: 13, color: '#22C55E', fontWeight: 600 }}>Saved &#10003;</span>
-        )}
-        <button
-          onClick={handleSave}
-          disabled={!canSave || saving}
-          className="bg-terra text-white transition-colors hover:bg-terra-dark"
-          style={{
-            padding: '10px 24px',
-            borderRadius: 12,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: canSave && !saving ? 'pointer' : 'not-allowed',
-            opacity: canSave && !saving ? 1 : 0.5,
-          }}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      </div>
+      {/* Greeting — folded in as a real Calls section (FE-3) */}
+      <SectionLabel num={null} title="Greeting" blurb="The voice and script Fono plays when it answers." />
+      <GreetingTab />
     </div>
   )
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tab 3: Notifications
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-function NotificationsTab() {
-  const imp = useImpersonation()
-  const [whatsapp, setWhatsapp] = useState(true)
-  const [dailyEmail, setDailyEmail] = useState(true)
-  const [weeklyReport, setWeeklyReport] = useState(true)
-  const [longCallAlert, setLongCallAlert] = useState(false)
-  const [alertMinutes, setAlertMinutes] = useState(5)
-  const [phone, setPhone] = useState('+1 (209) 555-0123')
-
+// State C Connect card: verified forwarding status + Fono number + the
+// FROM THIS PHONE callout. Re-test forwarding lands with the full Connect
+// editor in a later pass.
+function ConnectSection({ tenantPhone, tenantName, fonoNumber, isLive }: { tenantPhone: string; tenantName: string; fonoNumber: string; isLive: boolean }) {
   return (
-    <div className="space-y-4">
-      <SettingsCard>
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>WhatsApp missed call alerts</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified instantly when you miss a call</p>
-          </div>
-          <ToggleSwitch on={whatsapp} onChange={setWhatsapp} disabled={imp.readOnly} />
+    <VsCard
+      title="Connect"
+      badge={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: tokens.successFg, background: tokens.successBg, padding: '4px 10px', borderRadius: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: tokens.success }} /> Forwarding active
+        </span>
+      }
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 12, background: tokens.fieldBg, marginBottom: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tokens.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>Your Fono number</div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: tokens.ink, fontFamily: SECTION_MONO }}>{fonoNumber || '—'}</span>
         </div>
-        {whatsapp && (
-          <div style={{ marginTop: 12 }}>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              readOnly={imp.readOnly}
-              className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 13 }}
-              placeholder="WhatsApp number"
-              onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-            />
-          </div>
+        {fonoNumber && (
+          <SettingsButton variant="outline" size="sm" onClick={() => navigator.clipboard?.writeText(fonoNumber)}>
+            Copy
+          </SettingsButton>
         )}
-      </SettingsCard>
+      </div>
 
-      <SettingsCard>
-        <div className="flex items-center justify-between">
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Daily email summary</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Receive a daily recap of all calls</p>
-          </div>
-          <ToggleSwitch on={dailyEmail} onChange={setDailyEmail} disabled={imp.readOnly} />
-        </div>
-      </SettingsCard>
+      <FromThisPhoneCallout tenantPhone={tenantPhone} tenantName={tenantName} />
 
-      <SettingsCard>
-        <div className="flex items-center justify-between">
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Weekly performance report</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Trends and insights every Monday</p>
-          </div>
-          <ToggleSwitch on={weeklyReport} onChange={setWeeklyReport} disabled={imp.readOnly} />
-        </div>
-      </SettingsCard>
-
-      <SettingsCard>
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Alert for long calls</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Get notified when calls exceed a duration</p>
-          </div>
-          <ToggleSwitch on={longCallAlert} onChange={setLongCallAlert} disabled={imp.readOnly} />
-        </div>
-        {longCallAlert && (
-          <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
-            <label style={{ fontSize: 13, color: '#5C3D22' }}>Alert after</label>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={alertMinutes}
-              onChange={(e) => setAlertMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
-              readOnly={imp.readOnly}
-              className="bg-white focus:outline-none text-center read-only:bg-gray-50 read-only:cursor-not-allowed"
-              style={{
-                width: 60,
-                padding: '8px 10px',
-                borderRadius: 10,
-                border: '1.5px solid rgba(0,0,0,0.08)',
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-              onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-            />
-            <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
-          </div>
-        )}
-      </SettingsCard>
-    </div>
+      <div style={{ marginTop: 4, padding: '12px 14px', borderRadius: 10, background: tokens.fieldBg, fontSize: 12.5, color: tokens.body, lineHeight: 1.55 }}>
+        {isLive
+          ? 'Every call goes through Fono first. Your team picks up when Fono bridges to them.'
+          : 'Calls to your restaurant still ring you normally. We only step in when no one picks up.'}
+      </div>
+    </VsCard>
   )
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tab 3: Call Forwarding
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // Map the backend's free-form carrier_name string onto our Carrier enum.
 function carrierToEnum(name: string | null | undefined): Carrier {
