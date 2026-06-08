@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -9,9 +9,8 @@ import { UserMenu } from '@/components/user-menu'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useTenantSetupState } from '@/hooks/use-tenant-setup-state'
-import { cn } from '@/lib/utils'
+import { cn, formatCallTime } from '@/lib/utils'
 import { config } from '@/lib/config'
-import { ConfirmModal } from '@/components/confirm-modal'
 import { LockedPreview } from '@/components/locked-preview'
 import { PathCard } from '@/components/path-card'
 import { ComparisonChart } from '@/components/comparison-chart'
@@ -20,7 +19,7 @@ import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
 import { CategoriesChipCard, type CategoryChipModel } from '@/components/categories-chip-card'
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
-import { SettingsCard as VsCard, SettingsButton, tokens } from '@/components/settings-primitives'
+import { SettingsCard as VsCard, SettingsButton, Banner, FieldLabel, HelperText, tokens } from '@/components/settings-primitives'
 import { type Carrier } from '@/lib/forwarding-codes'
 import { displayNumberFor, type SectionId } from '@/lib/section-numbering'
 import { useRestaurant } from '@/lib/restaurant-context'
@@ -141,6 +140,261 @@ function CallsTab() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tab 1: Restaurant — read-only Google mirror + Re-sync (FE-5 / T-248)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type RestaurantProfile = {
+  name: string
+  phone: string
+  address: string | null
+  googleProfileUrl: string | null
+  placeId: string | null
+  weekdayText: string[] | null
+  lastSyncedAt: string | null
+  orderUrl: string
+}
+
+function mapSettingsToProfile(data: Record<string, unknown>, fallbackName: string): RestaurantProfile {
+  const bh = data.business_hours as { weekday_text?: unknown } | null | undefined
+  const weekdayText =
+    bh && Array.isArray(bh.weekday_text) && bh.weekday_text.every((t) => typeof t === 'string')
+      ? (bh.weekday_text as string[])
+      : null
+  return {
+    name: (data.name as string) || fallbackName,
+    phone: (data.phone_number as string) || '',
+    address: (data.address as string) || null,
+    googleProfileUrl: (data.google_profile_url as string) || null,
+    placeId: (data.google_place_id as string) || null,
+    weekdayText,
+    lastSyncedAt: (data.last_synced_at as string) || null,
+    orderUrl: (data.online_order_url as string) || '',
+  }
+}
+
+// Read-only Google Business Profile mirror + Re-sync + the one editable field
+// (online ordering URL). Identity (name/phone/address/hours) is sourced from
+// Google via T-248; to change it the owner edits Google and re-syncs.
+function RestaurantTab() {
+  const { current, isAll, tenantId } = useRestaurant()
+  const token = useFonoToken()
+  const imp = useImpersonation()
+  const tid = isAll ? tenantId : current.id
+
+  const [p, setP] = useState<RestaurantProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [orderUrl, setOrderUrl] = useState('')
+  const [orderSaved, setOrderSaved] = useState(false)
+  const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'failed'>('idle')
+  const [justSynced, setJustSynced] = useState(false)
+
+  useEffect(() => {
+    if (!tid || tid === 'all' || !token) return
+    let cancelled = false
+    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        if (data) {
+          const prof = mapSettingsToProfile(data, current.name)
+          setP(prof)
+          setOrderUrl(prof.orderUrl)
+        }
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tid, token, current.name])
+
+  const handleResync = async () => {
+    if (imp.readOnly || !p?.placeId || !tid || tid === 'all' || !token) return
+    setSyncState('syncing')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/resync-google`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const prof = mapSettingsToProfile(data, current.name)
+        setP(prof)
+        setOrderUrl(prof.orderUrl)
+        setSyncState('idle')
+        setJustSynced(true)
+        setTimeout(() => setJustSynced(false), 4000)
+        return
+      }
+      setSyncState('failed')
+    } catch {
+      setSyncState('failed')
+    }
+  }
+
+  const handleSaveOrderUrl = async () => {
+    if (imp.readOnly || !p || !tid || tid === 'all' || !token) return
+    if (orderUrl === p.orderUrl) return
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ online_order_url: orderUrl }),
+      })
+      if (res.ok) {
+        setP({ ...p, orderUrl })
+        setOrderSaved(true)
+        setTimeout(() => setOrderSaved(false), 2000)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (loading || !p) {
+    return (
+      <div className="flex items-center justify-center" style={{ padding: 60 }}>
+        <div className="animate-spin" style={{ width: 24, height: 24, border: '2.5px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
+      </div>
+    )
+  }
+
+  const linked = !!p.placeId
+  const lastSynced = p.lastSyncedAt ? formatCallTime(p.lastSyncedAt, null).combined : null
+
+  return (
+    <div className="space-y-6">
+      <VsCard
+        title="Restaurant info"
+        badge="Mirrored from Google"
+        action={
+          linked ? (
+            <SettingsButton variant="outline" size="sm" onClick={handleResync} disabled={imp.readOnly || syncState === 'syncing'}>
+              {syncState === 'syncing' ? 'Syncing…' : 'Re-sync from Google'}
+            </SettingsButton>
+          ) : undefined
+        }
+      >
+        <div style={{ marginBottom: 18 }}>
+          {!linked ? (
+            <Banner tone="neutral" title="Not connected to Google yet">
+              Your restaurant details mirror your Google Business Profile, which is linked during setup. Once connected, Re-sync pulls the latest.
+            </Banner>
+          ) : syncState === 'failed' ? (
+            <Banner
+              tone="amber"
+              title="Couldn't refresh from Google"
+              action={
+                <SettingsButton variant="outline" size="sm" onClick={handleResync}>
+                  Try again
+                </SettingsButton>
+              }
+            >
+              We couldn&rsquo;t reach Google just now. Your last good values are still in effect.
+            </Banner>
+          ) : justSynced ? (
+            <Banner tone="success" title="Synced from Google">
+              Latest name, phone, address, and hours pulled in.
+            </Banner>
+          ) : (
+            <Banner tone="neutral" title={lastSynced ? `Last synced ${lastSynced}` : 'Synced from Google'}>
+              Updated your Google profile? Click Re-sync to pull the latest. We don&rsquo;t auto-sync in v1.
+            </Banner>
+          )}
+        </div>
+
+        <GoogleField label="Restaurant name" value={p.name} />
+        <GoogleField label="Phone number" value={formatPhone(p.phone)} mono />
+        <GoogleField label="Address" value={p.address ?? 'Not synced yet'} />
+        <GoogleField
+          label="Google profile"
+          value={
+            p.googleProfileUrl ? (
+              <a href={p.googleProfileUrl} target="_blank" rel="noreferrer" style={{ color: tokens.terra, textDecoration: 'none', fontWeight: 600 }}>
+                View on Google &#8599;
+              </a>
+            ) : (
+              '—'
+            )
+          }
+        />
+        <GoogleHours weekdayText={p.weekdayText} />
+
+        <div style={{ paddingTop: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <FieldLabel style={{ margin: 0 }}>Online ordering URL</FieldLabel>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, color: tokens.terra, padding: '2px 7px', borderRadius: 5, background: 'rgba(224,96,42,0.08)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+              {orderSaved ? 'Saved ✓' : 'Editable'}
+            </span>
+          </div>
+          <input
+            type="text"
+            value={orderUrl}
+            onChange={(e) => setOrderUrl(e.target.value)}
+            onBlur={handleSaveOrderUrl}
+            placeholder="https://your-restaurant.com/order"
+            readOnly={imp.readOnly}
+            className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
+            style={{ padding: '11px 14px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
+            onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
+          />
+          <HelperText>
+            Optional. Appended to voicemail receipt SMS for Order-category calls so customers can self-serve. The only field on this tab you can edit.
+          </HelperText>
+        </div>
+      </VsCard>
+
+      <p style={{ fontSize: 12.5, color: tokens.muted, lineHeight: 1.55, padding: '0 4px' }}>
+        Your restaurant details come from your Google Business Profile. To change your name, address, hours, or phone, update them on Google and click Re-sync.
+      </p>
+    </div>
+  )
+}
+
+function GoogleField({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div style={{ padding: '14px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: tokens.muted, letterSpacing: '0.02em', textTransform: 'uppercase' }}>{label}</span>
+        <GoogleBadge />
+      </div>
+      <div style={{ fontSize: 14, color: tokens.ink, fontWeight: 500, fontFamily: mono ? "'JetBrains Mono', ui-monospace, monospace" : 'inherit' }}>{value}</div>
+    </div>
+  )
+}
+
+function GoogleHours({ weekdayText }: { weekdayText: string[] | null }) {
+  return (
+    <div style={{ padding: '14px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: tokens.muted, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Business hours</span>
+        <GoogleBadge />
+      </div>
+      {weekdayText && weekdayText.length ? (
+        <div style={{ display: 'grid', rowGap: 3 }}>
+          {weekdayText.map((line) => (
+            <div key={line} style={{ fontSize: 12.5, color: tokens.body, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{line}</div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: tokens.hint }}>Not synced yet</div>
+      )}
+    </div>
+  )
+}
+
+function GoogleBadge() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: tokens.hint, padding: '2px 7px', borderRadius: 5, background: tokens.fieldBg }}>
+      From Google
+    </span>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tab 3: Account — temporary shell around the existing Plan content
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -169,334 +423,6 @@ function AccountTab({ isMobile }: { isMobile: boolean }) {
 }
 
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tab 1: Restaurant
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-function RestaurantTab() {
-  const [recordingOn, setRecordingOn] = useState(true)
-  const [showWarning, setShowWarning] = useState(false)
-  const [ownerName, setOwnerName] = useState('Mano')
-  const [ownerEmail, setOwnerEmail] = useState('mano@fono.services')
-  const [ownerOpen, setOwnerOpen] = useState(false)
-  const [dangerOpen, setDangerOpen] = useState(false)
-
-  // Missed Call Recovery state
-  const { current, isAll, tenantId } = useRestaurant()
-  const token = useFonoToken()
-  const imp = useImpersonation()
-  const [slaMinutes, setSlaMinutes] = useState(15)
-  const [orderUrl, setOrderUrl] = useState('')
-  const [slaLoading, setSlaLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [tenantInfo, setTenantInfo] = useState<{name?: string; phone_number?: string} | null>(null)
-
-  // Hidden until backend exposes hours data — T-188 followup
-  const SHOW_OPERATING_HOURS = false
-
-  useEffect(() => {
-    const tid = isAll ? tenantId : current.id
-    setTenantInfo(null)
-    if (!tid || tid === 'all' || !token) return
-    fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setSlaMinutes(data.sla_minutes || 15)
-          setOrderUrl(data.online_order_url || '')
-          setTenantInfo({ name: data.name, phone_number: data.phone_number })
-        }
-        setSlaLoading(false)
-      })
-      .catch(() => setSlaLoading(false))
-  }, [isAll, tenantId, current.id, token])
-
-  const handleSaveSla = async () => {
-    if (imp.readOnly) return
-
-    const tid = isAll ? tenantId : current.id
-    if (!tid || tid === 'all' || !token) return
-    setSaving(true)
-    try {
-      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sla_minutes: slaMinutes, online_order_url: orderUrl }),
-      })
-      if (res.ok) {
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
-      }
-    } catch { /* ignore */ }
-    setSaving(false)
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Restaurant Info */}
-      <SettingsCard title="Restaurant Info" badge="From your account">
-        <div className="space-y-3">
-          <ReadOnlyField label="Name" value={tenantInfo?.name ?? current.name} />
-          <ReadOnlyField label="Address" value="—" />
-          <ReadOnlyField label="Phone" value={formatPhone(tenantInfo?.phone_number)} />
-          <ReadOnlyField label="Cuisine" value="—" />
-        </div>
-      </SettingsCard>
-
-      {/* Operating Hours: hidden until backend exposes hours data */}
-      {SHOW_OPERATING_HOURS && (
-        <SettingsCard title="Operating Hours" badge="From your account">
-          <div className="space-y-0">
-            {[
-              { day: 'Monday', open: '11:00 AM', close: '10:00 PM' },
-              { day: 'Tuesday', open: '11:00 AM', close: '10:00 PM' },
-              { day: 'Wednesday', open: '11:00 AM', close: '10:00 PM' },
-              { day: 'Thursday', open: '11:00 AM', close: '10:00 PM' },
-              { day: 'Friday', open: '11:00 AM', close: '11:00 PM' },
-              { day: 'Saturday', open: '11:00 AM', close: '11:00 PM' },
-              { day: 'Sunday', open: '', close: '' },
-            ].map(h => (
-              <div key={h.day} className="flex items-center justify-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#1E0E00', width: 100 }}>{h.day}</span>
-                {h.open ? (
-                  <span style={{ fontSize: 13, color: '#5C3D22' }}>{h.open} — {h.close}</span>
-                ) : (
-                  <span style={{ fontSize: 13, color: '#EF4444', fontWeight: 600 }}>Closed</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </SettingsCard>
-      )}
-
-      {/* Call Recording */}
-      <SettingsCard title="Call Recording">
-        <div className="flex items-center justify-between">
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>Record all incoming calls</p>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 2 }}>Recordings are encrypted and stored securely</p>
-          </div>
-          <ToggleSwitch
-            on={recordingOn}
-            disabled={imp.readOnly}
-            onChange={(val) => {
-              if (!val) {
-                setShowWarning(true)
-              } else {
-                setRecordingOn(true)
-                setShowWarning(false)
-              }
-            }}
-          />
-        </div>
-
-        {showWarning && (
-          <div style={{ marginTop: 16, padding: 16, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.1)' }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#EF4444' }}>Turning off recording will disable:</span>
-            </div>
-            <ul style={{ fontSize: 13, color: '#5C3D22', paddingLeft: 24, lineHeight: 1.8 }}>
-              <li>Call playback in dashboard</li>
-              <li>Automatic transcription</li>
-              <li>AI-powered call insights</li>
-              <li>Call search & filtering</li>
-              <li>Weekly performance reports</li>
-            </ul>
-            <p style={{ fontSize: 12, color: '#8B7355', marginTop: 12 }}>
-              Recordings are encrypted (AES-256) and auto-deleted after 90 days.
-            </p>
-            <div className="flex items-center gap-4" style={{ marginTop: 16 }}>
-              <button
-                onClick={() => { setShowWarning(false); setRecordingOn(true) }}
-                className="bg-terra text-white transition-colors hover:bg-terra-dark"
-                style={{ padding: '10px 20px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-              >
-                Keep Recording On
-              </button>
-              <button
-                onClick={() => { setShowWarning(false); setRecordingOn(false) }}
-                style={{ fontSize: 13, color: '#B0A090', cursor: 'pointer', background: 'none', border: 'none' }}
-              >
-                Turn off anyway
-              </button>
-            </div>
-          </div>
-        )}
-      </SettingsCard>
-
-      {/* Missed Call Recovery */}
-      <SettingsCard title="Missed Call Recovery">
-        {slaLoading ? (
-          <div className="flex items-center justify-center" style={{ padding: 20 }}>
-            <div className="animate-spin" style={{ width: 20, height: 20, border: '2px solid rgba(0,0,0,0.08)', borderTopColor: '#E0602A', borderRadius: '50%' }} />
-          </div>
-        ) : (
-          <>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Call back within</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={5}
-                  max={60}
-                  value={slaMinutes}
-                  onChange={(e) => setSlaMinutes(Math.max(5, Math.min(60, Number(e.target.value) || 5)))}
-                  readOnly={imp.readOnly}
-                  className="bg-white focus:outline-none text-center read-only:bg-gray-50 read-only:cursor-not-allowed"
-                  style={{ width: 80, padding: '10px 14px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14, fontWeight: 600 }}
-                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-                />
-                <span style={{ fontSize: 13, color: '#5C3D22' }}>minutes</span>
-              </div>
-              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
-                Customers who miss a call will receive an SMS promising a callback within this time
-              </p>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Online ordering link</label>
-              <input
-                type="text"
-                value={orderUrl}
-                onChange={(e) => setOrderUrl(e.target.value)}
-                placeholder="https://your-restaurant.com/order"
-                readOnly={imp.readOnly}
-                className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
-                style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-              />
-              <p style={{ fontSize: 12, color: '#B0A090', marginTop: 6 }}>
-                Optional. Included in the missed call SMS so customers can order online instead of waiting
-              </p>
-            </div>
-
-            <button
-              onClick={handleSaveSla}
-              disabled={saving}
-              className="bg-terra text-white transition-colors hover:bg-terra-dark"
-              style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
-            >
-              {saved ? 'Saved \u2713' : saving ? 'Saving...' : 'Save'}
-            </button>
-          </>
-        )}
-      </SettingsCard>
-
-      {/* Owner Account — collapsible */}
-      <div className="bg-white" style={{ borderRadius: 20, border: '1px solid rgba(0,0,0,0.04)' }}>
-        <button
-          onClick={() => setOwnerOpen(prev => !prev)}
-          className="flex items-center justify-between w-full text-left transition-colors hover:bg-[#f5efe8]"
-          style={{ padding: '20px 28px', borderRadius: 20, cursor: 'pointer', background: 'none', border: 'none' }}
-        >
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E0E00' }}>Owner Account</h3>
-          <svg
-            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2"
-            style={{ transition: 'transform 0.2s ease', transform: ownerOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-        <div style={{ maxHeight: ownerOpen ? 400 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
-          <div style={{ padding: '0 28px 24px' }}>
-            <div className="space-y-4">
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Name</label>
-                <input
-                  type="text"
-                  value={ownerName}
-                  onChange={(e) => setOwnerName(e.target.value)}
-                  readOnly={imp.readOnly}
-                  className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
-                  style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 6 }}>Email</label>
-                <input
-                  type="email"
-                  value={ownerEmail}
-                  onChange={(e) => setOwnerEmail(e.target.value)}
-                  readOnly={imp.readOnly}
-                  className="w-full bg-white focus:outline-none read-only:bg-gray-50 read-only:cursor-not-allowed"
-                  style={{ padding: '12px 16px', borderRadius: 12, border: '1.5px solid rgba(0,0,0,0.08)', fontSize: 14 }}
-                  onFocus={(e) => { if (!imp.readOnly) e.currentTarget.style.borderColor = '#E0602A' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)' }}
-                />
-              </div>
-              <button
-                className="text-terra font-semibold hover:underline"
-                style={{ fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                Change Password
-              </button>
-            </div>
-            <button
-              className="bg-terra text-white transition-colors hover:bg-terra-dark mt-4"
-              style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Danger Zone — collapsible */}
-      <div style={{ borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)' }}>
-        <button
-          onClick={() => setDangerOpen(prev => !prev)}
-          className="flex items-center justify-between w-full text-left transition-colors hover:bg-[#fef2f2]"
-          style={{ padding: '20px 28px', borderRadius: 20, cursor: 'pointer', background: 'none', border: 'none' }}
-        >
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#EF4444' }}>Danger Zone</h3>
-          <svg
-            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"
-            style={{ transition: 'transform 0.2s ease', transform: dangerOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-        <div style={{ maxHeight: dangerOpen ? 300 : 0, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
-          <div className="space-y-4" style={{ padding: '0 28px 24px' }}>
-            <DangerAction
-              label="Pause Fono"
-              description="Temporarily stop answering calls"
-              confirmTitle="Pause Fono?"
-              confirmDescription="Fono will stop answering calls for this restaurant. You can resume at any time from this settings page."
-              confirmLabel="Pause"
-              variant="warning"
-            />
-            <DangerAction
-              label="Delete Recordings"
-              description="Permanently delete all recordings"
-              confirmTitle="Delete all recordings?"
-              confirmDescription="This will permanently delete all call recordings for this restaurant. This action cannot be undone."
-              confirmLabel="Delete All Recordings"
-            />
-            <DangerAction
-              label="Delete Restaurant"
-              description="Remove this restaurant from Fono"
-              confirmTitle="Delete this restaurant?"
-              confirmDescription="This will permanently remove this restaurant and all its data from Fono, including call history, recordings, and settings. This action cannot be undone."
-              confirmLabel="Delete Restaurant"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tab 2: Call Setup (Path A/B)
@@ -1645,87 +1571,6 @@ function SettingsCard({ title, badge, children }: { title?: string; badge?: stri
   )
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <label style={{ fontSize: 12, fontWeight: 600, color: '#8B7355', display: 'block', marginBottom: 4 }}>{label}</label>
-      <div
-        className="bg-cream"
-        style={{ padding: '10px 14px', borderRadius: 10, fontSize: 14, color: '#5C3D22' }}
-      >
-        {value}
-      </div>
-    </div>
-  )
-}
-
-function ToggleSwitch({ on, onChange, disabled = false }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      onClick={() => { if (disabled) return; onChange(!on) }}
-      disabled={disabled}
-      className={cn(
-        'relative transition-colors flex-shrink-0',
-        on ? 'bg-green-500' : 'bg-gray-300',
-        disabled && 'opacity-50 cursor-not-allowed',
-      )}
-      style={{ width: 44, height: 24, borderRadius: 12, cursor: disabled ? 'not-allowed' : 'pointer', border: 'none' }}
-    >
-      <div
-        className="absolute bg-white rounded-full transition-transform shadow-sm"
-        style={{
-          width: 20,
-          height: 20,
-          top: 2,
-          left: on ? 22 : 2,
-        }}
-      />
-    </button>
-  )
-}
-
-function DangerAction({ label, description, confirmTitle, confirmDescription, confirmLabel, variant }: {
-  label: string; description: string; confirmTitle: string; confirmDescription: string
-  confirmLabel?: string; variant?: 'danger' | 'warning'
-}) {
-  const [showModal, setShowModal] = useState(false)
-
-  return (
-    <>
-      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-        <div>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#1E0E00' }}>{label}</p>
-          <p style={{ fontSize: 12, color: '#8B7355' }}>{description}</p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="transition-colors"
-          style={{
-            padding: '8px 16px',
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#EF4444',
-            border: '1px solid rgba(239,68,68,0.2)',
-            backgroundColor: 'transparent',
-            cursor: 'pointer',
-          }}
-        >
-          {label}
-        </button>
-      </div>
-      <ConfirmModal
-        open={showModal}
-        title={confirmTitle}
-        description={confirmDescription}
-        confirmLabel={confirmLabel || label}
-        onConfirm={() => setShowModal(false)}
-        onCancel={() => setShowModal(false)}
-        variant={variant || 'danger'}
-      />
-    </>
-  )
-}
 
 function PlanCard({ plan }: { plan: Plan }) {
   return (
