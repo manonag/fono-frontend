@@ -338,9 +338,8 @@ export async function fetchVoicemails(
 }
 
 /**
- * DEV ONLY: persist a voicemail status change. Attempts the real endpoint
- * for shape, but swallows failures so optimistic updates stick on mock
- * data. Change both early returns to `throw` once the endpoint ships.
+ * Persist a voicemail status change (T-304 slice b backend). Throws on a
+ * network error or non-2xx so the caller rolls back its optimistic update.
  */
 export async function patchVoicemailStatus(
   id: string,
@@ -348,35 +347,27 @@ export async function patchVoicemailStatus(
   token?: string,
   reason?: string,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
-      body: JSON.stringify(reason ? { status, reason } : { status }),
-    })
-    if (!res.ok) return
-  } catch {
-    return
-  }
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(reason ? { status, reason } : { status }),
+  })
+  if (!res.ok) throw new Error(`patchVoicemailStatus failed: ${res.status}`)
 }
 
 /**
- * DEV ONLY: persist a voicemail intent reclassification. See
- * patchVoicemailStatus for the dev-stub behavior.
+ * Persist a voicemail intent reclassification (T-304 slice c backend). Throws
+ * on failure so the caller rolls back its optimistic update.
  */
 export async function patchVoicemailIntent(
   id: string,
   intentCategoryKey: IntentKey,
   token?: string,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/intent`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
-      body: JSON.stringify({ intent_category_key: intentCategoryKey }),
-    })
-    if (!res.ok) return
-  } catch {
-    return
-  }
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/intent`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify({ intent_category_key: intentCategoryKey }),
+  })
+  if (!res.ok) throw new Error(`patchVoicemailIntent failed: ${res.status}`)
 }
