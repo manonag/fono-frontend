@@ -6,7 +6,18 @@
 // drops `density` from VoicemailCardProps (the grid is locked to 2-up). Do
 // not widen or narrow these without updating the design contract first.
 
-export type IntentKey = 'order' | 'catering' | 'banquet_hall' | 'others'
+// The 6 backend classifier keys (chip taxonomy Option A, 2026-06-08): a
+// voicemail's intent_category_key is always one of these; tenants surface up
+// to 5 as chips, and unsurfaced keys fold into "others" on the kiosk
+// (bucketing). Widened from the original 4-key set (T-239); kept in sync with
+// the backend app/services/categories.py ChipKey enum.
+export type IntentKey =
+  | 'order'
+  | 'reservation'
+  | 'menu_question'
+  | 'catering'
+  | 'banquet_hall'
+  | 'others'
 export type Status = 'new' | 'resolved' | 'hidden'
 
 export interface Category {

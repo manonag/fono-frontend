@@ -685,6 +685,14 @@
   --tab-c: #b0a090;
   --tab-shadow: rgba(176, 160, 144, 0.28);
 }
+.bvtab[data-c='reservation'] {
+  --tab-c: #9c7b68;
+  --tab-shadow: rgba(156, 123, 104, 0.28);
+}
+.bvtab[data-c='menu_question'] {
+  --tab-c: #866d4a;
+  --tab-shadow: rgba(134, 109, 74, 0.28);
+}
 
 /* --- Horizontal binder strip: status tabs, top of the cards area ----- */
 
@@ -888,6 +896,14 @@
   --th-tint: rgba(176, 160, 144, 0.18);
   --th-rule: rgba(176, 160, 144, 0.4);
 }
+.cardC[data-c='reservation'] .thC {
+  --th-tint: rgba(156, 123, 104, 0.12);
+  --th-rule: rgba(156, 123, 104, 0.3);
+}
+.cardC[data-c='menu_question'] .thC {
+  --th-tint: rgba(134, 109, 74, 0.12);
+  --th-rule: rgba(134, 109, 74, 0.3);
+}
 .cardC[data-c='pending'] .thC {
   --th-tint: rgba(176, 160, 144, 0.08);
   --th-rule: var(--rcp-rule);
@@ -904,6 +920,12 @@
 }
 .root[data-theme='dark'] .cardC[data-c='others'] .thC {
   --th-tint: rgba(176, 160, 144, 0.18);
+}
+.root[data-theme='dark'] .cardC[data-c='reservation'] .thC {
+  --th-tint: rgba(156, 123, 104, 0.2);
+}
+.root[data-theme='dark'] .cardC[data-c='menu_question'] .thC {
+  --th-tint: rgba(134, 109, 74, 0.2);
 }
 
 /* Simplified stamp - one swatch + one word. The reclassify trigger. */
@@ -960,6 +982,12 @@
 }
 .stampSimple[data-c='others'] {
   --stamp-c: #b0a090;
+}
+.stampSimple[data-c='reservation'] {
+  --stamp-c: #9c7b68;
+}
+.stampSimple[data-c='menu_question'] {
+  --stamp-c: #866d4a;
 }
 .stampSimple[data-c='pending'] {
   --stamp-c: #b0a090;
