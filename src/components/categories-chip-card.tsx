@@ -1,37 +1,51 @@
 'use client'
 
+import { useState } from 'react'
 import { tokens, SettingsCard, HelperText } from '@/components/settings-primitives'
 import { chipTint } from '@/lib/palette'
 
 // Settings -> Calls §4 "Categories" chip card (CD §6 / brief §6.4).
 //
-// DISPLAY-ONLY in FE-1: it renders the chip set, the required "Others" pill,
-// the "Type to add..." affordance, and the at-cap helper. The write paths
-// (inline rename, add via slugify, remove, Palette A rotation) are wired in
-// FE-3 once the categories CRUD backend lands. Colors are data-driven via
-// chipTint(swatch) so they read straight from the backend category payload.
+// Option A taxonomy (Chiran decision 2026-06-08): chip.key is constrained to
+// one of the 6 classifier keys; chip.label is owner-customizable. Adding a
+// category surfaces an as-yet-unsurfaced key (with its default label, then
+// rename inline); the 6th unsurfaced key still classifies and folds into
+// "others" on the kiosk (bucketing voicemail.intent_key == chip.key). Colors
+// are data-driven via chipTint(swatch).
 
 export type CategoryChipModel = {
   key: string
-  name: string
+  label: string
   swatch: string
   required?: boolean
 }
 
+// The 6 classifier keys + their default labels (mirrors the backend
+// app/services/categories.py ChipKey / DEFAULT_LABELS).
+const ALL_CHIP_KEYS: { key: string; label: string }[] = [
+  { key: 'order', label: 'Order' },
+  { key: 'reservation', label: 'Reservation' },
+  { key: 'menu_question', label: 'Menu question' },
+  { key: 'catering', label: 'Catering' },
+  { key: 'banquet_hall', label: 'Banquet hall' },
+  { key: 'others', label: 'Others' },
+]
+
 const DEFAULT_CATEGORIES: CategoryChipModel[] = [
-  { key: 'order', name: 'Order', swatch: '#D4652C' },
-  { key: 'catering', name: 'Catering', swatch: '#7B9C68' },
-  { key: 'banquet_hall', name: 'Banquet hall', swatch: '#4A6D86' },
-  { key: 'others', name: 'Others', swatch: '#B0A090', required: true },
+  { key: 'order', label: 'Order', swatch: '#D4652C' },
+  { key: 'catering', label: 'Catering', swatch: '#7B9C68' },
+  { key: 'banquet_hall', label: 'Banquet hall', swatch: '#4A6D86' },
+  { key: 'others', label: 'Others', swatch: '#B0A090', required: true },
 ]
 
 const MAX_CATEGORIES = 5
 
 type CategoriesChipCardProps = {
   categories?: CategoryChipModel[]
-  onAdd?: () => void
+  onAdd?: (key: string) => void
   onRemove?: (key: string) => void
-  onRename?: (key: string) => void
+  onRename?: (key: string, label: string) => void
+  busy?: boolean
 }
 
 export function CategoriesChipCard({
@@ -39,8 +53,13 @@ export function CategoriesChipCard({
   onAdd,
   onRemove,
   onRename,
+  busy = false,
 }: CategoriesChipCardProps) {
+  const [picking, setPicking] = useState(false)
   const atCap = categories.length >= MAX_CATEGORIES
+  const surfaced = new Set(categories.map((c) => c.key))
+  const available = ALL_CHIP_KEYS.filter((k) => !surfaced.has(k.key))
+  const canAdd = !!onAdd && !atCap && available.length > 0
 
   return (
     <SettingsCard title="Categories" badge={`${categories.length} of ${MAX_CATEGORIES}`}>
@@ -59,6 +78,8 @@ export function CategoriesChipCard({
           borderRadius: 12,
           background: tokens.fieldBg,
           border: `1.5px solid ${tokens.rule}`,
+          opacity: busy ? 0.6 : 1,
+          pointerEvents: busy ? 'none' : 'auto',
         }}
       >
         {categories.map((cat) => (
@@ -70,27 +91,72 @@ export function CategoriesChipCard({
           />
         ))}
 
-        {!atCap && (
-          <button
-            type="button"
-            onClick={onAdd}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              borderRadius: 999,
-              border: `1.5px dashed ${tokens.rule}`,
-              background: '#fff',
-              fontSize: 12.5,
-              color: tokens.muted,
-              fontStyle: 'italic',
-              cursor: 'text',
-            }}
-          >
-            <span style={{ color: tokens.terra, fontWeight: 700 }}>+</span> Type to
-            add&hellip;
-          </button>
+        {canAdd && (
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setPicking((v) => !v)}
+              aria-expanded={picking}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 999,
+                border: `1.5px dashed ${tokens.rule}`,
+                background: '#fff',
+                fontSize: 12.5,
+                color: tokens.muted,
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{ color: tokens.terra, fontWeight: 700 }}>+</span> Add category
+            </button>
+
+            {picking && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  zIndex: 10,
+                  minWidth: 180,
+                  background: '#fff',
+                  border: `1px solid ${tokens.rule}`,
+                  borderRadius: 12,
+                  boxShadow: '0 8px 24px -8px rgba(0,0,0,0.18)',
+                  padding: 6,
+                }}
+              >
+                {available.map((k) => (
+                  <button
+                    key={k.key}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setPicking(false)
+                      onAdd?.(k.key)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: 'none',
+                      fontSize: 13,
+                      color: tokens.ink,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -113,9 +179,19 @@ function CategoryChip({
 }: {
   category: CategoryChipModel
   onRemove?: (key: string) => void
-  onRename?: (key: string) => void
+  onRename?: (key: string, label: string) => void
 }) {
   const tint = chipTint(category.swatch)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(category.label)
+
+  const commit = () => {
+    setEditing(false)
+    const next = draft.trim()
+    if (next && next !== category.label) onRename?.(category.key, next)
+    else setDraft(category.label)
+  }
+
   return (
     <span
       style={{
@@ -133,31 +209,47 @@ function CategoryChip({
     >
       <span
         aria-hidden="true"
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          background: tint.dot,
-          marginRight: 2,
-        }}
+        style={{ width: 10, height: 10, borderRadius: '50%', background: tint.dot, marginRight: 2 }}
       />
-      {onRename && !category.required ? (
-        <button
-          type="button"
-          onClick={() => onRename(category.key)}
+
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') {
+              setDraft(category.label)
+              setEditing(false)
+            }
+          }}
+          aria-label={`Rename ${category.label}`}
           style={{
-            background: 'none',
             border: 'none',
-            padding: 0,
+            borderBottom: `1.5px solid ${tint.dot}`,
+            background: 'transparent',
             font: 'inherit',
             color: 'inherit',
-            cursor: 'pointer',
+            outline: 'none',
+            width: Math.max(60, draft.length * 8),
+            padding: '0 2px',
           }}
+        />
+      ) : onRename && !category.required ? (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(category.label)
+            setEditing(true)
+          }}
+          style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
         >
-          {category.name}
+          {category.label}
         </button>
       ) : (
-        <span>{category.name}</span>
+        <span>{category.label}</span>
       )}
 
       {category.required ? (
@@ -178,7 +270,7 @@ function CategoryChip({
       ) : (
         <button
           type="button"
-          aria-label={`Remove ${category.name}`}
+          aria-label={`Remove ${category.label}`}
           onClick={() => onRemove?.(category.key)}
           style={{
             width: 20,

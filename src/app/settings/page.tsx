@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -17,7 +17,7 @@ import { PathCard } from '@/components/path-card'
 import { ComparisonChart } from '@/components/comparison-chart'
 import { ForwardingCodeCard } from '@/components/forwarding-code-card'
 import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
-import { CategoriesChipCard } from '@/components/categories-chip-card'
+import { CategoriesChipCard, type CategoryChipModel } from '@/components/categories-chip-card'
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
 import { SettingsCard as VsCard, SettingsButton, tokens } from '@/components/settings-primitives'
@@ -731,25 +731,6 @@ type StateCSettings = {
   callback: string
   carrier: Carrier
   fonoNumber: string
-  ownerWhatsapp: string
-  categories: { key: string; name: string; swatch: string; required?: boolean }[] | undefined
-}
-
-// Best-effort mapping of the backend voicemail_categories JSONB override onto
-// the chip model. NULL / unusable shapes fall back to the component default.
-function parseCategories(raw: unknown): StateCSettings['categories'] {
-  if (!Array.isArray(raw) || raw.length === 0) return undefined
-  const out: { key: string; name: string; swatch: string; required?: boolean }[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') return undefined
-    const o = item as Record<string, unknown>
-    const key = typeof o.key === 'string' ? o.key : undefined
-    const name = typeof o.display_name === 'string' ? o.display_name : typeof o.name === 'string' ? o.name : undefined
-    const swatch = typeof o.swatch === 'string' ? o.swatch : undefined
-    if (!key || !name || !swatch) return undefined
-    out.push({ key, name, swatch, required: o.required === true || key === 'others' })
-  }
-  return out
 }
 
 // v3.3 Settings -> Calls State C: fully-configured Calls tab. Renders the
@@ -771,18 +752,22 @@ function CallsStateC() {
   const [saveError, setSaveError] = useState('')
   const [notifyOn, setNotifyOn] = useState(true)
   const [notifyPhone, setNotifyPhone] = useState('')
+  const [cats, setCats] = useState<CategoryChipModel[]>([])
+  const [catsBusy, setCatsBusy] = useState(false)
+  const phoneDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!tid || tid === 'all' || !token) return
     let cancelled = false
+    const json = (url: string) =>
+      fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
     Promise.all([
-      fetch(`${config.apiUrl}/api/v1/tenants/${tid}/settings`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
-      fetch(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
-    ]).then(([data, fwd]) => {
+      json(`${config.apiUrl}/api/v1/tenants/${tid}/settings`),
+      json(`${config.apiUrl}/api/v1/tenants/${tid}/forwarding-status`),
+      json(`${config.apiUrl}/api/v1/tenants/${tid}/categories`),
+    ]).then(([data, fwd, catData]) => {
       if (cancelled || !data) {
         if (!cancelled) setLoading(false)
         return
@@ -795,11 +780,11 @@ function CallsStateC() {
         callback: data.callback_number || '',
         carrier: carrierToEnum(data.carrier_name),
         fonoNumber: fwd?.fono_number || '',
-        ownerWhatsapp: data.owner_whatsapp || '',
-        categories: parseCategories(data.voicemail_categories),
       })
       setStaffPhone(data.callback_number || '')
       setNotifyPhone(data.owner_whatsapp || '')
+      setNotifyOn(data.whatsapp_alerts_enabled !== false)
+      if (Array.isArray(catData?.categories)) setCats(catData.categories as CategoryChipModel[])
       setLoading(false)
     })
     return () => {
@@ -825,6 +810,62 @@ function CallsStateC() {
     } catch {
       setSaveError('Could not reach the server. Please try again.')
     }
+  }
+
+  // Quiet PATCH (no router.refresh) for inline edits that should not reload
+  // the whole tab — notifications toggle/number.
+  const patchTenantQuiet = async (body: Record<string, string | boolean>) => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
+    try {
+      await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    } catch {
+      /* best-effort; UI keeps optimistic value */
+    }
+  }
+
+  // Categories CRUD (T-306). Each op returns the full effective list.
+  const mutateCategories = async (
+    method: 'POST' | 'PATCH' | 'DELETE',
+    suffix: string,
+    body?: Record<string, string>,
+  ) => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
+    setCatsBusy(true)
+    setSaveError('')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}/categories${suffix}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      if (res.ok) {
+        const d = await res.json()
+        if (Array.isArray(d?.categories)) setCats(d.categories as CategoryChipModel[])
+      } else {
+        const e = await res.json().catch(() => null)
+        setSaveError(e?.detail || 'Could not update categories. Please try again.')
+      }
+    } catch {
+      setSaveError('Could not reach the server. Please try again.')
+    }
+    setCatsBusy(false)
+  }
+
+  const handleNotifyToggle = (next: boolean) => {
+    setNotifyOn(next)
+    patchTenantQuiet({ whatsapp_alerts_enabled: next })
+  }
+
+  const handleNotifyPhone = (v: string) => {
+    setNotifyPhone(v)
+    if (phoneDebounce.current) clearTimeout(phoneDebounce.current)
+    phoneDebounce.current = setTimeout(() => {
+      if (v.trim()) patchTenantQuiet({ owner_whatsapp: v.trim() })
+    }, 800)
   }
 
   const handleSelectPath = (next: 'live' | 'voicemail') => {
@@ -898,13 +939,24 @@ function CallsStateC() {
         </>
       )}
 
-      {/* 04 Categories (display-only until the write CRUD backend lands, T-306) */}
+      {/* 04 Categories — wired to the T-306 CRUD (Option A: surface a key + rename label) */}
       <SectionLabel num={num('categories')} title="Categories" blurb="How Fono labels voicemails on the kiosk and in SMS." />
-      <CategoriesChipCard categories={s.categories} />
+      <CategoriesChipCard
+        categories={cats.length ? cats : undefined}
+        busy={catsBusy}
+        onAdd={imp.readOnly ? undefined : (key) => mutateCategories('POST', '', { key })}
+        onRename={imp.readOnly ? undefined : (key, label) => mutateCategories('PATCH', `/${key}`, { label })}
+        onRemove={imp.readOnly ? undefined : (key) => mutateCategories('DELETE', `/${key}`)}
+      />
 
-      {/* 05 Notifications */}
+      {/* 05 Notifications — wired to the T-307 PATCH (toggle immediate, number debounced) */}
       <SectionLabel num={num('notifications')} title="Notifications" blurb="When calls happen, how you find out." />
-      <NotificationsMiniCard on={notifyOn} onToggle={setNotifyOn} phone={notifyPhone} onPhoneChange={setNotifyPhone} />
+      <NotificationsMiniCard
+        on={notifyOn}
+        onToggle={imp.readOnly ? undefined : handleNotifyToggle}
+        phone={notifyPhone}
+        onPhoneChange={imp.readOnly ? undefined : handleNotifyPhone}
+      />
 
       {/* Greeting — folded in as a real Calls section (FE-3) */}
       <SectionLabel num={null} title="Greeting" blurb="The voice and script Fono plays when it answers." />
