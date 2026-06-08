@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchVoicemails, patchVoicemailIntent, patchVoicemailStatus } from '@/lib/api'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { BinderSpine } from './BinderSpine'
-import { STATUSES, TAB_LABELS, tabCount } from './helpers'
+import { bucketKey, STATUSES, TAB_LABELS, tabCount } from './helpers'
 import { HorizontalBinderStrip } from './HorizontalBinderStrip'
 import styles from './styles.module.css'
 import { Toast } from './Toast'
@@ -128,12 +128,15 @@ export function KioskPage({ tenant }: KioskPageProps) {
   // within the currently selected status tab.
   const categoryOptions = useMemo<BinderOption<CategoryFilter>[]>(() => {
     const inTab = voicemails.filter((v) => v.status === tab)
+    // Counts bucket unsurfaced intents into "others" so the tab totals match
+    // what filterAndSort actually shows under each category.
+    const surfaced = new Set(tenant.categories.map((c) => c.key))
     return [
       { value: 'all', label: 'All', count: inTab.length },
       ...tenant.categories.map((c) => ({
         value: c.key,
         label: c.display,
-        count: inTab.filter((v) => v.intent_category_key === c.key).length,
+        count: inTab.filter((v) => bucketKey(v.intent_category_key, surfaced) === c.key).length,
       })),
     ]
   }, [voicemails, tab, tenant.categories])

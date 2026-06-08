@@ -29,7 +29,7 @@
 // the CallArmBar; a second tap within 3s fires the tel: link (the production
 // stand-in for the prototype's openCallbackDial); it auto-disarms after 3s.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AudioPlayer } from './AudioPlayer'
 import { CallArmBar } from './CallArmBar'
@@ -40,6 +40,7 @@ import {
   formatExact,
   formatPhone,
   formatRelative,
+  effectiveCategory,
   isProcessing,
   ticketId,
 } from './helpers'
@@ -166,8 +167,13 @@ export function VoicemailCard({
   }, [])
 
   const cat = vm.intent_category_key
-  const dataC = cat ?? 'pending'
-  const stampDisplay = vm.intent_category_display_at_capture ?? 'Pending'
+  // Bucket to the tenant's surfaced category (unsurfaced -> "others"); drives
+  // the stamp color (data-c), display name, and swatch from the data-driven
+  // tenant config (Option A bucketing + T-243 data-driven swatches).
+  const effCat = effectiveCategory(cat, categories)
+  const dataC = effCat?.key ?? 'pending'
+  const stampDisplay = effCat?.display ?? vm.intent_category_display_at_capture ?? 'Pending'
+  const stampStyle = effCat ? ({ '--stamp-c': effCat.swatch } as CSSProperties) : undefined
   const repeat = vm.repeat_caller_count > 0
 
   // --- Processing state: patient typewriter, Layout C chrome --------------
@@ -279,6 +285,7 @@ export function VoicemailCard({
           ref={stampRef}
           type="button"
           data-c={dataC}
+          style={stampStyle}
           onClick={(e) => {
             e.stopPropagation()
             if (cat) setReclassifyOpen((o) => !o)

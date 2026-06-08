@@ -7,7 +7,9 @@
 // (`(XXX) XXX-XXXX`, `M:SS`), and are consumed by the dashboard surfaces.
 
 import type {
+  Category,
   CategoryFilter,
+  IntentKey,
   SortOrder,
   Status,
   TabCounts,
@@ -107,13 +109,46 @@ export function tabCounts(voicemails: Voicemail[]): TabCounts {
   }
 }
 
+// --- category bucketing (Option A) ----------------------------------------
+
+// A voicemail's intent_category_key is one of the 6 classifier keys, but the
+// tenant surfaces only a subset as chips. An intent whose key is not a
+// surfaced category folds into "others" for display, coloring, and filtering
+// (chip taxonomy Option A). Null (processing) stays null.
+export function bucketKey(
+  key: IntentKey | null,
+  surfaced: ReadonlySet<string>,
+): IntentKey | null {
+  if (key === null) return null
+  return surfaced.has(key) ? key : 'others'
+}
+
+// The Category a voicemail renders as, after bucketing: its own category when
+// surfaced, else the "others" category. Null while processing. Drives the
+// card's display name, swatch, and tint from the (data-driven) tenant config.
+export function effectiveCategory(
+  key: IntentKey | null,
+  categories: Category[],
+): Category | null {
+  if (key === null) return null
+  return (
+    categories.find((c) => c.key === key) ??
+    categories.find((c) => c.key === 'others') ??
+    null
+  )
+}
+
 export function filterAndSort(
   voicemails: Voicemail[],
   opts: { status: Status; category: CategoryFilter; sort: SortOrder },
+  categories: Category[],
 ): Voicemail[] {
+  const surfaced = new Set(categories.map((c) => c.key))
   let list = voicemails.filter((v) => v.status === opts.status)
   if (opts.category !== 'all') {
-    list = list.filter((v) => v.intent_category_key === opts.category)
+    list = list.filter(
+      (v) => bucketKey(v.intent_category_key, surfaced) === opts.category,
+    )
   }
   return list
     .slice()
