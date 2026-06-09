@@ -1,5 +1,6 @@
 import { config } from './config'
 import type {
+  CallFallbackRule,
   CallRecord,
   DashboardSummary,
   CallLogFilters,
@@ -255,6 +256,81 @@ export async function fetchChartData(
   return Array.from(hourMap.values()).filter(
     (p) => p.hour >= 6 && p.hour <= 23
   )
+}
+
+// ---------------------------------------------------------------------------
+// Call routing fallback rules (T-249 Slice 1 backend, Slice 3 UI)
+//
+// Tenant-scoped CRUD for the staff-no-answer fallback cascade. The mutating
+// helpers throw an Error carrying the backend `detail` message (E.164 / loop
+// guard / duplicate / 3-per-window cap), so the card can surface the exact
+// reason and roll back its optimistic update.
+// ---------------------------------------------------------------------------
+
+export interface CallFallbackRuleInput {
+  phone_number: string
+  days_of_week: number
+  window_start: string
+  window_end: string
+  label?: string | null
+  cascade_order?: number
+}
+
+async function readDetail(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null)
+  const detail = body && (body as { detail?: unknown }).detail
+  return typeof detail === 'string' && detail ? detail : fallback
+}
+
+export async function fetchCallFallbackRules(
+  tenantId: string,
+  token?: string,
+): Promise<CallFallbackRule[]> {
+  const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/call-fallback-rules`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch fallback rules: ${res.status}`)
+  const data = await res.json()
+  return Array.isArray(data?.rules) ? (data.rules as CallFallbackRule[]) : []
+}
+
+export async function createCallFallbackRule(
+  tenantId: string,
+  input: CallFallbackRuleInput,
+  token?: string,
+): Promise<CallFallbackRule> {
+  const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/call-fallback-rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not add the fallback number.'))
+  return res.json()
+}
+
+export async function patchCallFallbackRule(
+  ruleId: string,
+  updates: Partial<CallFallbackRuleInput>,
+  token?: string,
+): Promise<CallFallbackRule> {
+  const res = await fetch(`${baseUrl}/api/v1/call-fallback-rules/${ruleId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not update the fallback number.'))
+  return res.json()
+}
+
+export async function deleteCallFallbackRule(
+  ruleId: string,
+  token?: string,
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/call-fallback-rules/${ruleId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not remove the fallback number.'))
 }
 
 // ---------------------------------------------------------------------------
