@@ -18,6 +18,7 @@ import { ForwardingCodeCard } from '@/components/forwarding-code-card'
 import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
 import { CategoriesChipCard, type CategoryChipModel } from '@/components/categories-chip-card'
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
+import { VoicemailCaptureCard } from '@/components/voicemail-capture-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
 import { SettingsCard as VsCard, SettingsButton, Banner, FieldLabel, HelperText, tokens } from '@/components/settings-primitives'
 import { type Carrier } from '@/lib/forwarding-codes'
@@ -678,6 +679,7 @@ function CallsStateC() {
   const [saveError, setSaveError] = useState('')
   const [notifyOn, setNotifyOn] = useState(true)
   const [notifyPhone, setNotifyPhone] = useState('')
+  const [voicemailOn, setVoicemailOn] = useState(false)
   const [cats, setCats] = useState<CategoryChipModel[]>([])
   const [catsBusy, setCatsBusy] = useState(false)
   const phoneDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -710,6 +712,7 @@ function CallsStateC() {
       setStaffPhone(data.callback_number || '')
       setNotifyPhone(data.owner_whatsapp || '')
       setNotifyOn(data.whatsapp_alerts_enabled !== false)
+      setVoicemailOn(Boolean(data.voicemail_enabled))
       if (Array.isArray(catData?.categories)) setCats(catData.categories as CategoryChipModel[])
       setLoading(false)
     })
@@ -784,6 +787,27 @@ function CallsStateC() {
   const handleNotifyToggle = (next: boolean) => {
     setNotifyOn(next)
     patchTenantQuiet({ whatsapp_alerts_enabled: next })
+  }
+
+  // Voicemail capture (T-311). Optimistic with rollback: this gates real
+  // call-handling behavior, so a failed PATCH must not leave the UI implying
+  // a state the backend never saved.
+  const handleVoicemailToggle = async (next: boolean) => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
+    const prev = voicemailOn
+    setVoicemailOn(next)
+    setSaveError('')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voicemail_enabled: next }),
+      })
+      if (!res.ok) throw new Error(String(res.status))
+    } catch {
+      setVoicemailOn(prev)
+      setSaveError('Could not update voicemail capture. Please try again.')
+    }
   }
 
   const handleNotifyPhone = (v: string) => {
@@ -864,6 +888,14 @@ function CallsStateC() {
           </LockedPreview>
         </>
       )}
+
+      {/* Voicemail capture — the upstream switch for Categories + the kiosk
+          Voicemails tab (T-311). Unnumbered, sits just above Categories. */}
+      <SectionLabel num={null} title="Voicemail capture" blurb="Whether Fono takes a voicemail when your team can't pick up." />
+      <VoicemailCaptureCard
+        on={voicemailOn}
+        onToggle={imp.readOnly ? undefined : handleVoicemailToggle}
+      />
 
       {/* 04 Categories — wired to the T-306 CRUD (Option A: surface a key + rename label) */}
       <SectionLabel num={num('categories')} title="Categories" blurb="How Fono labels voicemails on the kiosk and in SMS." />
