@@ -12,9 +12,10 @@ import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
 import { useRestaurant } from '@/lib/restaurant-context'
-import { fetchTenantVoicemailConfig } from '@/lib/api'
+import { fetchTenantVoicemailConfig, fetchVoicemails } from '@/lib/api'
 import { KioskPage as VoicemailKioskPage } from '@/components/kiosk/voicemail/KioskPage'
-import type { Tenant } from '@/components/kiosk/voicemail/types'
+import type { Tenant, Voicemail } from '@/components/kiosk/voicemail/types'
+import { VoicemailPanel } from './components/voicemail-panel'
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
 
@@ -73,10 +74,15 @@ function deduplicateByCaller(calls: KioskCall[]): KioskCall[] {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-function KioskContent() {
+function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) {
   const { data: session } = useSession()
   const token = useFonoToken()
   const imp = useImpersonation()
+  // Voicemails tab (T-310): a Live tenant can have voicemail capture on. The
+  // resolved kiosk config (routing_mode 'sla' here, else this component would
+  // not render) carries voicemail_enabled + the tenant's display categories.
+  const voicemailEnabled = voicemailTenant?.voicemail_enabled ?? false
+  const voicemailCategories = useMemo(() => voicemailTenant?.categories ?? [], [voicemailTenant])
   // useRestaurant resolves through the impersonation hash branch when
   // the kiosk is loaded inside the admin View-as iframe, so this is the
   // single source of truth for both flavors.
@@ -105,6 +111,7 @@ function KioskContent() {
   const [missedCalls, setMissedCalls] = useState<KioskCall[]>([])
   const [recoveredCalls, setRecoveredCalls] = useState<KioskCall[]>([])
   const [ignoredCalls, setIgnoredCalls] = useState<KioskCall[]>([])
+  const [voicemails, setVoicemails] = useState<Voicemail[]>([])
   const [loading, setLoading] = useState(true)
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
@@ -129,20 +136,22 @@ function KioskContent() {
     }
   }, [tenantId, token])
 
-  // Fetch all tabs
+  // Fetch all tabs (+ voicemails when the tenant has capture on)
   const fetchAllTabs = useCallback(async () => {
     if (!tenantId || !token) return
     setLoading(true)
-    const [missed, recovered, ignored] = await Promise.all([
+    const [missed, recovered, ignored, vms] = await Promise.all([
       fetchTab('missed'),
       fetchTab('recovered'),
       fetchTab('ignored'),
+      voicemailEnabled ? fetchVoicemails(tenantId, token) : Promise.resolve([] as Voicemail[]),
     ])
     setMissedCalls(missed)
     setRecoveredCalls(recovered)
     setIgnoredCalls(ignored)
+    setVoicemails(vms)
     setLoading(false)
-  }, [tenantId, token, fetchTab])
+  }, [tenantId, token, fetchTab, voicemailEnabled])
 
   // Initial fetch + poll every 30 seconds
   useEffect(() => {
@@ -327,6 +336,8 @@ function KioskContent() {
         ignoredCount={dedupedIgnored.length}
         breachedCount={breachedCount}
         dark={dark}
+        showVoicemails={voicemailEnabled}
+        voicemailCount={voicemails.length}
       />
 
       {/* Card grid */}
@@ -364,6 +375,8 @@ function KioskContent() {
             </span>
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           </div>
+        ) : activeTab === 'voicemails' ? (
+          <VoicemailPanel voicemails={voicemails} categories={voicemailCategories} dark={dark} />
         ) : visibleCalls.length === 0 ? (
           <div
             style={{
@@ -626,7 +639,7 @@ function KioskRouter() {
   if (tenant.routing_mode === 'voicemail') {
     return <VoicemailKioskPage tenant={tenant} />
   }
-  return <KioskContent />
+  return <KioskContent voicemailTenant={tenant} />
 }
 
 export default function KioskPage() {

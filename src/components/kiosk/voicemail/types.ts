@@ -41,6 +41,11 @@ export interface Tenant {
   name: string
   location: string
   routing_mode: 'sla' | 'voicemail'
+  // Whether voicemail capture is on for this tenant. A Live (routing_mode
+  // 'sla') tenant can still have voicemail_enabled true — its missed-call
+  // voicemail tail is captured and surfaced via the SLA kiosk's Voicemails
+  // tab (T-310). Drives that tab's visibility.
+  voicemail_enabled: boolean
   categories: Category[]
 }
 
