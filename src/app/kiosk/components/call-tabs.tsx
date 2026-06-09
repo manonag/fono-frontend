@@ -1,6 +1,6 @@
 'use client'
 
-export type KioskTab = 'missed' | 'recovered' | 'ignored'
+export type KioskTab = 'missed' | 'recovered' | 'ignored' | 'voicemails'
 
 interface CallTabsProps {
   active: KioskTab
@@ -10,9 +10,13 @@ interface CallTabsProps {
   ignoredCount: number
   breachedCount: number
   dark: boolean
+  // Voicemails tab (T-310) — only shown for Live tenants with voicemail
+  // capture on. Off for SLA-only tenants so the tab strip is unchanged.
+  showVoicemails?: boolean
+  voicemailCount?: number
 }
 
-export function CallTabs({ active, onTabChange, missedCount, recoveredCount, ignoredCount, breachedCount, dark }: CallTabsProps) {
+export function CallTabs({ active, onTabChange, missedCount, recoveredCount, ignoredCount, breachedCount, dark, showVoicemails = false, voicemailCount = 0 }: CallTabsProps) {
   const bg = dark ? '#111111' : '#FFFFFF'
   const border = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
 
@@ -20,6 +24,9 @@ export function CallTabs({ active, onTabChange, missedCount, recoveredCount, ign
     { key: 'missed', label: 'MISSED', count: missedCount, badgeColor: '#EF4444' },
     { key: 'recovered', label: 'RECOVERED', count: recoveredCount, badgeColor: '#22C55E' },
     { key: 'ignored', label: 'IGNORED', count: ignoredCount, badgeColor: dark ? 'rgba(253,240,232,0.3)' : '#8B7355' },
+    ...(showVoicemails
+      ? [{ key: 'voicemails' as const, label: 'VOICEMAILS', count: voicemailCount, badgeColor: '#E0602A' }]
+      : []),
   ]
 
   return (

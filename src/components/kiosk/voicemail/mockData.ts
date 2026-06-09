@@ -38,6 +38,7 @@ export const mockTenant: Tenant = {
   name: 'Spice Garden',
   location: 'Tracy, CA',
   routing_mode: 'voicemail',
+  voicemail_enabled: true,
   // Palette A swatch + tinted-header-band RGBA values are verbatim from the
   // CD README v2.3 "Tinted header band" / "Palette A - final per-category
   // swatches" tables. Rendering is CSS-driven via [data-c] selectors; these
