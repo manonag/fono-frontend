@@ -86,6 +86,7 @@ export function VoicemailCard({
   categories,
   onStatusChange,
   onReclassify,
+  readOnly = false,
 }: VoicemailCardProps) {
   const vm = voicemail
   const processing = isProcessing(vm)
@@ -234,6 +235,8 @@ export function VoicemailCard({
         <HeaderIconBtn
           kind="check"
           label="Mark resolved"
+          title={readOnly ? 'Read-only preview' : undefined}
+          disabled={readOnly}
           onClick={(e) => {
             e.stopPropagation()
             onStatusChange(vm.id, 'resolved')
@@ -251,7 +254,9 @@ export function VoicemailCard({
         <HeaderIconBtn
           kind="phone"
           label={callArmed ? 'Tap again to call' : 'Call back'}
+          title={readOnly ? 'Read-only preview' : undefined}
           armed={callArmed}
+          disabled={readOnly}
           onClick={armCall}
         />
       </>
@@ -262,9 +267,15 @@ export function VoicemailCard({
           e.stopPropagation()
           onStatusChange(vm.id, 'new')
         }}
-        title={vm.status === 'resolved' ? 'Reopen' : 'Restore'}
+        disabled={readOnly}
+        title={readOnly ? 'Read-only preview' : vm.status === 'resolved' ? 'Reopen' : 'Restore'}
         aria-label={vm.status === 'resolved' ? 'Reopen' : 'Restore'}
-        className={cn(styles.tap48, styles.hib, styles.hibRestore)}
+        className={cn(
+          styles.tap48,
+          styles.hib,
+          styles.hibRestore,
+          readOnly && 'cursor-not-allowed opacity-40',
+        )}
       >
         <IconReturn w={15} h={15} sw={2} />
       </button>
@@ -286,14 +297,15 @@ export function VoicemailCard({
           type="button"
           data-c={dataC}
           style={stampStyle}
+          disabled={readOnly}
           onClick={(e) => {
             e.stopPropagation()
             if (cat) setReclassifyOpen((o) => !o)
           }}
-          title="Tap to reclassify intent"
+          title={readOnly ? 'Read-only preview' : 'Tap to reclassify intent'}
           aria-label="Reclassify intent"
           aria-expanded={reclassifyOpen}
-          className={styles.stampSimple}
+          className={cn(styles.stampSimple, readOnly && 'cursor-not-allowed')}
         >
           <span aria-hidden="true" className={styles.stampSwatch} />
           <span className={styles.stampWord}>{stampDisplay}</span>
@@ -420,11 +432,14 @@ export function VoicemailCard({
             <button
               type="button"
               onClick={onHideClick}
+              disabled={readOnly}
+              title={readOnly ? 'Read-only preview' : undefined}
               className={cn(
                 'mt-3 inline-flex min-h-[48px] items-center gap-2 rounded-md border px-3.5 font-rcp-mono text-[11px] font-bold uppercase tracking-[0.08em]',
                 hideArmed
                   ? 'border-solid border-rcp-danger bg-rcp-danger text-white'
                   : 'border-dashed border-rcp-danger-soft text-rcp-danger',
+                readOnly && 'cursor-not-allowed opacity-40',
               )}
             >
               {hideArmed ? 'TAP TO CONFIRM HIDE' : 'HIDE'}
