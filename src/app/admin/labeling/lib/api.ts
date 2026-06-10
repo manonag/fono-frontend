@@ -1,11 +1,14 @@
 import { config } from '@/lib/config'
 import type {
   ActiveLabelersResponse,
+  ClaimResult,
+  LabelerView,
   MeResponse,
   PatchPayload,
   QueueFilter,
   QueueResponse,
   RecordingDetail,
+  ReleaseResult,
   ReviewQueueResponse,
   SortKey,
   StatsResponse,
@@ -18,37 +21,97 @@ function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` }
 }
 
-async function readError(res: Response): Promise<string> {
+// Structured error body shape returned by the claim/queue endpoints. The
+// backend nests these under FastAPI's `detail` key, e.g.
+//   { detail: { code: "not_claimed", claimed_by_name: "Mourya", ... } }
+// Bites 3/4 route toasts on `code` (see lib/errors.ts). `detail` stays a
+// human-readable string for the legacy string-detail paths.
+export interface StructuredErrorDetail {
+  code: string
+  message?: string
+  claimed_by_name?: string | null
+  claimed_by_user_id?: string | null
+  claimed_at?: string | null
+  cap?: number
+  current?: number
+  allowed?: string[]
+}
+
+async function parseError(
+  res: Response,
+): Promise<{ detail: string; code: string | null; data: StructuredErrorDetail | null }> {
   try {
     const body = await res.json()
     if (body && typeof body === 'object' && 'detail' in body) {
       const detail = (body as { detail: unknown }).detail
-      if (typeof detail === 'string') return detail
-      return JSON.stringify(detail)
+      if (typeof detail === 'string') {
+        return { detail, code: null, data: null }
+      }
+      if (detail && typeof detail === 'object' && 'code' in detail) {
+        const data = detail as StructuredErrorDetail
+        return {
+          detail: data.message ?? JSON.stringify(detail),
+          code: data.code,
+          data,
+        }
+      }
+      return { detail: JSON.stringify(detail), code: null, data: null }
     }
-    return JSON.stringify(body)
+    return { detail: JSON.stringify(body), code: null, data: null }
   } catch {
-    return res.statusText || `HTTP ${res.status}`
+    return {
+      detail: res.statusText || `HTTP ${res.status}`,
+      code: null,
+      data: null,
+    }
   }
 }
 
 export class LabelingApiError extends Error {
   status: number
   detail: string
-  constructor(status: number, detail: string) {
+  // Structured-error fields (null on legacy string-detail responses).
+  code: string | null
+  data: StructuredErrorDetail | null
+  constructor(
+    status: number,
+    detail: string,
+    code: string | null = null,
+    data: StructuredErrorDetail | null = null,
+  ) {
     super(`${status}: ${detail}`)
     this.status = status
     this.detail = detail
+    this.code = code
+    this.data = data
   }
+}
+
+async function errorFromResponse(res: Response): Promise<LabelingApiError> {
+  const { detail, code, data } = await parseError(res)
+  return new LabelingApiError(res.status, detail, code, data)
 }
 
 export async function fetchQueue(
   token: string,
-  opts: { filter: QueueFilter; sort: SortKey; limit?: number; offset?: number },
+  opts: {
+    filter: QueueFilter
+    sort: SortKey
+    limit?: number
+    offset?: number
+    // Phase C.3 Sprint 1: labelers drive the queue with view=pending|mine.
+    // When set, the backend ignores status and scopes by claim. Owners omit
+    // it and keep the status-filter behaviour.
+    view?: LabelerView
+  },
   signal?: AbortSignal,
 ): Promise<QueueResponse> {
   const params = new URLSearchParams()
-  if (opts.filter !== 'all') params.set('status', opts.filter)
+  if (opts.view) {
+    params.set('view', opts.view)
+  } else if (opts.filter !== 'all') {
+    params.set('status', opts.filter)
+  }
   params.set('sort', opts.sort)
   params.set('limit', String(opts.limit ?? 100))
   params.set('offset', String(opts.offset ?? 0))
@@ -56,7 +119,7 @@ export async function fetchQueue(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -74,7 +137,7 @@ export async function fetchRecording(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -98,7 +161,7 @@ export async function patchRecording(
     headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -113,7 +176,34 @@ export async function swapAllSpeakers(
     method: 'POST',
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
+  return res.json()
+}
+
+// Phase C.3 Sprint 1: claim a recording for the current user. Throws a
+// LabelingApiError with code 'claim_conflict' or 'claim_cap' on 409.
+export async function claimRecording(
+  token: string,
+  recordingId: string,
+): Promise<ClaimResult> {
+  const res = await fetch(`${BASE}/${recordingId}/claim`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw await errorFromResponse(res)
+  return res.json()
+}
+
+// Release a held claim back to the unclaimed pool (Release back to queue).
+export async function releaseRecording(
+  token: string,
+  recordingId: string,
+): Promise<ReleaseResult> {
+  const res = await fetch(`${BASE}/${recordingId}/release`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -125,7 +215,7 @@ export async function fetchStats(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -137,7 +227,7 @@ export async function fetchMe(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -149,7 +239,7 @@ export async function fetchActiveLabelers(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }
 
@@ -158,7 +248,7 @@ export async function postHeartbeat(token: string): Promise<void> {
     method: 'POST',
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
 }
 
 export async function fetchReviewQueue(
@@ -173,6 +263,6 @@ export async function fetchReviewQueue(
     headers: authHeaders(token),
     signal,
   })
-  if (!res.ok) throw new LabelingApiError(res.status, await readError(res))
+  if (!res.ok) throw await errorFromResponse(res)
   return res.json()
 }

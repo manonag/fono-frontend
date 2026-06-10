@@ -7,6 +7,7 @@ import { VerifiedEditor } from './VerifiedEditor'
 import { type TagPanelValue } from './TagPanel'
 import { CollapsibleTagPanel } from './CollapsibleTagPanel'
 import { SaveControls } from './SaveControls'
+import { LabelerSaveControls } from './LabelerSaveControls'
 import { SuggestionsResolvePane } from './SuggestionsResolvePane'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
@@ -36,6 +37,12 @@ interface ReviewPaneProps {
   // refetches the recording on success (mirrors handleDemote). Returns
   // ok / error so the pane can surface a toast or inline error.
   onSwapSpeakers: () => Promise<{ ok: boolean; error?: string }>
+  // Phase C.3 Sprint 1. role drives the control bar: 'labeler' gets
+  // Submit for review / Release back to queue (no status dropdown);
+  // 'owner' keeps the existing SaveControls. onRelease releases the claim
+  // on the currently selected recording (labeler only).
+  role: 'owner' | 'labeler'
+  onRelease: () => Promise<{ ok: boolean; error?: string }>
 }
 
 interface FormState {
@@ -196,13 +203,18 @@ export function ReviewPane({
   onSave,
   onDemote,
   onSwapSpeakers,
+  role,
+  onRelease,
 }: ReviewPaneProps) {
+  const isLabeler = role === 'labeler'
   const initialRef = useRef<InitialSnapshot | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const preEditRef = useRef<string>('')
   const [currentTime, setCurrentTime] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [releasing, setReleasing] = useState(false)
   const [demoting, setDemoting] = useState(false)
   const [swapping, setSwapping] = useState(false)
   const [showSwapConfirm, setShowSwapConfirm] = useState(false)
@@ -311,6 +323,41 @@ export function ReviewPane({
     [form, onSave],
   )
 
+  // Labeler Submit for review. Always sends verified_segments (even when
+  // unchanged) so the PATCH fires and the backend forces in_review +
+  // releases the claim; reviewing a correct machine transcript and
+  // submitting is a valid no-edit action. Tags ride along when changed.
+  const doSubmit = useCallback(async () => {
+    if (!form || !initialRef.current) return
+    const payload: PatchPayload = {
+      ...computeDiff(initialRef.current, form),
+      verified_segments: form.verified_segments,
+    }
+    setSubmitting(true)
+    setSaveError(null)
+    const result = await onSave(payload, { advanceAfter: true })
+    setSubmitting(false)
+    if (result.ok) {
+      setToast('Submitted for review')
+    } else {
+      setSaveError(result.error ?? 'Submit failed')
+    }
+  }, [form, onSave])
+
+  // Labeler Release back to queue. Clears the claim; the page refetches and
+  // moves on. Independent of form dirty state (edits stay on the recording).
+  const doRelease = useCallback(async () => {
+    setReleasing(true)
+    setSaveError(null)
+    const result = await onRelease()
+    setReleasing(false)
+    if (result.ok) {
+      setToast('Released back to queue')
+    } else {
+      setSaveError(result.error ?? 'Release failed')
+    }
+  }, [onRelease])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (textFocused) return
@@ -323,7 +370,11 @@ export function ReviewPane({
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        void doSave(true)
+        if (isLabeler) {
+          void doSubmit()
+        } else {
+          void doSave(true)
+        }
         return
       }
 
@@ -385,7 +436,7 @@ export function ReviewPane({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doSave, segments, textFocused])
+  }, [doSave, doSubmit, isLabeler, segments, textFocused])
 
   if (loading && !recording) {
     return (
@@ -486,7 +537,24 @@ export function ReviewPane({
           onTextFocusChange={setTextFocused}
         />
       </div>
-      <SaveControls
+      {isLabeler ? (
+        <LabelerSaveControls
+          dirty={dirty}
+          submitting={submitting}
+          releasing={releasing}
+          saveError={saveError}
+          hasNext={hasNext}
+          onSubmit={() => void doSubmit()}
+          onRelease={() => void doRelease()}
+          swapping={swapping}
+          onSwapAllSpeakers={
+            recording.status === 'auto_labeled' || recording.status === 'in_review'
+              ? () => setShowSwapConfirm(true)
+              : undefined
+          }
+        />
+      ) : (
+        <SaveControls
         status={form.status}
         initialStatus={initialRef.current?.status ?? form.status}
         dirty={dirty}
@@ -526,6 +594,7 @@ export function ReviewPane({
         }
         swapping={swapping}
       />
+      )}
       <ConfirmModal
         open={showSwapConfirm}
         title="Swap all speakers?"

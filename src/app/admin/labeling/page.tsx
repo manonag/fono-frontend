@@ -11,20 +11,25 @@ import { StatsHeader } from './components/StatsHeader'
 import { AdjudicateMode } from './adjudicate/AdjudicateMode'
 import {
   LabelingApiError,
+  claimRecording,
   fetchActiveLabelers,
   fetchMe,
   fetchQueue,
   fetchRecording,
   fetchStats,
   patchRecording,
+  releaseRecording,
   swapAllSpeakers,
 } from './lib/api'
+import { friendlyClaimError } from './lib/errors'
 import type {
   ActiveLabeler,
+  LabelerView,
   MeResponse,
   PatchPayload,
   QueueFilter,
   QueueItem,
+  QueueResponse,
   RecordingDetail,
   StatsResponse,
 } from './lib/types'
@@ -56,10 +61,17 @@ export default function LabelingPage() {
   const viewportOk = useMinViewport(MIN_VIEWPORT_PX)
 
   const [filter, setFilter] = useState<QueueFilter>('auto_labeled')
+  // Phase C.3 Sprint 1: labelers drive the queue with a server-side view
+  // (Pending | My Queue). Owners keep the status filter above.
+  const [labelerView, setLabelerView] = useState<LabelerView>('pending')
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [queueTotal, setQueueTotal] = useState(0)
   const [queueLoading, setQueueLoading] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [pickingUpId, setPickingUpId] = useState<string | null>(null)
+  // Page-level toast for claim actions (pick up / release) that originate in
+  // the queue, not the editor. Friendly copy routed off the structured error.
+  const [pageToast, setPageToast] = useState<string | null>(null)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [recording, setRecording] = useState<RecordingDetail | null>(null)
@@ -75,6 +87,28 @@ export default function LabelingPage() {
   const [queueComplete, setQueueComplete] = useState(false)
 
   const initialAutoSelectDone = useRef(false)
+
+  const isLabeler = me?.role === 'labeler'
+
+  // Fetch the queue in the caller's current scope: labelers by view
+  // (pending | mine), owners by status filter. Single source of truth so
+  // save / pick up / release / demote all refetch the same scope.
+  const fetchScopedQueue = useCallback(
+    (tkn: string): Promise<QueueResponse> =>
+      fetchQueue(
+        tkn,
+        isLabeler
+          ? { filter: 'all', sort: 'duration_desc', limit: 100, view: labelerView }
+          : { filter, sort: 'duration_desc', limit: 100 },
+      ),
+    [isLabeler, labelerView, filter],
+  )
+
+  useEffect(() => {
+    if (!pageToast) return
+    const id = setTimeout(() => setPageToast(null), 4000)
+    return () => clearTimeout(id)
+  }, [pageToast])
 
   useEffect(() => {
     if (token === undefined) return
@@ -130,10 +164,19 @@ export default function LabelingPage() {
       setQueueLoading(true)
       setQueueError(null)
       try {
-        const res = await fetchQueue(token, { filter, sort: 'duration_desc', limit: 100 })
+        const res = await fetchScopedQueue(token)
         setQueue(res.items)
         setQueueTotal(res.total)
-        if (!opts?.keepSelection && !initialAutoSelectDone.current && res.items.length > 0) {
+        // Auto-select the first row on initial load only. For labelers this
+        // applies to My Queue (Pending rows are picked up, not opened), so
+        // skip auto-select while on the Pending view.
+        const allowAutoSelect = !isLabeler || labelerView === 'mine'
+        if (
+          allowAutoSelect &&
+          !opts?.keepSelection &&
+          !initialAutoSelectDone.current &&
+          res.items.length > 0
+        ) {
           setSelectedId(res.items[0].recording_id)
           initialAutoSelectDone.current = true
         }
@@ -144,7 +187,7 @@ export default function LabelingPage() {
         setQueueLoading(false)
       }
     },
-    [token, filter],
+    [token, fetchScopedQueue, isLabeler, labelerView],
   )
 
   const loadStats = useCallback(async () => {
@@ -175,7 +218,10 @@ export default function LabelingPage() {
     let cancelled = false
     setRecordingLoading(true)
     setRecordingError(null)
-    fetchRecording(token, selectedId)
+    // Labelers gate writes on the explicit claim, not the legacy GET-time
+    // lock, so they open recordings without acquiring a lock (avoids stray
+    // 409 LockedError). Owners keep the existing acquire-on-open behaviour.
+    fetchRecording(token, selectedId, undefined, { acquireLock: !isLabeler })
       .then((rec) => {
         if (cancelled) return
         setRecording(rec)
@@ -192,10 +238,21 @@ export default function LabelingPage() {
     return () => {
       cancelled = true
     }
-  }, [authState, mode, token, selectedId])
+  }, [authState, mode, token, selectedId, isLabeler])
 
   const handleFilterChange = useCallback((next: QueueFilter) => {
     setFilter(next)
+    initialAutoSelectDone.current = false
+    setQueueComplete(false)
+  }, [])
+
+  // Labeler tab switch (Pending | My Queue). Server-driven: changing the
+  // view refetches via fetchScopedQueue. Clear the selection so a stale
+  // editor from the other view does not linger.
+  const handleViewChange = useCallback((next: LabelerView) => {
+    setLabelerView(next)
+    setSelectedId(null)
+    setRecording(null)
     initialAutoSelectDone.current = false
     setQueueComplete(false)
   }, [])
@@ -238,40 +295,54 @@ export default function LabelingPage() {
           Object.keys(payload).length > 0
             ? await patchRecording(token, selectedId, payload)
             : null
-        if (result) {
+        if (result && !(isLabeler && options.advanceAfter)) {
           // PATCH returns a summary, not RecordingDetail. Re-fetch to refresh
-          // recording state without re-acquiring the lock (labeler save
-          // already released it; owner doesn't need to claim).
+          // recording state without re-acquiring the lock. Skipped on a
+          // labeler submit-and-advance: the row just left My Queue, so we go
+          // straight to the next one instead of reloading the released row.
           const fresh = await fetchRecording(token, selectedId, undefined, {
             acquireLock: false,
           })
           if (fresh) setRecording(fresh)
         }
-        const queueRes = await fetchQueue(token, {
-          filter,
-          sort: 'duration_desc',
-          limit: 100,
-        })
+        const queueRes = await fetchScopedQueue(token)
         setQueue(queueRes.items)
         setQueueTotal(queueRes.total)
         void loadStats()
         if (options.advanceAfter) {
-          const next = findNextAutoLabeled(selectedId, queueRes.items)
-          if (next) {
-            setSelectedId(next)
+          if (isLabeler) {
+            // After a labeler submit the row is gone from My Queue; open the
+            // next remaining claimed row, or clear when the queue is empty.
+            const next = queueRes.items.find(
+              (i) => i.recording_id !== selectedId,
+            )
+            if (next) {
+              setSelectedId(next.recording_id)
+            } else {
+              setSelectedId(null)
+              setRecording(null)
+              if (queueRes.items.length === 0) setQueueComplete(true)
+            }
           } else {
-            setQueueComplete(true)
+            const next = findNextAutoLabeled(selectedId, queueRes.items)
+            if (next) {
+              setSelectedId(next)
+            } else {
+              setQueueComplete(true)
+            }
           }
         }
         return { ok: true }
       } catch (err) {
         if (err instanceof LabelingApiError) {
-          return { ok: false, error: `${err.status}: ${err.detail}` }
+          // Friendly copy for structured claim errors (not_claimed etc);
+          // falls back to the server detail otherwise.
+          return { ok: false, error: friendlyClaimError(err) }
         }
         return { ok: false, error: 'Network error. Form state preserved.' }
       }
     },
-    [token, selectedId, filter, loadStats, findNextAutoLabeled],
+    [token, selectedId, fetchScopedQueue, isLabeler, loadStats, findNextAutoLabeled],
   )
 
   // T-2d16e333: recovery demote. Sends a status-only PATCH for the given
@@ -288,11 +359,7 @@ export default function LabelingPage() {
       if (!token) return { ok: false, error: 'Not authenticated' }
       try {
         await patchRecording(token, recordingId, { status: target })
-        const queueRes = await fetchQueue(token, {
-          filter,
-          sort: 'duration_desc',
-          limit: 100,
-        })
+        const queueRes = await fetchScopedQueue(token)
         setQueue(queueRes.items)
         setQueueTotal(queueRes.total)
         void loadStats()
@@ -305,13 +372,64 @@ export default function LabelingPage() {
         return { ok: true }
       } catch (err) {
         if (err instanceof LabelingApiError) {
-          return { ok: false, error: `${err.status}: ${err.detail}` }
+          return { ok: false, error: friendlyClaimError(err) }
         }
         return { ok: false, error: 'Network error. Demote not applied.' }
       }
     },
-    [token, filter, loadStats, selectedId],
+    [token, fetchScopedQueue, loadStats, selectedId],
   )
+
+  // Phase C.3 Sprint 1: pick up (claim) a Pending recording. On success the
+  // row moves to My Queue and we open it for editing. On conflict / cap the
+  // structured error becomes a friendly page toast (never a raw 403).
+  const handlePickUp = useCallback(
+    async (recordingId: string) => {
+      if (!token) return
+      setPickingUpId(recordingId)
+      setPageToast(null)
+      try {
+        await claimRecording(token, recordingId)
+        setLabelerView('mine')
+        initialAutoSelectDone.current = true
+        setSelectedId(recordingId)
+        setQueueComplete(false)
+        void loadStats()
+      } catch (err) {
+        setPageToast(friendlyClaimError(err))
+        // Refresh Pending in case someone else took it first.
+        void loadQueue({ keepSelection: true })
+      } finally {
+        setPickingUpId(null)
+      }
+    },
+    [token, loadStats, loadQueue],
+  )
+
+  // Release the currently selected claim back to the Pending pool. Used by
+  // the labeler editor's "Release back to queue". Clears selection and
+  // refetches My Queue (the row is gone).
+  const handleRelease = useCallback(async (): Promise<{
+    ok: boolean
+    error?: string
+  }> => {
+    if (!token || !selectedId) return { ok: false, error: 'No recording selected' }
+    try {
+      await releaseRecording(token, selectedId)
+      setSelectedId(null)
+      setRecording(null)
+      const queueRes = await fetchScopedQueue(token)
+      setQueue(queueRes.items)
+      setQueueTotal(queueRes.total)
+      void loadStats()
+      return { ok: true }
+    } catch (err) {
+      if (err instanceof LabelingApiError) {
+        return { ok: false, error: friendlyClaimError(err) }
+      }
+      return { ok: false, error: 'Network error. Release not applied.' }
+    }
+  }, [token, selectedId, fetchScopedQueue, loadStats])
 
   // ReviewPane's demote button operates on the currently selected row.
   const handlePaneDemote = useCallback(
@@ -454,6 +572,11 @@ export default function LabelingPage() {
                 onFilterChange={handleFilterChange}
                 onSelect={handleSelect}
                 onDemote={handleDemote}
+                role={isLabeler ? 'labeler' : 'owner'}
+                view={labelerView}
+                onViewChange={handleViewChange}
+                onPickUp={handlePickUp}
+                pickingUpId={pickingUpId}
               />
             }
             right={
@@ -465,10 +588,27 @@ export default function LabelingPage() {
                 onSave={handleSave}
                 onDemote={handlePaneDemote}
                 onSwapSpeakers={handleSwapSpeakers}
+                role={isLabeler ? 'labeler' : 'owner'}
+                onRelease={handleRelease}
               />
             }
           />
         </>
+      )}
+      {pageToast && (
+        <div className="fixed inset-x-0 top-20 flex justify-center pointer-events-none z-20">
+          <div className="pointer-events-auto bg-ink text-cream px-5 py-2.5 rounded shadow-lg flex items-center gap-3 max-w-xl">
+            <span className="text-sm">{pageToast}</span>
+            <button
+              type="button"
+              onClick={() => setPageToast(null)}
+              className="text-cream/70 hover:text-cream text-sm"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       )}
       {mode === 'adjudicate' && token && <AdjudicateMode token={token} />}
       {queueComplete && (

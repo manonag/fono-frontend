@@ -26,6 +26,11 @@ export interface QueueItem {
   lock_holder_user_id: string | null
   lock_holder_name: string | null
   lock_expires_at: string | null
+  // Phase C.3 Sprint 1 claim fields. claimed_by_name drives the owner
+  // "Claimed by X" chip (Bite 4); the labeler My Queue keys off claimed_at.
+  claimed_by_user_id: string | null
+  claimed_by_name: string | null
+  claimed_at: string | null
 }
 
 export interface QueueResponse {
@@ -237,3 +242,27 @@ export interface ReviewQueueResponse {
 export type QueueFilter = 'all' | Status
 
 export type SortKey = 'duration_desc' | 'duration_asc' | 'created_desc'
+
+// Phase C.3 Sprint 1: the two server-side views a labeler may request.
+// Anything else is a 403 forbidden_view, so the labeler tab row exposes
+// exactly these two.
+export type LabelerView = 'pending' | 'mine'
+
+export interface ClaimResult {
+  recording_id: string
+  claimed_by_user_id: string
+  claimed_at: string
+  status: Status
+  audit_action: string
+  audit_extra: Record<string, unknown>
+}
+
+export interface ReleaseResult {
+  recording_id: string
+  status_before: Status
+  status_after: Status
+  fields_updated: string[]
+  released_claim_of_user_id: string | null
+  audit_action: string
+  audit_extra: Record<string, unknown>
+}
