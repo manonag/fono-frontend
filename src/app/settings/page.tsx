@@ -19,6 +19,7 @@ import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
 import { CategoriesChipCard, type CategoryChipModel } from '@/components/categories-chip-card'
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
 import { VoicemailCaptureCard } from '@/components/voicemail-capture-card'
+import { CallRoutingCard } from '@/components/call-routing-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
 import { SettingsCard as VsCard, SettingsButton, Banner, FieldLabel, HelperText, tokens } from '@/components/settings-primitives'
 import { type Carrier } from '@/lib/forwarding-codes'
@@ -883,9 +884,7 @@ function CallsStateC() {
       {isLive && (
         <>
           <SectionLabel num={num('call-routing')} title="Call routing" blurb="What happens when your team cannot pick up the bridged call." />
-          <LockedPreview title="Call routing" blurb="Fallback numbers Fono tries before taking a voicemail." blockedReason="Coming in a later update">
-            <LockedPlaceholder />
-          </LockedPreview>
+          <CallRoutingCard tenantId={tid} token={token} readOnly={imp.readOnly} />
         </>
       )}
 

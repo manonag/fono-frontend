@@ -52,7 +52,11 @@ function SpineLogo() {
 }
 
 // The middle section of the spine: category tabs with the drag-scrub gesture.
-function VerticalBinderStrip({
+// Exported so the coexistence variant (NestedVoicemailSurface) can mount the
+// same category spine inside the Live/SLA kiosk without the logo/foot chrome
+// (CHIRAN arch fact #362). The standalone Layout C still composes it via
+// BinderSpine below — unchanged.
+export function VerticalBinderStrip({
   value,
   onChange,
   options,

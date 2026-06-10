@@ -1,5 +1,6 @@
 import { config } from './config'
 import type {
+  CallFallbackRule,
   CallRecord,
   DashboardSummary,
   CallLogFilters,
@@ -7,9 +8,6 @@ import type {
   AnalyticsSummary,
   PeakHoursResponse,
 } from '@/types'
-// DEV ONLY: dev fixtures for the voicemail-route kiosk. Removed once the
-// voicemail backend endpoints ship (see the voicemail kiosk section below).
-import { mockTenant, mockVoicemails } from '@/components/kiosk/voicemail/mockData'
 import type {
   IntentKey,
   Status,
@@ -258,22 +256,96 @@ export async function fetchChartData(
 }
 
 // ---------------------------------------------------------------------------
+// Call routing fallback rules (T-249 Slice 1 backend, Slice 3 UI)
+//
+// Tenant-scoped CRUD for the staff-no-answer fallback cascade. The mutating
+// helpers throw an Error carrying the backend `detail` message (E.164 / loop
+// guard / duplicate / 3-per-window cap), so the card can surface the exact
+// reason and roll back its optimistic update.
+// ---------------------------------------------------------------------------
+
+export interface CallFallbackRuleInput {
+  phone_number: string
+  days_of_week: number
+  window_start: string
+  window_end: string
+  label?: string | null
+  cascade_order?: number
+}
+
+async function readDetail(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null)
+  const detail = body && (body as { detail?: unknown }).detail
+  return typeof detail === 'string' && detail ? detail : fallback
+}
+
+export async function fetchCallFallbackRules(
+  tenantId: string,
+  token?: string,
+): Promise<CallFallbackRule[]> {
+  const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/call-fallback-rules`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch fallback rules: ${res.status}`)
+  const data = await res.json()
+  return Array.isArray(data?.rules) ? (data.rules as CallFallbackRule[]) : []
+}
+
+export async function createCallFallbackRule(
+  tenantId: string,
+  input: CallFallbackRuleInput,
+  token?: string,
+): Promise<CallFallbackRule> {
+  const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}/call-fallback-rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not add the fallback number.'))
+  return res.json()
+}
+
+export async function patchCallFallbackRule(
+  ruleId: string,
+  updates: Partial<CallFallbackRuleInput>,
+  token?: string,
+): Promise<CallFallbackRule> {
+  const res = await fetch(`${baseUrl}/api/v1/call-fallback-rules/${ruleId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not update the fallback number.'))
+  return res.json()
+}
+
+export async function deleteCallFallbackRule(
+  ruleId: string,
+  token?: string,
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/call-fallback-rules/${ruleId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, 'Could not remove the fallback number.'))
+}
+
+// ---------------------------------------------------------------------------
 // Voicemail-route kiosk
 //
-// DEV ONLY scaffolding. The voicemail-route backend endpoints do not exist
-// yet:
-//   GET   /api/v1/tenants/:id              -> routing_mode + categories
+// Wired to the live backend (voicemail capture pipeline validated 2026-06-09):
+//   GET   /api/v1/tenants/:id              -> routing_mode + call_setup_path +
+//                                             voicemail_enabled + categories
 //   GET   /api/v1/tenants/:id/voicemails   -> voicemail list
 //   PATCH /api/v1/voicemails/:id/status    -> { status, reason? }
 //   PATCH /api/v1/voicemails/:id/intent    -> { intent_category_key }
 //
-// Each function attempts the real endpoint (production data-flow shape) and
-// falls back to the dev fixtures in
-// src/components/kiosk/voicemail/mockData.ts. When the backend ships:
-//   - delete the mockTenant / mockVoicemails fallbacks and the import above
-//   - change patchVoicemail* to throw on a non-ok / failed response, so the
-//     optimistic-rollback + toast path already wired in KioskPage activates
-// Tracked in the feature PR description.
+// The dev mockTenant / mockVoicemails fallbacks were removed so real backend
+// responses are never masked (CHIRAN arch fact #362): the mock tenant carried
+// routing_mode 'voicemail', which made any tenant fall through to Layout C
+// with sample data whenever the config fetch failed. Config now returns null
+// on failure (the kiosk router degrades to the SLA surface); the voicemail
+// list returns [] on failure (empty state).
 // ---------------------------------------------------------------------------
 
 function isTenantConfig(value: unknown): value is Tenant {
@@ -287,34 +359,39 @@ function isTenantConfig(value: unknown): value is Tenant {
 }
 
 /**
- * Tenant config for the kiosk route branch: routing_mode + per-tenant
- * category display names. Falls back to the dev fixture, keeping the real
- * id / name from the session or impersonation context.
+ * Tenant config for the kiosk route branch: routing_mode, call_setup_path,
+ * voicemail_enabled + per-tenant category display names. Returns null when the
+ * config cannot be resolved, so the kiosk router degrades to the SLA surface
+ * rather than masking the failure with a mock voicemail tenant.
  */
 export async function fetchTenantVoicemailConfig(
   tenantId: string,
   tenantName: string,
   token?: string,
-): Promise<Tenant> {
+): Promise<Tenant | null> {
   try {
     const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}`, {
       headers: authHeaders(token),
     })
     if (res.ok) {
       const data: unknown = await res.json()
-      if (isTenantConfig(data)) return data
+      if (isTenantConfig(data)) {
+        // Keep the real id / name from the session or impersonation context
+        // when the backend echoes blanks.
+        return {
+          ...data,
+          id: data.id || tenantId,
+          name: data.name || tenantName,
+        }
+      }
     }
   } catch {
-    // fall through to the dev fixture
+    // network error -> treat as unresolved
   }
-  return {
-    ...mockTenant,
-    id: tenantId || mockTenant.id,
-    name: tenantName || mockTenant.name,
-  }
+  return null
 }
 
-/** Voicemail list for a tenant. Falls back to the dev fixtures. */
+/** Voicemail list for a tenant. Returns [] on failure (empty state). */
 export async function fetchVoicemails(
   tenantId: string,
   token?: string,
@@ -332,9 +409,9 @@ export async function fetchVoicemails(
       }
     }
   } catch {
-    // fall through to the dev fixtures
+    // fall through to the empty list
   }
-  return mockVoicemails
+  return []
 }
 
 /**

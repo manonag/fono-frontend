@@ -11,6 +11,23 @@ export interface CallRecord {
   created_at: string
 }
 
+// T-249 call routing fallback rules. One row per windowed fallback number in
+// a tenant's staff-no-answer cascade. days_of_week is a 7-bit mask
+// (bit 0 = Mon .. bit 6 = Sun); window_start/window_end are tenant-local
+// "HH:MM" strings; cascade_order (1..3) is the dial position within a window.
+export interface CallFallbackRule {
+  id: string
+  tenant_id: string
+  cascade_order: number
+  phone_number: string
+  label: string | null
+  days_of_week: number
+  window_start: string
+  window_end: string
+  ring_seconds: number
+  active: boolean
+}
+
 export interface DashboardSummary {
   total_calls: number
   missed_calls: number

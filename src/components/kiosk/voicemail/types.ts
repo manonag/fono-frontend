@@ -41,10 +41,18 @@ export interface Tenant {
   name: string
   location: string
   routing_mode: 'sla' | 'voicemail'
+  // The tenant's chosen call path (onboarding funnel, T-251). 'live' tenants
+  // forward unanswered calls to Fono and stay on the SLA kiosk; 'voicemail'
+  // tenants route straight to voicemail. routing_mode is BACKEND-DERIVED from
+  // this ('live' -> 'sla'), so the coexistence branch keys off call_setup_path
+  // directly rather than routing_mode (CHIRAN arch fact #362). null before the
+  // call path is chosen. Returned by GET /tenants/{id} kiosk config.
+  call_setup_path: 'live' | 'voicemail' | null
   // Whether voicemail capture is on for this tenant. A Live (routing_mode
   // 'sla') tenant can still have voicemail_enabled true — its missed-call
-  // voicemail tail is captured and surfaced via the SLA kiosk's Voicemails
-  // tab (T-310). Drives that tab's visibility.
+  // voicemail tail is captured. For Live + voicemail tenants the Voicemails
+  // tab renders the nested Layout C surface (coexistence variant); this flag
+  // gates that tab's visibility.
   voicemail_enabled: boolean
   categories: Category[]
 }

@@ -104,6 +104,15 @@ export function IconClose(p: IconProps) {
   )
 }
 
+export function IconClock(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </Icon>
+  )
+}
+
 export function IconReturn(p: IconProps) {
   return (
     <Icon {...p}>
