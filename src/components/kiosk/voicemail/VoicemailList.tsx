@@ -33,6 +33,7 @@ interface VoicemailListProps {
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
   readOnly?: boolean
+  onCall?: (id: string) => void
 }
 
 export function VoicemailList({
@@ -43,6 +44,7 @@ export function VoicemailList({
   onStatusChange,
   onReclassify,
   readOnly = false,
+  onCall,
 }: VoicemailListProps) {
   const list = filterAndSort(voicemails, { status: tab, category, sort: 'newest' }, categories)
 
@@ -62,6 +64,7 @@ export function VoicemailList({
             onStatusChange={onStatusChange}
             onReclassify={onReclassify}
             readOnly={readOnly}
+            onCall={onCall}
           />
         ))
       )}

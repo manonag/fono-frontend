@@ -22,7 +22,12 @@ import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
 import { useRestaurant } from '@/lib/restaurant-context'
-import { fetchVoicemails, patchVoicemailIntent, patchVoicemailStatus } from '@/lib/api'
+import {
+  fetchVoicemails,
+  patchVoicemailIntent,
+  patchVoicemailStatus,
+  requestVoicemailCallback,
+} from '@/lib/api'
 import type { KioskCall } from '@/app/kiosk/components/call-card'
 import { deduplicateByCaller, sortMissedCalls } from '@/app/kiosk/components/call-sort'
 import { formatClock, STATUSES, TAB_LABELS, tabCount } from '../helpers'
@@ -35,6 +40,7 @@ import type {
   Tenant,
   Voicemail,
 } from '../types'
+import { CallConfirmModal } from './CallConfirmModal'
 import { NestedVoicemailSurface } from './NestedVoicemailSurface'
 import { SlaCallList } from './SlaCallList'
 import styles from './coexist.module.css'
@@ -85,6 +91,9 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
 
   const [confirmCall, setConfirmCall] = useState<KioskCall | null>(null)
   const [callbackLoading, setCallbackLoading] = useState(false)
+  // Voicemail card callback (same bridge as the missed-call CALL BACK).
+  const [confirmVmCall, setConfirmVmCall] = useState<{ id: string; phone: string } | null>(null)
+  const [vmCallLoading, setVmCallLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const fadeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -298,6 +307,33 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
     [readOnly, voicemails, tenant.categories, token, showToast],
   )
 
+  // Voicemail card callback: open the confirm-bridge modal, then POST to the
+  // outbound bridge (dials the caller first, connects the team on answer) —
+  // same flow as the missed-call CALL BACK, keyed on the voicemail id.
+  const handleVmCall = useCallback(
+    (id: string) => {
+      const vm = voicemails.find((v) => v.id === id)
+      if (vm) setConfirmVmCall({ id, phone: vm.caller_phone })
+    },
+    [voicemails],
+  )
+
+  const handleConfirmVmCallback = useCallback(async () => {
+    if (readOnly || !confirmVmCall || !token) return
+    setVmCallLoading(true)
+    const target = confirmVmCall
+    setConfirmVmCall(null)
+    try {
+      await requestVoicemailCallback(target.id, token)
+    } catch {
+      showToast('Callback failed')
+      setVmCallLoading(false)
+      return
+    }
+    showToast(`Calling ${target.phone}…`)
+    setVmCallLoading(false)
+  }, [readOnly, confirmVmCall, token, showToast])
+
   const liveTab = inVoicemail ? 'missed' : topTab
   const liveCalls =
     liveTab === 'missed' ? sortedMissed : liveTab === 'recovered' ? dedupedRecovered : dedupedIgnored
@@ -400,6 +436,7 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
             onStatusChange={onStatusChange}
             onReclassify={onReclassify}
             readOnly={readOnly}
+            onCall={readOnly ? undefined : handleVmCall}
           />
         ) : (
           <div className={styles.liveBody}>
@@ -415,103 +452,24 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
         )}
       </main>
 
-      {/* ── Callback confirm modal ── */}
+      {/* ── Callback confirm modals (missed-call + voicemail, same bridge) ── */}
       {confirmCall ? (
-        <div
-          onClick={() => setConfirmCall(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '90%',
-              maxWidth: 360,
-              backgroundColor: dark ? '#241910' : '#f7ebde',
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : '#e5d6c2'}`,
-              borderRadius: 12,
-              padding: '28px 24px 22px',
-              boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 14,
-            }}
-          >
-            <div
-              style={{
-                fontFamily: 'var(--font-jetbrains-mono), monospace',
-                fontSize: 20,
-                fontWeight: 700,
-                color: dark ? '#f6e7da' : '#1e0e00',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {confirmCall.caller_phone}
-            </div>
-            <p
-              style={{
-                fontSize: 13,
-                color: dark ? '#9c8772' : '#8b7355',
-                textAlign: 'center',
-                lineHeight: 1.5,
-                margin: 0,
-              }}
-            >
-              Customer rings first. Once they answer, your phone connects.
-            </p>
-            <div style={{ display: 'flex', gap: 10, width: '100%', marginTop: 4 }}>
-              <button
-                onClick={() => setConfirmCall(null)}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 6,
-                  border: `1px dashed ${dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`,
-                  background: 'none',
-                  color: dark ? '#f6e7da' : '#1e0e00',
-                  fontFamily: 'var(--font-jetbrains-mono), monospace',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmCallback}
-                disabled={callbackLoading || readOnly}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 6,
-                  border: 'none',
-                  backgroundColor: '#16A34A',
-                  color: '#fff',
-                  fontFamily: 'var(--font-jetbrains-mono), monospace',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  cursor: callbackLoading || readOnly ? 'not-allowed' : 'pointer',
-                  opacity: callbackLoading || readOnly ? 0.7 : 1,
-                }}
-              >
-                {callbackLoading ? 'Calling…' : 'Call now'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CallConfirmModal
+          phone={confirmCall.caller_phone}
+          dark={dark}
+          busy={callbackLoading || readOnly}
+          onCancel={() => setConfirmCall(null)}
+          onConfirm={handleConfirmCallback}
+        />
+      ) : null}
+      {confirmVmCall ? (
+        <CallConfirmModal
+          phone={confirmVmCall.phone}
+          dark={dark}
+          busy={vmCallLoading || readOnly}
+          onCancel={() => setConfirmVmCall(null)}
+          onConfirm={handleConfirmVmCallback}
+        />
       ) : null}
 
       {toast ? <Toast message={toast} onDismiss={dismissToast} /> : null}
