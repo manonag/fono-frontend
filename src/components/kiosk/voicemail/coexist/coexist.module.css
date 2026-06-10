@@ -1,0 +1,529 @@
+/* Coexistence variant: Layout C voicemail surface nested inside the Live/SLA
+ * kiosk (CHIRAN arch fact #362, CD handoff coexistence/coexist.css).
+ *
+ * Ported from the CD prototype's coexist.css. The prototype's unprefixed
+ * tokens (--paper, --ink, --terra, --rule ...) are remapped onto this repo's
+ * --rcp-* receipt token set, and its `.kiosk-v2-frame[data-theme="dark"]`
+ * selector becomes `.frame[data-theme='dark']`. No third style system is
+ * introduced: the same receipt tokens, JetBrains Mono numerals, and Palette A
+ * category colors as standalone Layout C.
+ *
+ * The SHELL chrome (header, top tab bar, status segmented, receipt-skinned
+ * live cards) lives here. The nested voicemail subtree reuses styles.module
+ * .root / .spine / .layoutMainC / .cardGridC directly (so the v2.3 cards keep
+ * their .root[data-theme='dark'] dark-mode selectors); this file only adds the
+ * live surface and the shell that wraps both.
+ *
+ * The --rcp-* token subset below is the set the shell + live cards consume; it
+ * mirrors the M6-locked values in styles.module.css .root. The nested cards do
+ * not depend on it (they carry their own .root token scope). */
+
+.frame {
+  --rcp-terra: #e0602a;
+  --rcp-terra-dark: #c84e20;
+  --rcp-cream: #fdf0e8;
+  --rcp-cream-2: #f6e7da;
+  --rcp-paper: #f7ebde;
+  --rcp-paper-edge: #e5d6c2;
+  --rcp-rail-bg: #efe2d3;
+  --rcp-rail-edge: #e5d6c2;
+  --rcp-ink: #1e0e00;
+  --rcp-cocoa: #5c3d22;
+  --rcp-brown: #8b7355;
+  --rcp-bone: #b0a090;
+  --rcp-rule: rgba(0, 0, 0, 0.08);
+
+  position: relative;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--rcp-paper);
+  color: var(--rcp-ink);
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+.frame[data-theme='dark'] {
+  --rcp-paper: #161920;
+  --rcp-paper-edge: #0e1117;
+  --rcp-rail-bg: #0e1117;
+  --rcp-rail-edge: rgba(255, 255, 255, 0.1);
+  --rcp-ink: #f6e7da;
+  --rcp-cocoa: #d8c7b6;
+  --rcp-brown: #9c8772;
+  --rcp-bone: #6b5d4d;
+  --rcp-rule: rgba(255, 255, 255, 0.1);
+}
+
+/* ─── SLA header (Ink bar) ─────────────────────────────────────────────── */
+.head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--rcp-ink);
+  color: var(--rcp-cream);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+}
+.frame[data-theme='dark'] .head {
+  background: #0e1117;
+}
+.logo {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-nunito), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--rcp-cream);
+}
+.logoDot {
+  width: 6px;
+  height: 6px;
+  margin: 0 1px;
+  border-radius: 50%;
+  background: var(--rcp-terra);
+  display: inline-block;
+}
+.tenant {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+}
+.tenantName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--rcp-cream);
+  letter-spacing: -0.01em;
+}
+.tenantTag {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rcp-terra);
+  background: rgba(224, 96, 42, 0.16);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.live {
+  margin-left: auto;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #22c55e;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  animation: coexistSync 2s ease-in-out infinite;
+}
+@keyframes coexistSync {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.8);
+  }
+}
+.clock {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: rgba(253, 240, 232, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+.theme {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  width: 30px;
+  height: 28px;
+  border-radius: 5px;
+  color: var(--rcp-cream);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Single top tab bar ───────────────────────────────────────────────── */
+.tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 12px;
+  background: var(--rcp-ink);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 44px;
+}
+.frame[data-theme='dark'] .tabs {
+  background: #0e1117;
+}
+.tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 14px;
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(253, 240, 232, 0.6);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--rcp-cream);
+}
+.tabCnt {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(253, 240, 232, 0.7);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tab[data-active='true'] {
+  color: #fff;
+  border-bottom-color: var(--rcp-terra);
+}
+.tab[data-active='true'] .tabCnt {
+  background: var(--rcp-terra);
+  color: #fff;
+}
+/* The Voicemails tab is set apart with a divider + sage accent. */
+.tabDivider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 10px 6px;
+}
+.tabVm[data-active='true'] {
+  border-bottom-color: #7b9c68;
+}
+.tabVm[data-active='true'] .tabCnt {
+  background: #7b9c68;
+}
+
+/* ─── Status segmented control (only in voicemail mode) ────────────────── */
+.statusSeg {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  align-self: center;
+}
+.segBtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(253, 240, 232, 0.55);
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.segBtn:hover {
+  color: var(--rcp-cream);
+}
+.segCnt {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+.segBtn[data-active='true'] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.segBtn[data-active='true'] .segCnt {
+  opacity: 0.9;
+}
+
+/* ─── Body + 130ms cross-fade ──────────────────────────────────────────── */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background: var(--rcp-paper);
+  transition: opacity 0.13s ease;
+}
+.bodyFading {
+  opacity: 0;
+}
+.body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    ellipse 900px 700px at 90% -10%,
+    rgba(212, 101, 44, 0.08),
+    transparent 60%
+  );
+}
+.frame[data-theme='dark'] .body::before {
+  background-image: radial-gradient(
+    ellipse 900px 700px at 90% -10%,
+    rgba(212, 101, 44, 0.16),
+    transparent 60%
+  );
+}
+
+/* ─── Live-call surface ────────────────────────────────────────────────── */
+.liveBody {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+}
+.slaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-content: start;
+}
+
+/* SLA urgency-stripe call card — skinned to the receipt system. Keeps its
+   functional signatures (left urgency stripe + green CALL BACK); everything
+   else adopts the warm receipt paper, perforated top edge, dashed rules, and
+   mono numerals of Layout C. */
+.slaCard {
+  position: relative;
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 2px 8px rgba(94, 35, 10, 0.06),
+    0 14px 30px rgba(94, 35, 10, 0.05);
+  display: flex;
+  flex-direction: column;
+  background-image: radial-gradient(circle at 8px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px),
+    radial-gradient(circle at 24px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px),
+    radial-gradient(circle at 40px 8px, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px);
+  background-position: 0 0, 16px 0, 32px 0;
+  background-repeat: repeat-x;
+  background-size: 48px 1px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.slaCard:hover {
+  transform: translateY(-1px);
+}
+.frame[data-theme='dark'] .slaCard {
+  background: linear-gradient(180deg, #2a1e13 0%, #241910 100%);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.slaStripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 1;
+}
+.slaCardBody {
+  padding: 12px 14px 10px 18px;
+  flex: 1 1 auto;
+}
+.slaPhone {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--rcp-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.slaMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--rcp-brown);
+  letter-spacing: 0.02em;
+}
+.slaName {
+  color: var(--rcp-cocoa);
+  font-weight: 600;
+}
+.slaDot {
+  opacity: 0.5;
+}
+.slaRepeat {
+  color: var(--rcp-terra-dark);
+  font-weight: 700;
+}
+.slaStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.slaActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 14px 12px 18px;
+  border-top: 1px dashed var(--rcp-rule);
+  background: radial-gradient(circle at 8px 0, rgba(0, 0, 0, 0.06) 1.5px, transparent 2px) repeat-x;
+  background-size: 24px 1px;
+  background-position: 0 0;
+}
+.frame[data-theme='dark'] .slaActions {
+  background: radial-gradient(circle at 8px 0, rgba(255, 255, 255, 0.1) 1.5px, transparent 2px) repeat-x;
+  background-size: 24px 1px;
+  background-position: 0 0;
+}
+.slaCta {
+  flex: 1 1 auto;
+  appearance: none;
+  border: 0;
+  height: 44px;
+  background: #22c55e;
+  color: #fff;
+  border-radius: 6px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.slaCta:hover {
+  background: #16a34a;
+}
+.slaCta:disabled {
+  background: #6b7280;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.slaIgnore {
+  appearance: none;
+  border: 1px dashed var(--rcp-rule);
+  background: transparent;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rcp-brown);
+  cursor: pointer;
+}
+.slaIgnore:hover {
+  border-color: var(--rcp-brown);
+  border-style: solid;
+  color: var(--rcp-ink);
+}
+.slaIgnore[data-confirming='true'] {
+  background: #dc2626;
+  border-color: #dc2626;
+  border-style: solid;
+  color: #fff;
+}
+
+/* SLA empty state */
+.slaEmpty {
+  grid-column: 1 / -1;
+  margin: 40px auto;
+  max-width: 380px;
+  text-align: center;
+  padding: 32px 24px;
+  border: 1px dashed var(--rcp-rule);
+  border-radius: 10px;
+}
+.slaEmptyMark {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.slaEmptyMark span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  opacity: 0.25;
+}
+.slaEmptyMark span:nth-child(2) {
+  opacity: 0.5;
+}
+.slaEmptyMark span:nth-child(3) {
+  opacity: 0.85;
+}
+.slaEmpty h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: var(--rcp-ink);
+  letter-spacing: -0.015em;
+}
+.slaEmpty p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--rcp-brown);
+  line-height: 1.55;
+}
+
+/* ─── Nested voicemail surface ─────────────────────────────────────────── */
+/* The vm subtree reuses styles.module .root (token scope + 56px|1fr grid +
+   dark descendant selectors) with inline position overrides; this wrapper
+   only pins it into the body and strips the standalone shell's logo/foot,
+   which the nested spine simply does not render. */
+.vmFill {
+  position: absolute;
+  inset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}

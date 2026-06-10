@@ -8,9 +8,6 @@ import type {
   AnalyticsSummary,
   PeakHoursResponse,
 } from '@/types'
-// DEV ONLY: dev fixtures for the voicemail-route kiosk. Removed once the
-// voicemail backend endpoints ship (see the voicemail kiosk section below).
-import { mockTenant, mockVoicemails } from '@/components/kiosk/voicemail/mockData'
 import type {
   IntentKey,
   Status,
@@ -336,20 +333,19 @@ export async function deleteCallFallbackRule(
 // ---------------------------------------------------------------------------
 // Voicemail-route kiosk
 //
-// DEV ONLY scaffolding. The voicemail-route backend endpoints do not exist
-// yet:
-//   GET   /api/v1/tenants/:id              -> routing_mode + categories
+// Wired to the live backend (voicemail capture pipeline validated 2026-06-09):
+//   GET   /api/v1/tenants/:id              -> routing_mode + call_setup_path +
+//                                             voicemail_enabled + categories
 //   GET   /api/v1/tenants/:id/voicemails   -> voicemail list
 //   PATCH /api/v1/voicemails/:id/status    -> { status, reason? }
 //   PATCH /api/v1/voicemails/:id/intent    -> { intent_category_key }
 //
-// Each function attempts the real endpoint (production data-flow shape) and
-// falls back to the dev fixtures in
-// src/components/kiosk/voicemail/mockData.ts. When the backend ships:
-//   - delete the mockTenant / mockVoicemails fallbacks and the import above
-//   - change patchVoicemail* to throw on a non-ok / failed response, so the
-//     optimistic-rollback + toast path already wired in KioskPage activates
-// Tracked in the feature PR description.
+// The dev mockTenant / mockVoicemails fallbacks were removed so real backend
+// responses are never masked (CHIRAN arch fact #362): the mock tenant carried
+// routing_mode 'voicemail', which made any tenant fall through to Layout C
+// with sample data whenever the config fetch failed. Config now returns null
+// on failure (the kiosk router degrades to the SLA surface); the voicemail
+// list returns [] on failure (empty state).
 // ---------------------------------------------------------------------------
 
 function isTenantConfig(value: unknown): value is Tenant {
@@ -363,34 +359,39 @@ function isTenantConfig(value: unknown): value is Tenant {
 }
 
 /**
- * Tenant config for the kiosk route branch: routing_mode + per-tenant
- * category display names. Falls back to the dev fixture, keeping the real
- * id / name from the session or impersonation context.
+ * Tenant config for the kiosk route branch: routing_mode, call_setup_path,
+ * voicemail_enabled + per-tenant category display names. Returns null when the
+ * config cannot be resolved, so the kiosk router degrades to the SLA surface
+ * rather than masking the failure with a mock voicemail tenant.
  */
 export async function fetchTenantVoicemailConfig(
   tenantId: string,
   tenantName: string,
   token?: string,
-): Promise<Tenant> {
+): Promise<Tenant | null> {
   try {
     const res = await fetch(`${baseUrl}/api/v1/tenants/${tenantId}`, {
       headers: authHeaders(token),
     })
     if (res.ok) {
       const data: unknown = await res.json()
-      if (isTenantConfig(data)) return data
+      if (isTenantConfig(data)) {
+        // Keep the real id / name from the session or impersonation context
+        // when the backend echoes blanks.
+        return {
+          ...data,
+          id: data.id || tenantId,
+          name: data.name || tenantName,
+        }
+      }
     }
   } catch {
-    // fall through to the dev fixture
+    // network error -> treat as unresolved
   }
-  return {
-    ...mockTenant,
-    id: tenantId || mockTenant.id,
-    name: tenantName || mockTenant.name,
-  }
+  return null
 }
 
-/** Voicemail list for a tenant. Falls back to the dev fixtures. */
+/** Voicemail list for a tenant. Returns [] on failure (empty state). */
 export async function fetchVoicemails(
   tenantId: string,
   token?: string,
@@ -408,9 +409,9 @@ export async function fetchVoicemails(
       }
     }
   } catch {
-    // fall through to the dev fixtures
+    // fall through to the empty list
   }
-  return mockVoicemails
+  return []
 }
 
 /**

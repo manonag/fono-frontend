@@ -7,82 +7,25 @@ import { Suspense } from 'react'
 import { KioskHeader } from './components/kiosk-header'
 import { CallTabs, type KioskTab } from './components/call-tabs'
 import { CallCard, type KioskCall } from './components/call-card'
+import { deduplicateByCaller, sortMissedCalls } from './components/call-sort'
 import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
 import { useRestaurant } from '@/lib/restaurant-context'
-import { fetchTenantVoicemailConfig, fetchVoicemails } from '@/lib/api'
+import { fetchTenantVoicemailConfig } from '@/lib/api'
 import { KioskPage as VoicemailKioskPage } from '@/components/kiosk/voicemail/KioskPage'
-import type { Tenant, Voicemail } from '@/components/kiosk/voicemail/types'
-import { VoicemailPanel } from './components/voicemail-panel'
-
-// ── Sorting ───────────────────────────────────────────────────────────────────
-
-function getSLARemaining(call: KioskCall): number {
-  if (!call.sla_deadline) return Infinity
-  return new Date(call.sla_deadline).getTime() - Date.now()
-}
-
-function sortMissedCalls(calls: KioskCall[]): KioskCall[] {
-  return [...calls].sort((a, b) => {
-    const aNowBreached = a.sla_breached || (a.sla_deadline ? new Date(a.sla_deadline).getTime() < Date.now() : false)
-    const bNowBreached = b.sla_breached || (b.sla_deadline ? new Date(b.sla_deadline).getTime() < Date.now() : false)
-
-    // Breached always on top
-    if (aNowBreached && !bNowBreached) return -1
-    if (!aNowBreached && bNowBreached) return 1
-
-    // Among breached: most overdue first
-    if (aNowBreached && bNowBreached) {
-      return new Date(a.sla_deadline!).getTime() - new Date(b.sla_deadline!).getTime()
-    }
-
-    // Among non-breached: least SLA remaining first with repeat caller boost
-    const aRemaining = getSLARemaining(a) / (a.repeat_count > 1 ? a.repeat_count * 0.5 : 1)
-    const bRemaining = getSLARemaining(b) / (b.repeat_count > 1 ? b.repeat_count * 0.5 : 1)
-
-    if (aRemaining !== bRemaining) return aRemaining - bRemaining
-
-    // Tiebreaker: most recent first
-    return new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
-  })
-}
-
-// ── Deduplication ─────────────────────────────────────────────────────────────
-
-/** Group calls by caller_phone. Returns one card per unique number using the oldest call's data. */
-function deduplicateByCaller(calls: KioskCall[]): KioskCall[] {
-  const grouped = new Map<string, KioskCall[]>()
-
-  for (const call of calls) {
-    const key = call.caller_phone
-    if (!grouped.has(key)) {
-      grouped.set(key, [])
-    }
-    grouped.get(key)!.push(call)
-  }
-
-  return Array.from(grouped.values()).map(group => {
-    // Sort ascending by started_at — oldest first (most urgent SLA)
-    group.sort((a, b) =>
-      new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
-    )
-    return group[0]
-  })
-}
+import { CoexistKiosk } from '@/components/kiosk/voicemail/coexist/CoexistKiosk'
+import type { Tenant } from '@/components/kiosk/voicemail/types'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+// Sorting + dedup helpers live in ./components/call-sort (shared with the
+// coexistence kiosk's live surface).
 
-function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) {
+function KioskContent() {
   const { data: session } = useSession()
   const token = useFonoToken()
   const imp = useImpersonation()
-  // Voicemails tab (T-310): a Live tenant can have voicemail capture on. The
-  // resolved kiosk config (routing_mode 'sla' here, else this component would
-  // not render) carries voicemail_enabled + the tenant's display categories.
-  const voicemailEnabled = voicemailTenant?.voicemail_enabled ?? false
-  const voicemailCategories = useMemo(() => voicemailTenant?.categories ?? [], [voicemailTenant])
   // useRestaurant resolves through the impersonation hash branch when
   // the kiosk is loaded inside the admin View-as iframe, so this is the
   // single source of truth for both flavors.
@@ -111,7 +54,6 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
   const [missedCalls, setMissedCalls] = useState<KioskCall[]>([])
   const [recoveredCalls, setRecoveredCalls] = useState<KioskCall[]>([])
   const [ignoredCalls, setIgnoredCalls] = useState<KioskCall[]>([])
-  const [voicemails, setVoicemails] = useState<Voicemail[]>([])
   const [loading, setLoading] = useState(true)
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
@@ -136,22 +78,20 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
     }
   }, [tenantId, token])
 
-  // Fetch all tabs (+ voicemails when the tenant has capture on)
+  // Fetch all tabs
   const fetchAllTabs = useCallback(async () => {
     if (!tenantId || !token) return
     setLoading(true)
-    const [missed, recovered, ignored, vms] = await Promise.all([
+    const [missed, recovered, ignored] = await Promise.all([
       fetchTab('missed'),
       fetchTab('recovered'),
       fetchTab('ignored'),
-      voicemailEnabled ? fetchVoicemails(tenantId, token) : Promise.resolve([] as Voicemail[]),
     ])
     setMissedCalls(missed)
     setRecoveredCalls(recovered)
     setIgnoredCalls(ignored)
-    setVoicemails(vms)
     setLoading(false)
-  }, [tenantId, token, fetchTab, voicemailEnabled])
+  }, [tenantId, token, fetchTab])
 
   // Initial fetch + poll every 30 seconds
   useEffect(() => {
@@ -302,9 +242,13 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
     }, 500)
   }, [session, showToast])
 
-  // Which calls to show
-  const visibleCalls = activeTab === 'missed' ? sortedMissed
-    : activeTab === 'recovered' ? dedupedRecovered
+  // Which calls to show. The Voicemails tab is never shown on this surface
+  // (Live + voicemail tenants route to the coexistence kiosk instead), so the
+  // active tab is always one of the three call variants here.
+  const callVariant: 'missed' | 'recovered' | 'ignored' =
+    activeTab === 'recovered' ? 'recovered' : activeTab === 'ignored' ? 'ignored' : 'missed'
+  const visibleCalls = callVariant === 'missed' ? sortedMissed
+    : callVariant === 'recovered' ? dedupedRecovered
     : dedupedIgnored
 
   const bg = dark ? '#0a0a0a' : '#F5EDE6'
@@ -336,8 +280,6 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
         ignoredCount={dedupedIgnored.length}
         breachedCount={breachedCount}
         dark={dark}
-        showVoicemails={voicemailEnabled}
-        voicemailCount={voicemails.length}
       />
 
       {/* Card grid */}
@@ -375,8 +317,6 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
             </span>
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           </div>
-        ) : activeTab === 'voicemails' ? (
-          <VoicemailPanel voicemails={voicemails} categories={voicemailCategories} dark={dark} />
         ) : visibleCalls.length === 0 ? (
           <div
             style={{
@@ -411,7 +351,7 @@ function KioskContent({ voicemailTenant }: { voicemailTenant?: Tenant | null }) 
                 key={call.id}
                 call={call}
                 dark={dark}
-                variant={activeTab}
+                variant={callVariant}
                 selected={selectedCardId === call.id}
                 onSelect={activeTab === 'missed' ? handleSelectCard : undefined}
                 onCallBack={activeTab === 'missed' && !imp.readOnly ? handleCallBack : undefined}
@@ -634,12 +574,25 @@ function KioskRouter() {
   // degrades gracefully to empty states.
   if (!tenantId) return <KioskContent />
   // Resolving the tenant config.
-  if (resolving || !tenant) return <KioskRouteLoading />
+  if (resolving) return <KioskRouteLoading />
+  // Config unresolved (backend failure): degrade to the SLA kiosk rather than
+  // masking the failure with a mock voicemail tenant (arch fact #362).
+  if (!tenant) return <KioskContent />
   // Branch at the page level so neither side carries the other's cost.
+  // Live + voicemail tenant (e.g. Thecha): the coexistence kiosk — the SLA
+  // live surface with the nested Layout C voicemail treatment under the
+  // Voicemails tab. Gated on call_setup_path + voicemail_enabled, NOT
+  // routing_mode (which derives 'sla' for live tenants and so never matched
+  // the prototype's gate) — see arch fact #362.
+  if (tenant.call_setup_path === 'live' && tenant.voicemail_enabled) {
+    return <CoexistKiosk tenant={tenant} />
+  }
+  // Pure voicemail tenant: the standalone Layout C kiosk, unchanged.
   if (tenant.routing_mode === 'voicemail') {
     return <VoicemailKioskPage tenant={tenant} />
   }
-  return <KioskContent voicemailTenant={tenant} />
+  // SLA-only tenant.
+  return <KioskContent />
 }
 
 export default function KioskPage() {
