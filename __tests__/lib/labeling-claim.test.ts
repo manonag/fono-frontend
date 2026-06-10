@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { LabelingApiError, fetchQueue } from '@/app/admin/labeling/lib/api'
+import {
+  LabelingApiError,
+  fetchQueue,
+  reassignRecording,
+} from '@/app/admin/labeling/lib/api'
 import { friendlyClaimError } from '@/app/admin/labeling/lib/errors'
 
 // Phase C.3 Sprint 1 (Bite 3): the labeler experience routes claim/queue
@@ -82,5 +86,29 @@ describe('fetchQueue scoping', () => {
     await fetchQueue('tok', { filter: 'in_review', sort: 'duration_desc' })
     expect(urls[0]).toContain('status=in_review')
     expect(urls[0]).not.toContain('view=')
+  })
+})
+
+describe('reassignRecording', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs to /reassign with the target labeler id in the body', async () => {
+    let capturedUrl = ''
+    let capturedInit: RequestInit | undefined
+    global.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(url)
+      capturedInit = init
+      return { ok: true, json: async () => ({ recording_id: 'r1' }) } as Response
+    }) as unknown as typeof fetch
+
+    await reassignRecording('tok', 'rec-1', 'user-2')
+
+    expect(capturedUrl).toContain('/rec-1/reassign')
+    expect(capturedInit?.method).toBe('POST')
+    expect(JSON.parse(String(capturedInit?.body))).toEqual({
+      new_labeler_user_id: 'user-2',
+    })
   })
 })

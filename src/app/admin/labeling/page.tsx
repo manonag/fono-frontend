@@ -8,6 +8,9 @@ import { QueuePane } from './components/QueuePane'
 import { ResizableSplit } from './components/ResizableSplit'
 import { ReviewPane } from './components/ReviewPane'
 import { StatsHeader } from './components/StatsHeader'
+import { ClaimsSummary } from './components/ClaimsSummary'
+import { ReassignModal } from './components/ReassignModal'
+import { ConfirmModal } from '@/components/confirm-modal'
 import { AdjudicateMode } from './adjudicate/AdjudicateMode'
 import {
   LabelingApiError,
@@ -18,6 +21,7 @@ import {
   fetchRecording,
   fetchStats,
   patchRecording,
+  reassignRecording,
   releaseRecording,
   swapAllSpeakers,
 } from './lib/api'
@@ -72,6 +76,13 @@ export default function LabelingPage() {
   // Page-level toast for claim actions (pick up / release) that originate in
   // the queue, not the editor. Friendly copy routed off the structured error.
   const [pageToast, setPageToast] = useState<string | null>(null)
+  // Bite 4 owner claim actions. reassignId / forceReleaseId hold the row the
+  // owner is acting on (drives the modals); the *ing flags disable while in
+  // flight. Both actions are explicit (two-step) and audit-logged server-side.
+  const [reassignId, setReassignId] = useState<string | null>(null)
+  const [reassigning, setReassigning] = useState(false)
+  const [forceReleaseId, setForceReleaseId] = useState<string | null>(null)
+  const [forceReleasing, setForceReleasing] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [recording, setRecording] = useState<RecordingDetail | null>(null)
@@ -431,6 +442,50 @@ export default function LabelingPage() {
     }
   }, [token, selectedId, fetchScopedQueue, loadStats])
 
+  // Bite 4 owner: reassign a claim to another labeler (explicit two-step:
+  // the row menu opens the picker, the picker confirms). Audit-logged server
+  // side. On success refetch the owner queue + stats so chips/summary update.
+  const doReassign = useCallback(
+    async (newUserId: string) => {
+      if (!token || !reassignId) return
+      setReassigning(true)
+      try {
+        await reassignRecording(token, reassignId, newUserId)
+        const queueRes = await fetchScopedQueue(token)
+        setQueue(queueRes.items)
+        setQueueTotal(queueRes.total)
+        void loadStats()
+        setPageToast('Claim reassigned.')
+        setReassignId(null)
+      } catch (err) {
+        setPageToast(friendlyClaimError(err))
+      } finally {
+        setReassigning(false)
+      }
+    },
+    [token, reassignId, fetchScopedQueue, loadStats],
+  )
+
+  // Bite 4 owner: force-release any claim (confirm dialog gates it). Uses the
+  // shared release endpoint; the backend audits it as claim_force_release.
+  const doForceRelease = useCallback(async () => {
+    if (!token || !forceReleaseId) return
+    setForceReleasing(true)
+    try {
+      await releaseRecording(token, forceReleaseId)
+      const queueRes = await fetchScopedQueue(token)
+      setQueue(queueRes.items)
+      setQueueTotal(queueRes.total)
+      void loadStats()
+      setPageToast('Claim released.')
+      setForceReleaseId(null)
+    } catch (err) {
+      setPageToast(friendlyClaimError(err))
+    } finally {
+      setForceReleasing(false)
+    }
+  }, [token, forceReleaseId, fetchScopedQueue, loadStats])
+
   // ReviewPane's demote button operates on the currently selected row.
   const handlePaneDemote = useCallback(
     (target: 'auto_labeled' | 'verified') => {
@@ -556,6 +611,7 @@ export default function LabelingPage() {
             activeLabelers={activeLabelers}
           />
           <StatsHeader stats={stats} onRefresh={loadStats} refreshing={statsRefreshing} />
+          {!isLabeler && <ClaimsSummary byLabeler={stats?.by_labeler} />}
           <ResizableSplit
             className="flex-1 min-h-0"
             initialLeftWidth="33%"
@@ -577,6 +633,8 @@ export default function LabelingPage() {
                 onViewChange={handleViewChange}
                 onPickUp={handlePickUp}
                 pickingUpId={pickingUpId}
+                onReassign={setReassignId}
+                onForceRelease={setForceReleaseId}
               />
             }
             right={
@@ -592,6 +650,36 @@ export default function LabelingPage() {
                 onRelease={handleRelease}
               />
             }
+          />
+          <ReassignModal
+            open={reassignId !== null}
+            rowLabel={reassignId ? `${reassignId.slice(0, 8)}…` : ''}
+            currentHolderName={
+              queue.find((i) => i.recording_id === reassignId)?.claimed_by_name ??
+              null
+            }
+            labelers={(stats?.by_labeler ?? []).filter(
+              (u) => u.role === 'labeler' && u.active,
+            )}
+            reassigning={reassigning}
+            onCancel={() => setReassignId(null)}
+            onConfirm={doReassign}
+          />
+          <ConfirmModal
+            open={forceReleaseId !== null}
+            title="Force release this claim?"
+            description={
+              'This returns the recording to the Pending pool for anyone to pick up. ' +
+              (queue.find((i) => i.recording_id === forceReleaseId)?.claimed_by_name
+                ? `${queue.find((i) => i.recording_id === forceReleaseId)?.claimed_by_name}'s in-progress edits stay on the recording. `
+                : '') +
+              'This action is logged.'
+            }
+            confirmLabel={forceReleasing ? 'Releasing…' : 'Force release'}
+            cancelLabel="Cancel"
+            variant="warning"
+            onCancel={() => setForceReleaseId(null)}
+            onConfirm={doForceRelease}
           />
         </>
       )}

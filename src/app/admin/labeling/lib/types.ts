@@ -159,6 +159,9 @@ export interface LabelerCounts {
   in_review: number
   rejected: number
   total: number
+  // Phase C.3 Sprint 1: live open-claim count (claimed_by_user_id = this
+  // user). Optional for deploy-order safety; treat absent as 0.
+  claimed?: number
 }
 
 export interface LabelerSummary {
@@ -263,6 +266,15 @@ export interface ReleaseResult {
   status_after: Status
   fields_updated: string[]
   released_claim_of_user_id: string | null
+  audit_action: string
+  audit_extra: Record<string, unknown>
+}
+
+export interface ReassignResult {
+  recording_id: string
+  claimed_by_user_id: string
+  claimed_at: string
+  status: Status
   audit_action: string
   audit_extra: Record<string, unknown>
 }

@@ -7,6 +7,7 @@ import type {
   PatchPayload,
   QueueFilter,
   QueueResponse,
+  ReassignResult,
   RecordingDetail,
   ReleaseResult,
   ReviewQueueResponse,
@@ -195,6 +196,7 @@ export async function claimRecording(
 }
 
 // Release a held claim back to the unclaimed pool (Release back to queue).
+// Owners may force-release anyone's claim through the same endpoint.
 export async function releaseRecording(
   token: string,
   recordingId: string,
@@ -202,6 +204,21 @@ export async function releaseRecording(
   const res = await fetch(`${BASE}/${recordingId}/release`, {
     method: 'POST',
     headers: authHeaders(token),
+  })
+  if (!res.ok) throw await errorFromResponse(res)
+  return res.json()
+}
+
+// Owner-only: move a claim to another labeler. Audit-logged server-side.
+export async function reassignRecording(
+  token: string,
+  recordingId: string,
+  newLabelerUserId: string,
+): Promise<ReassignResult> {
+  const res = await fetch(`${BASE}/${recordingId}/reassign`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_labeler_user_id: newLabelerUserId }),
   })
   if (!res.ok) throw await errorFromResponse(res)
   return res.json()

@@ -31,6 +31,10 @@ interface QueuePaneProps {
   onViewChange: (view: LabelerView) => void
   onPickUp: (recordingId: string) => void
   pickingUpId: string | null
+  // Bite 4 owner claim actions. The page owns the confirm / picker dialogs;
+  // these just signal which row the owner chose to act on.
+  onReassign: (recordingId: string) => void
+  onForceRelease: (recordingId: string) => void
 }
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
@@ -79,6 +83,8 @@ export function QueuePane({
   onViewChange,
   onPickUp,
   pickingUpId,
+  onReassign,
+  onForceRelease,
 }: QueuePaneProps) {
   const isLabeler = role === 'labeler'
   const labelerPending = isLabeler && view === 'pending'
@@ -195,6 +201,9 @@ export function QueuePane({
             const menuOpen = openMenuId === item.recording_id
             const rowDemoting = demotingId === item.recording_id
             const rowPickingUp = pickingUpId === item.recording_id
+            // Owner-only: this row currently has a claim, so the owner can
+            // reassign or force-release it from the row menu.
+            const rowClaimed = !isLabeler && item.claimed_by_user_id !== null
             // Owner sent this row back: it lives in the labeler My Queue and
             // needs a visible "returned" treatment so the round trip is noticed.
             const returnedByOwner = isLabeler && item.status === 'suggestions_pending'
@@ -264,6 +273,14 @@ export function QueuePane({
                         ↩ Returned by owner
                       </span>
                     )}
+                    {!isLabeler && item.claimed_by_name && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-terra/10 text-terra"
+                        title={`Claimed by ${item.claimed_by_name}`}
+                      >
+                        ✋ {item.claimed_by_name}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-ink leading-snug line-clamp-2">
                     {/* T-2d16e333 followup: show verified-edited preview
@@ -291,7 +308,7 @@ export function QueuePane({
                     </span>
                   )}
                 </button>
-                {demoteTarget && !lockedByOther && (
+                {(demoteTarget || rowClaimed) && !lockedByOther && (
                   <div
                     ref={menuOpen ? menuContainerRef : null}
                     className={
@@ -318,23 +335,53 @@ export function QueuePane({
                     {menuOpen && (
                       <div
                         role="menu"
-                        className="absolute right-0 top-full mt-1 w-44 rounded border border-ink/15 bg-white shadow-lg z-10"
+                        className="absolute right-0 top-full mt-1 w-48 rounded border border-ink/15 bg-white shadow-lg z-10"
                       >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setOpenMenuId(null)
-                            setDemotingId(item.recording_id)
-                            void onDemote(item.recording_id, demoteTarget).finally(
-                              () => setDemotingId(null),
-                            )
-                          }}
-                          className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
-                        >
-                          {demoteLabel}
-                        </button>
+                        {demoteTarget && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuId(null)
+                              setDemotingId(item.recording_id)
+                              void onDemote(item.recording_id, demoteTarget).finally(
+                                () => setDemotingId(null),
+                              )
+                            }}
+                            className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
+                          >
+                            {demoteLabel}
+                          </button>
+                        )}
+                        {rowClaimed && (
+                          <>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenMenuId(null)
+                                onReassign(item.recording_id)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
+                            >
+                              Reassign claim…
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenMenuId(null)
+                                onForceRelease(item.recording_id)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50"
+                            >
+                              Force release
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
