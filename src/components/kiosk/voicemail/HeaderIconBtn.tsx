@@ -24,6 +24,7 @@ interface HeaderIconBtnProps {
   armed?: boolean // phone variant only - confirm-in-place armed state
   expanded?: boolean // chev variant only - rotates the chevron 180deg
   title?: string // tooltip override (falls back to `label`)
+  disabled?: boolean // read-only impersonation: visibly inert write action
 }
 
 const KIND_CLASS: Record<HeaderIconBtnProps['kind'], string> = {
@@ -39,16 +40,23 @@ export function HeaderIconBtn({
   armed,
   expanded,
   title,
+  disabled,
 }: HeaderIconBtnProps) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       title={title ?? label}
       // Attribute, not a class, so the CSS-module hashing leaves it alone.
-      data-armed={kind === 'phone' && armed ? 'true' : undefined}
-      className={cn(styles.tap48, styles.hib, KIND_CLASS[kind])}
+      data-armed={kind === 'phone' && armed && !disabled ? 'true' : undefined}
+      className={cn(
+        styles.tap48,
+        styles.hib,
+        KIND_CLASS[kind],
+        disabled && 'cursor-not-allowed opacity-40',
+      )}
     >
       {kind === 'check' ? <IconCheck w={15} h={15} sw={2.4} /> : null}
       {kind === 'chev' ? (

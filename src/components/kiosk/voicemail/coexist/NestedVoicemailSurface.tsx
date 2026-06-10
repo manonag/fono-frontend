@@ -38,6 +38,7 @@ interface NestedVoicemailSurfaceProps {
   dark: boolean
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
+  readOnly?: boolean
 }
 
 export function NestedVoicemailSurface({
@@ -49,6 +50,7 @@ export function NestedVoicemailSurface({
   dark,
   onStatusChange,
   onReclassify,
+  readOnly = false,
 }: NestedVoicemailSurfaceProps) {
   // Spine category tabs: "All" + one per tenant category, each counted within
   // the active status tab (matches the standalone KioskPage computation).
@@ -89,6 +91,7 @@ export function NestedVoicemailSurface({
           categories={categories}
           onStatusChange={onStatusChange}
           onReclassify={onReclassify}
+          readOnly={readOnly}
         />
       </main>
     </div>

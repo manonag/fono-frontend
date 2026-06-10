@@ -91,6 +91,10 @@ export interface VoicemailCardProps {
   categories: Category[]
   onStatusChange: (id: string, status: Status) => void
   onReclassify: (id: string, key: IntentKey) => void
+  // Read-only impersonation (admin "View as Tenant"): write affordances
+  // (resolve / hide / reclassify / call) render visibly disabled rather than
+  // silently no-op'ing. Defaults false so the standalone kiosk is unaffected.
+  readOnly?: boolean
 }
 
 // ---------------------------------------------------------------------------

@@ -399,6 +399,7 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
             dark={dark}
             onStatusChange={onStatusChange}
             onReclassify={onReclassify}
+            readOnly={readOnly}
           />
         ) : (
           <div className={styles.liveBody}>
