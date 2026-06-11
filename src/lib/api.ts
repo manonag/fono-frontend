@@ -360,9 +360,9 @@ function isTenantConfig(value: unknown): value is Tenant {
 
 /**
  * Tenant config for the kiosk route branch: routing_mode, call_setup_path,
- * voicemail_enabled + per-tenant category display names. Returns null when the
- * config cannot be resolved, so the kiosk router degrades to the SLA surface
- * rather than masking the failure with a mock voicemail tenant.
+ * voicemail_enabled, sla_enabled + per-tenant category display names. Returns
+ * null when the config cannot be resolved, so the kiosk router degrades to the
+ * SLA surface rather than masking the failure with a mock voicemail tenant.
  */
 export async function fetchTenantVoicemailConfig(
   tenantId: string,
@@ -382,6 +382,10 @@ export async function fetchTenantVoicemailConfig(
           ...data,
           id: data.id || tenantId,
           name: data.name || tenantName,
+          // DEFAULT TRUE: coerce an absent/non-false value to true so a missing
+          // field never flips a tenant into voicemail-led mode. Matches the
+          // backend default-true column (BE PR #33).
+          sla_enabled: data.sla_enabled !== false,
         }
       }
     }
