@@ -20,6 +20,7 @@ import { CategoriesChipCard, type CategoryChipModel } from '@/components/categor
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
 import { VoicemailCaptureCard } from '@/components/voicemail-capture-card'
 import { SlaTrackingCard } from '@/components/sla-tracking-card'
+import { VoicemailGreetingCard } from '@/components/voicemail-greeting-card'
 import { CallRoutingCard } from '@/components/call-routing-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
 import { SettingsCard as VsCard, SettingsButton, Banner, FieldLabel, HelperText, tokens } from '@/components/settings-primitives'
@@ -685,9 +686,12 @@ function CallsStateC() {
   // Default true: sla_enabled is a default-true backend column, so absence
   // (older payloads / pre-migration) reads as ON.
   const [slaTrackingOn, setSlaTrackingOn] = useState(true)
+  const [greetingText, setGreetingText] = useState('')
   const [cats, setCats] = useState<CategoryChipModel[]>([])
   const [catsBusy, setCatsBusy] = useState(false)
   const phoneDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const greetingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedGreeting = useRef('')
 
   useEffect(() => {
     if (!tid || tid === 'all' || !token) return
@@ -719,6 +723,8 @@ function CallsStateC() {
       setNotifyOn(data.whatsapp_alerts_enabled !== false)
       setVoicemailOn(Boolean(data.voicemail_enabled))
       setSlaTrackingOn(data.sla_enabled !== false)
+      setGreetingText((data.voicemail_greeting_text as string) || '')
+      lastSavedGreeting.current = (data.voicemail_greeting_text as string) || ''
       if (Array.isArray(catData?.categories)) setCats(catData.categories as CategoryChipModel[])
       setLoading(false)
     })
@@ -836,6 +842,32 @@ function CallsStateC() {
     }
   }
 
+  // Voicemail greeting (voicemail_greeting_text). Optimistic local edit;
+  // debounced PATCH; rollback to the last saved value + error on failure.
+  const handleGreetingChange = (v: string) => {
+    if (imp.readOnly) return
+    setGreetingText(v)
+    setSaveError('')
+    if (greetingDebounce.current) clearTimeout(greetingDebounce.current)
+    greetingDebounce.current = setTimeout(async () => {
+      if (!tid || tid === 'all' || !token) return
+      const prev = lastSavedGreeting.current
+      try {
+        const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ voicemail_greeting_text: v }),
+        })
+        if (!res.ok) throw new Error(String(res.status))
+        lastSavedGreeting.current = v
+      } catch {
+        setGreetingText(prev)
+        lastSavedGreeting.current = prev
+        setSaveError('Could not save the voicemail greeting. Please try again.')
+      }
+    }, 800)
+  }
+
   const handleNotifyPhone = (v: string) => {
     setNotifyPhone(v)
     if (phoneDebounce.current) clearTimeout(phoneDebounce.current)
@@ -928,6 +960,16 @@ function CallsStateC() {
       <VoicemailCaptureCard
         on={voicemailOn}
         onToggle={imp.readOnly ? undefined : handleVoicemailToggle}
+      />
+
+      {/* Voicemail greeting — the tenant's custom message after the automatic
+          hours-aware lead-in (voicemail_greeting_text). Sibling to Voicemail
+          capture. */}
+      <SectionLabel num={null} title="Voicemail greeting" blurb="What callers hear before they leave a voicemail." />
+      <VoicemailGreetingCard
+        value={greetingText}
+        max={400}
+        onChange={imp.readOnly ? undefined : handleGreetingChange}
       />
 
       {/* 04 Categories — wired to the T-306 CRUD (Option A: surface a key + rename label) */}
