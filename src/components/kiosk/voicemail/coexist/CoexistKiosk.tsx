@@ -176,7 +176,10 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
     [dedupedMissed, now],
   )
 
-  const inVoicemail = topTab === 'voicemails'
+  // sla_enabled === false -> voicemail-led: the body is ALWAYS the nested
+  // voicemail surface (topTab is irrelevant), and the live tabs/segmented are
+  // replaced by promoted status tabs. See CD sla_off delta brief.
+  const inVoicemail = !tenant.sla_enabled || topTab === 'voicemails'
   const liveCount = useCallback(
     (t: TopTab) =>
       t === 'missed'
@@ -347,7 +350,9 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
         </span>
         <span className={styles.tenant}>
           <span className={styles.tenantName}>{tenant.name}</span>
-          <span className={styles.tenantTag}>Live + Voicemail</span>
+          <span className={styles.tenantTag}>
+            {tenant.sla_enabled ? 'Live + Voicemail' : 'Voicemail'}
+          </span>
         </span>
         <span className={styles.live} title={syncSeconds === null ? 'Live' : `Last sync ${syncSeconds}s ago`}>
           <span className={styles.liveDot} aria-hidden="true" /> Live
@@ -366,47 +371,74 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
       </header>
 
       {/* ── Single top tab bar ── */}
+      {/* sla_enabled: live tabs + divider + Voicemails tab + right-aligned
+          segmented (as shipped). !sla_enabled (voicemail-led): VOICEMAILS
+          surface label + divider + New/Resolved/Hidden promoted to primary
+          sage tabs; no live tabs, no segmented. CD sla_off delta brief. */}
       <nav className={styles.tabs}>
-        {(['missed', 'recovered', 'ignored'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={styles.tab}
-            data-active={topTab === t ? 'true' : undefined}
-            onClick={() => switchTab(t)}
-          >
-            {t === 'missed' ? 'Missed' : t === 'recovered' ? 'Recovered' : 'Ignored'}{' '}
-            <span className={styles.tabCnt}>{String(liveCount(t)).padStart(2, '0')}</span>
-          </button>
-        ))}
+        {tenant.sla_enabled ? (
+          <>
+            {(['missed', 'recovered', 'ignored'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={styles.tab}
+                data-active={topTab === t ? 'true' : undefined}
+                onClick={() => switchTab(t)}
+              >
+                {t === 'missed' ? 'Missed' : t === 'recovered' ? 'Recovered' : 'Ignored'}{' '}
+                <span className={styles.tabCnt}>{String(liveCount(t)).padStart(2, '0')}</span>
+              </button>
+            ))}
 
-        <span className={styles.tabDivider} aria-hidden="true" />
+            <span className={styles.tabDivider} aria-hidden="true" />
 
-        <button
-          type="button"
-          className={`${styles.tab} ${styles.tabVm}`}
-          data-active={inVoicemail ? 'true' : undefined}
-          onClick={() => switchTab('voicemails')}
-        >
-          Voicemails <span className={styles.tabCnt}>{String(vmNewCount).padStart(2, '0')}</span>
-        </button>
+            <button
+              type="button"
+              className={`${styles.tab} ${styles.tabVm}`}
+              data-active={inVoicemail ? 'true' : undefined}
+              onClick={() => switchTab('voicemails')}
+            >
+              Voicemails <span className={styles.tabCnt}>{String(vmNewCount).padStart(2, '0')}</span>
+            </button>
 
-        {/* Status segmented — voicemail mode only, right-aligned. */}
-        {inVoicemail ? (
-          <span className={styles.statusSeg}>
+            {/* Status segmented — voicemail mode only, right-aligned. */}
+            {inVoicemail ? (
+              <span className={styles.statusSeg}>
+                {statusOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    className={styles.segBtn}
+                    data-active={vmStatus === o.value ? 'true' : undefined}
+                    onClick={() => setVmStatus(o.value)}
+                  >
+                    {o.label} <span className={styles.segCnt}>{String(o.count).padStart(2, '0')}</span>
+                  </button>
+                ))}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {/* Voicemail-led: the status tabs ARE the primary nav, wearing the
+                sage voicemail accent. A quiet non-interactive surface label
+                anchors the bar where the live tabs used to be. */}
+            <span className={styles.surfaceLabel}>Voicemails</span>
+            <span className={styles.tabDivider} aria-hidden="true" />
             {statusOptions.map((o) => (
               <button
                 key={o.value}
                 type="button"
-                className={styles.segBtn}
+                className={`${styles.tab} ${styles.tabVm}`}
                 data-active={vmStatus === o.value ? 'true' : undefined}
                 onClick={() => setVmStatus(o.value)}
               >
-                {o.label} <span className={styles.segCnt}>{String(o.count).padStart(2, '0')}</span>
+                {o.label} <span className={styles.tabCnt}>{String(o.count).padStart(2, '0')}</span>
               </button>
             ))}
-          </span>
-        ) : null}
+          </>
+        )}
       </nav>
 
       {/* ── Body (cross-fade) ── */}

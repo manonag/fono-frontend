@@ -54,6 +54,13 @@ export interface Tenant {
   // tab renders the nested Layout C surface (coexistence variant); this flag
   // gates that tab's visibility.
   voicemail_enabled: boolean
+  // Owner-facing SLA-tracking toggle (BE PR #33). true = the coexistence kiosk
+  // shows the Live/SLA tabs as shipped; false = voicemail-led (Missed/Recovered/
+  // Ignored + the Voicemails tab/segmented are hidden, New/Resolved/Hidden are
+  // promoted to primary sage tabs). DEFAULT TRUE: fetchTenantVoicemailConfig
+  // coerces an absent field to true so a missing value never flips a tenant
+  // into voicemail-led mode (the PR #28 type-without-mapping lesson).
+  sla_enabled: boolean
   categories: Category[]
 }
 
