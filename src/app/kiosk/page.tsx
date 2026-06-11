@@ -12,6 +12,7 @@ import { StatsBar } from './components/stats-bar'
 import { config } from '@/lib/config'
 import { useFonoToken } from '@/hooks/use-fono-token'
 import { useImpersonation } from '@/lib/impersonation'
+import { KioskSessionProvider, useKioskSession } from '@/lib/kiosk-session'
 import { useRestaurant } from '@/lib/restaurant-context'
 import { fetchTenantVoicemailConfig } from '@/lib/api'
 import { KioskPage as VoicemailKioskPage } from '@/components/kiosk/voicemail/KioskPage'
@@ -539,6 +540,7 @@ function KioskRouter() {
   const { data: session, status } = useSession()
   const token = useFonoToken()
   const imp = useImpersonation()
+  const kiosk = useKioskSession()
   const searchParams = useSearchParams()
   const urlTenantId = searchParams.get('tenant')
   const userTenants = (session?.tenants || []) as Array<{ id: string; name: string }>
@@ -568,6 +570,18 @@ function KioskRouter() {
     }
   }, [tenantId, tenantName, token])
 
+  // Kiosk-by-token (counter tablet, /kiosk?token=) takes priority: the token
+  // exchange yields both the writable session JWT (via useFonoToken) and the
+  // tenant config, so we dispatch off it directly without the session/tenant
+  // resolution below. Invalid/expired token -> a clear message, never a crash.
+  if (kiosk.active) {
+    if (kiosk.status === 'error' || (kiosk.status === 'ready' && !kiosk.tenant)) {
+      return <KioskTokenError message={kiosk.error} />
+    }
+    if (kiosk.status !== 'ready' || !kiosk.tenant) return <KioskRouteLoading />
+    return dispatchTenant(kiosk.tenant)
+  }
+
   // Session still settling.
   if (status === 'loading') return <KioskRouteLoading />
   // No tenant resolvable: fall back to the existing SLA kiosk, which
@@ -578,27 +592,45 @@ function KioskRouter() {
   // Config unresolved (backend failure): degrade to the SLA kiosk rather than
   // masking the failure with a mock voicemail tenant (arch fact #362).
   if (!tenant) return <KioskContent />
-  // Branch at the page level so neither side carries the other's cost.
-  // Live + voicemail tenant (e.g. Thecha): the coexistence kiosk — the SLA
-  // live surface with the nested Layout C voicemail treatment under the
-  // Voicemails tab. Gated on call_setup_path + voicemail_enabled, NOT
-  // routing_mode (which derives 'sla' for live tenants and so never matched
-  // the prototype's gate) — see arch fact #362.
+  return dispatchTenant(tenant)
+}
+
+// Dispatch a resolved tenant to its kiosk surface. Live + voicemail tenant
+// (e.g. Thecha): the coexistence kiosk — the SLA live surface with the nested
+// Layout C voicemail treatment. Gated on call_setup_path + voicemail_enabled,
+// NOT routing_mode (which derives 'sla' for live tenants and so never matched
+// the prototype's gate) — see arch fact #362. Pure voicemail tenant: the
+// standalone Layout C kiosk. Otherwise the existing SLA kiosk.
+function dispatchTenant(tenant: Tenant) {
   if (tenant.call_setup_path === 'live' && tenant.voicemail_enabled) {
     return <CoexistKiosk tenant={tenant} />
   }
-  // Pure voicemail tenant: the standalone Layout C kiosk, unchanged.
   if (tenant.routing_mode === 'voicemail') {
     return <VoicemailKioskPage tenant={tenant} />
   }
-  // SLA-only tenant.
   return <KioskContent />
+}
+
+// Full-screen message when a kiosk_token cannot be resolved (invalid, replaced,
+// or the server is unreachable). No Google login, no crash — the counter tablet
+// just shows what to do next.
+function KioskTokenError({ message }: { message: string | null }) {
+  return (
+    <div className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-cream px-6 text-center">
+      <span className="text-[15px] font-semibold text-ink">Kiosk unavailable</span>
+      <span className="max-w-sm text-[13px] leading-relaxed text-brown">
+        {message ?? 'This kiosk link could not be opened.'}
+      </span>
+    </div>
+  )
 }
 
 export default function KioskPage() {
   return (
     <Suspense>
-      <KioskRouter />
+      <KioskSessionProvider>
+        <KioskRouter />
+      </KioskSessionProvider>
     </Suspense>
   )
 }
