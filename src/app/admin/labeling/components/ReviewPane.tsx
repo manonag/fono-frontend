@@ -9,6 +9,7 @@ import { CollapsibleTagPanel } from './CollapsibleTagPanel'
 import { SaveControls } from './SaveControls'
 import { LabelerSaveControls } from './LabelerSaveControls'
 import { SuggestionsResolvePane } from './SuggestionsResolvePane'
+import { ownsClaim as computeOwnsClaim } from '../lib/claim-ownership'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
 import type {
@@ -43,6 +44,9 @@ interface ReviewPaneProps {
   // on the currently selected recording (labeler only).
   role: 'owner' | 'labeler'
   onRelease: () => Promise<{ ok: boolean; error?: string }>
+  // Current user id, to gate owned-claim actions (swap) on the loaded
+  // recording's claimed_by_user_id.
+  currentUserId: string | null
 }
 
 interface FormState {
@@ -73,7 +77,7 @@ function normalizeSpeakerId(rawId: string): string {
   return /^\d+$/.test(rawId) ? `speaker_${rawId}` : rawId
 }
 
-function buildState(rec: RecordingDetail): {
+function buildState(rec: RecordingDetail, isLabeler: boolean): {
   form: FormState
   initial: InitialSnapshot
 } {
@@ -122,8 +126,15 @@ function buildState(rec: RecordingDetail): {
   //      in_review mismatch that the previous default produced.
   // For every other status (in_review, suggestions_pending, verified,
   // gold), the dropdown reflects rec.status as-is.
+  //
+  // Labelers have no status dropdown (Submit always forces in_review and
+  // releases the claim), so the auto_labeled -> in_review pre-promotion would
+  // only make the form falsely dirty on open, which in turn disabled Swap all
+  // speakers on a freshly-claimed row (Sprint 1 escape). For labelers keep
+  // status == rec.status so a just-opened owned row is clean and swap is
+  // available.
   const defaultFormStatus: Status =
-    rec.status === 'auto_labeled' ? 'in_review' : rec.status
+    !isLabeler && rec.status === 'auto_labeled' ? 'in_review' : rec.status
 
   return {
     form: { verified_segments: displayedSegments, status: defaultFormStatus, tags },
@@ -205,6 +216,7 @@ export function ReviewPane({
   onSwapSpeakers,
   role,
   onRelease,
+  currentUserId,
 }: ReviewPaneProps) {
   const isLabeler = role === 'labeler'
   const initialRef = useRef<InitialSnapshot | null>(null)
@@ -232,13 +244,13 @@ export function ReviewPane({
       setSaveError(null)
       return
     }
-    const { form: nextForm, initial } = buildState(recording)
+    const { form: nextForm, initial } = buildState(recording, isLabeler)
     initialRef.current = initial
     setForm(nextForm)
     setEditingIndex(null)
     setCurrentTime(0)
     setSaveError(null)
-  }, [recording])
+  }, [recording, isLabeler])
 
   useEffect(() => {
     if (!toast) return
@@ -547,6 +559,7 @@ export function ReviewPane({
           onSubmit={() => void doSubmit()}
           onRelease={() => void doRelease()}
           swapping={swapping}
+          ownsClaim={computeOwnsClaim(recording.claimed_by_user_id, currentUserId)}
           onSwapAllSpeakers={
             recording.status === 'auto_labeled' || recording.status === 'in_review'
               ? () => setShowSwapConfirm(true)

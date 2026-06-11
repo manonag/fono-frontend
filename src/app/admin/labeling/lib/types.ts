@@ -118,6 +118,10 @@ export interface RecordingDetail {
   lock_expires_at: string | null
   labeler_user_id: string | null
   reviewed_by_user_id: string | null
+  // Phase C.3 Sprint 1 claim fields (read-only). The editor gates owned-claim
+  // actions (Swap all speakers, segment ops) on claimed_by_user_id === me.
+  claimed_by_user_id: string | null
+  claimed_at: string | null
   reviewer_notes_for_labeler: string | null
   // Send-back-with-edits workflow (backend Commit 2). owner_segments is
   // null unless the row was sent back with inline edits; owner_review_at

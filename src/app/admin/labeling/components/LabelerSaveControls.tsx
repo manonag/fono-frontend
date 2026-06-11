@@ -16,6 +16,10 @@ interface LabelerSaveControlsProps {
   onRelease: () => void
   onSwapAllSpeakers?: () => void
   swapping?: boolean
+  // Whether the current user holds the claim on this recording. Owned-claim
+  // actions (swap all speakers) are enabled only when true. Gates on the
+  // claim, not the retired GET-time lock.
+  ownsClaim?: boolean
 }
 
 export function LabelerSaveControls({
@@ -28,6 +32,7 @@ export function LabelerSaveControls({
   onRelease,
   onSwapAllSpeakers,
   swapping = false,
+  ownsClaim = false,
 }: LabelerSaveControlsProps) {
   const busy = submitting || releasing || swapping
   return (
@@ -37,12 +42,14 @@ export function LabelerSaveControls({
           <button
             type="button"
             onClick={onSwapAllSpeakers}
-            disabled={busy || dirty}
+            disabled={busy || dirty || !ownsClaim}
             className="text-xs text-brown hover:text-ink underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
             title={
-              dirty
-                ? 'Save or submit pending edits before swap-all'
-                : 'Flips S1 and S2 across the ENTIRE recording. Use only when the whole recording is reversed.'
+              !ownsClaim
+                ? 'Pick this recording up to your queue before swapping speakers'
+                : dirty
+                  ? 'Save or submit pending edits before swap-all'
+                  : 'Flips S1 and S2 across the ENTIRE recording. Use only when the whole recording is reversed.'
             }
           >
             {swapping ? 'Swapping...' : 'Swap all speakers'}

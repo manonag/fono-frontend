@@ -648,6 +648,7 @@ export default function LabelingPage() {
                 onSwapSpeakers={handleSwapSpeakers}
                 role={isLabeler ? 'labeler' : 'owner'}
                 onRelease={handleRelease}
+                currentUserId={me?.user_id ?? null}
               />
             }
           />
