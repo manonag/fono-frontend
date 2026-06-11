@@ -95,6 +95,11 @@ export interface VoicemailCardProps {
   // (resolve / hide / reclassify / call) render visibly disabled rather than
   // silently no-op'ing. Defaults false so the standalone kiosk is unaffected.
   readOnly?: boolean
+  // Outbound callback bridge (coexistence kiosk). When provided, the phone
+  // button hands the voicemail id up so the parent opens the confirm-bridge
+  // modal + POSTs. When omitted (standalone kiosk), the card falls back to its
+  // tel: dialer stand-in.
+  onCall?: (id: string) => void
 }
 
 // ---------------------------------------------------------------------------

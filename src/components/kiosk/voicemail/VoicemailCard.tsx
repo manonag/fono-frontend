@@ -87,6 +87,7 @@ export function VoicemailCard({
   onStatusChange,
   onReclassify,
   readOnly = false,
+  onCall,
 }: VoicemailCardProps) {
   const vm = voicemail
   const processing = isProcessing(vm)
@@ -253,11 +254,21 @@ export function VoicemailCard({
         />
         <HeaderIconBtn
           kind="phone"
-          label={callArmed ? 'Tap again to call' : 'Call back'}
+          // With onCall (coexistence kiosk) the parent owns the confirm-bridge
+          // modal, so the card does a single hand-off tap; without it
+          // (standalone) the two-tap tel: arm stand-in stays.
+          label={onCall ? 'Call back' : callArmed ? 'Tap again to call' : 'Call back'}
           title={readOnly ? 'Read-only preview' : undefined}
-          armed={callArmed}
+          armed={onCall ? false : callArmed}
           disabled={readOnly}
-          onClick={armCall}
+          onClick={
+            onCall
+              ? (e) => {
+                  e.stopPropagation()
+                  onCall(vm.id)
+                }
+              : armCall
+          }
         />
       </>
     ) : (

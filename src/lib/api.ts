@@ -448,3 +448,19 @@ export async function patchVoicemailIntent(
   })
   if (!res.ok) throw new Error(`patchVoicemailIntent failed: ${res.status}`)
 }
+
+/**
+ * Initiate an outbound callback bridge for a voicemail: dials the caller first,
+ * then connects the tenant's callback_number on answer (same bridge the
+ * missed-call CALL BACK uses). Throws on failure so the caller can toast.
+ */
+export async function requestVoicemailCallback(
+  id: string,
+  token?: string,
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/callback`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`requestVoicemailCallback failed: ${res.status}`)
+}
