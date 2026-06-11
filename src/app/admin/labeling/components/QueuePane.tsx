@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatMmSs, truncate } from '../lib/formatters'
-import type { QueueFilter, QueueItem } from '../lib/types'
+import type { LabelerView, QueueFilter, QueueItem } from '../lib/types'
 import type { Status } from '../lib/enums'
 
 interface QueuePaneProps {
@@ -23,6 +23,18 @@ interface QueuePaneProps {
     recordingId: string,
     target: 'auto_labeled' | 'verified',
   ) => Promise<{ ok: boolean; error?: string }>
+  // Phase C.3 Sprint 1 labeler experience. For role='labeler' the tab row
+  // is Pending | My Queue (server-driven via view), Pending rows pick up a
+  // claim instead of opening the editor, and My Queue rows open the editor.
+  role: 'owner' | 'labeler'
+  view: LabelerView
+  onViewChange: (view: LabelerView) => void
+  onPickUp: (recordingId: string) => void
+  pickingUpId: string | null
+  // Bite 4 owner claim actions. The page owns the confirm / picker dialogs;
+  // these just signal which row the owner chose to act on.
+  onReassign: (recordingId: string) => void
+  onForceRelease: (recordingId: string) => void
 }
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
@@ -32,6 +44,11 @@ const FILTERS: Array<{ key: QueueFilter; label: string }> = [
   { key: 'suggestions_pending', label: 'Suggestions' },
   { key: 'verified', label: 'Verified' },
   { key: 'gold', label: 'Gold' },
+]
+
+const LABELER_TABS: Array<{ key: LabelerView; label: string }> = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'mine', label: 'My Queue' },
 ]
 
 const STATUS_BADGE_CLS: Record<Status, string> = {
@@ -61,7 +78,16 @@ export function QueuePane({
   onFilterChange,
   onSelect,
   onDemote,
+  role,
+  view,
+  onViewChange,
+  onPickUp,
+  pickingUpId,
+  onReassign,
+  onForceRelease,
 }: QueuePaneProps) {
+  const isLabeler = role === 'labeler'
+  const labelerPending = isLabeler && view === 'pending'
   const selectedRowRef = useRef<HTMLButtonElement | null>(null)
   // T-2d16e333: id of the row whose overflow menu is open (null = none).
   // Click-elsewhere on the document closes the menu.
@@ -95,23 +121,41 @@ export function QueuePane({
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
-          {FILTERS.map((f) => {
-            const active = filter === f.key
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => onFilterChange(f.key)}
-                className={
-                  active
-                    ? 'px-2.5 py-1 rounded-full text-xs font-semibold bg-terra text-white'
-                    : 'px-2.5 py-1 rounded-full text-xs font-medium bg-ink/5 text-ink hover:bg-ink/10'
-                }
-              >
-                {f.label}
-              </button>
-            )
-          })}
+          {isLabeler
+            ? LABELER_TABS.map((t) => {
+                const active = view === t.key
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => onViewChange(t.key)}
+                    className={
+                      active
+                        ? 'px-2.5 py-1 rounded-full text-xs font-semibold bg-terra text-white'
+                        : 'px-2.5 py-1 rounded-full text-xs font-medium bg-ink/5 text-ink hover:bg-ink/10'
+                    }
+                  >
+                    {t.label}
+                  </button>
+                )
+              })
+            : FILTERS.map((f) => {
+                const active = filter === f.key
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => onFilterChange(f.key)}
+                    className={
+                      active
+                        ? 'px-2.5 py-1 rounded-full text-xs font-semibold bg-terra text-white'
+                        : 'px-2.5 py-1 rounded-full text-xs font-medium bg-ink/5 text-ink hover:bg-ink/10'
+                    }
+                  >
+                    {f.label}
+                  </button>
+                )
+              })}
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -122,45 +166,73 @@ export function QueuePane({
           <p className="text-brown text-sm p-4">Loading queue…</p>
         )}
         {!loading && items.length === 0 && !error && (
-          <p className="text-brown text-sm p-4">No recordings match this filter.</p>
+          <p className="text-brown text-sm p-4">
+            {isLabeler
+              ? view === 'pending'
+                ? 'No recordings are waiting to be picked up.'
+                : 'You have not picked up any recordings yet. Grab one from Pending.'
+              : 'No recordings match this filter.'}
+          </p>
         )}
         <ul>
           {items.map((item, idx) => {
             const selected = item.recording_id === selectedId
+            // Locks are owner-only legacy surface; labelers are scoped to
+            // their own claimed rows (My Queue) or unclaimed rows (Pending),
+            // so a labeler never sees another user's lock.
             const lockedByOther =
+              !isLabeler &&
               item.lock_holder_user_id !== null &&
               item.lock_holder_user_id !== currentUserId
             // T-2d16e333: recovery action available on verified / gold rows.
+            // Owner-only; labelers never see verified/gold in their views.
             const demoteTarget: 'auto_labeled' | 'verified' | null =
-              item.status === 'verified'
-                ? 'auto_labeled'
-                : item.status === 'gold'
-                  ? 'verified'
-                  : null
+              isLabeler
+                ? null
+                : item.status === 'verified'
+                  ? 'auto_labeled'
+                  : item.status === 'gold'
+                    ? 'verified'
+                    : null
             const demoteLabel =
               demoteTarget === 'auto_labeled'
                 ? 'Send back to Pending'
                 : 'Demote to Verified'
             const menuOpen = openMenuId === item.recording_id
             const rowDemoting = demotingId === item.recording_id
+            const rowPickingUp = pickingUpId === item.recording_id
+            // Owner-only: this row currently has a claim, so the owner can
+            // reassign or force-release it from the row menu.
+            const rowClaimed = !isLabeler && item.claimed_by_user_id !== null
+            // Owner sent this row back: it lives in the labeler My Queue and
+            // needs a visible "returned" treatment so the round trip is noticed.
+            const returnedByOwner = isLabeler && item.status === 'suggestions_pending'
+            const handleRowClick = () =>
+              labelerPending
+                ? onPickUp(item.recording_id)
+                : onSelect(item.recording_id)
             return (
               <li key={item.recording_id} className="relative group">
                 <button
                   ref={selected ? selectedRowRef : undefined}
                   type="button"
-                  onClick={() => onSelect(item.recording_id)}
-                  disabled={lockedByOther}
+                  onClick={handleRowClick}
+                  disabled={lockedByOther || rowPickingUp}
                   title={
                     lockedByOther
                       ? `Locked by ${item.lock_holder_name ?? 'another labeler'}`
-                      : undefined
+                      : labelerPending
+                        ? 'Pick up this recording to start labeling'
+                        : undefined
                   }
                   className={
                     selected
                       ? 'w-full text-left px-4 py-3 border-l-4 border-terra bg-cream'
                       : lockedByOther
                         ? 'w-full text-left px-4 py-3 border-l-4 border-transparent opacity-60 cursor-not-allowed'
-                        : 'w-full text-left px-4 py-3 border-l-4 border-transparent hover:bg-ink/5'
+                        : returnedByOwner
+                          ? 'w-full text-left px-4 py-3 border-l-4 border-yellow-400 bg-yellow-50/60 hover:bg-yellow-50'
+                          : 'w-full text-left px-4 py-3 border-l-4 border-transparent hover:bg-ink/5'
                   }
                 >
                   <div className="flex items-center gap-2 text-xs text-brown mb-1">
@@ -196,6 +268,19 @@ export function QueuePane({
                         🔒 {item.lock_holder_name ?? 'someone'} is labeling
                       </span>
                     )}
+                    {returnedByOwner && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-200 text-yellow-900">
+                        ↩ Returned by owner
+                      </span>
+                    )}
+                    {!isLabeler && item.claimed_by_name && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-terra/10 text-terra"
+                        title={`Claimed by ${item.claimed_by_name}`}
+                      >
+                        ✋ {item.claimed_by_name}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-ink leading-snug line-clamp-2">
                     {/* T-2d16e333 followup: show verified-edited preview
@@ -217,8 +302,13 @@ export function QueuePane({
                       <span className="text-brown italic">no transcript</span>
                     )}
                   </p>
+                  {labelerPending && (
+                    <span className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-terra text-white">
+                      {rowPickingUp ? 'Picking up…' : 'Pick up →'}
+                    </span>
+                  )}
                 </button>
-                {demoteTarget && !lockedByOther && (
+                {(demoteTarget || rowClaimed) && !lockedByOther && (
                   <div
                     ref={menuOpen ? menuContainerRef : null}
                     className={
@@ -245,23 +335,53 @@ export function QueuePane({
                     {menuOpen && (
                       <div
                         role="menu"
-                        className="absolute right-0 top-full mt-1 w-44 rounded border border-ink/15 bg-white shadow-lg z-10"
+                        className="absolute right-0 top-full mt-1 w-48 rounded border border-ink/15 bg-white shadow-lg z-10"
                       >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setOpenMenuId(null)
-                            setDemotingId(item.recording_id)
-                            void onDemote(item.recording_id, demoteTarget).finally(
-                              () => setDemotingId(null),
-                            )
-                          }}
-                          className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
-                        >
-                          {demoteLabel}
-                        </button>
+                        {demoteTarget && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuId(null)
+                              setDemotingId(item.recording_id)
+                              void onDemote(item.recording_id, demoteTarget).finally(
+                                () => setDemotingId(null),
+                              )
+                            }}
+                            className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
+                          >
+                            {demoteLabel}
+                          </button>
+                        )}
+                        {rowClaimed && (
+                          <>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenMenuId(null)
+                                onReassign(item.recording_id)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-xs text-ink hover:bg-cream"
+                            >
+                              Reassign claim…
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenMenuId(null)
+                                onForceRelease(item.recording_id)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50"
+                            >
+                              Force release
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
