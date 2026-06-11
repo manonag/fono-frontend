@@ -19,6 +19,7 @@ import { HowFonoAnswersCard } from '@/components/how-fono-answers-card'
 import { CategoriesChipCard, type CategoryChipModel } from '@/components/categories-chip-card'
 import { NotificationsMiniCard } from '@/components/notifications-mini-card'
 import { VoicemailCaptureCard } from '@/components/voicemail-capture-card'
+import { SlaTrackingCard } from '@/components/sla-tracking-card'
 import { CallRoutingCard } from '@/components/call-routing-card'
 import { FromThisPhoneCallout } from '@/components/from-this-phone-callout'
 import { SettingsCard as VsCard, SettingsButton, Banner, FieldLabel, HelperText, tokens } from '@/components/settings-primitives'
@@ -681,6 +682,9 @@ function CallsStateC() {
   const [notifyOn, setNotifyOn] = useState(true)
   const [notifyPhone, setNotifyPhone] = useState('')
   const [voicemailOn, setVoicemailOn] = useState(false)
+  // Default true: sla_enabled is a default-true backend column, so absence
+  // (older payloads / pre-migration) reads as ON.
+  const [slaTrackingOn, setSlaTrackingOn] = useState(true)
   const [cats, setCats] = useState<CategoryChipModel[]>([])
   const [catsBusy, setCatsBusy] = useState(false)
   const phoneDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -714,6 +718,7 @@ function CallsStateC() {
       setNotifyPhone(data.owner_whatsapp || '')
       setNotifyOn(data.whatsapp_alerts_enabled !== false)
       setVoicemailOn(Boolean(data.voicemail_enabled))
+      setSlaTrackingOn(data.sla_enabled !== false)
       if (Array.isArray(catData?.categories)) setCats(catData.categories as CategoryChipModel[])
       setLoading(false)
     })
@@ -811,6 +816,26 @@ function CallsStateC() {
     }
   }
 
+  // SLA tracking toggle (sla_enabled). Optimistic with rollback, sibling to the
+  // voicemail-capture toggle. ON = SLA timers shown; OFF = SLA chrome hidden.
+  const handleSlaToggle = async (next: boolean) => {
+    if (imp.readOnly || !tid || tid === 'all' || !token) return
+    const prev = slaTrackingOn
+    setSlaTrackingOn(next)
+    setSaveError('')
+    try {
+      const res = await fetch(`${config.apiUrl}/api/v1/tenants/${tid}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sla_enabled: next }),
+      })
+      if (!res.ok) throw new Error(String(res.status))
+    } catch {
+      setSlaTrackingOn(prev)
+      setSaveError('Could not update SLA tracking. Please try again.')
+    }
+  }
+
   const handleNotifyPhone = (v: string) => {
     setNotifyPhone(v)
     if (phoneDebounce.current) clearTimeout(phoneDebounce.current)
@@ -887,6 +912,15 @@ function CallsStateC() {
           <CallRoutingCard tenantId={tid} token={token} readOnly={imp.readOnly} />
         </>
       )}
+
+      {/* SLA tracking — owner toggle for the missed-call SLA timers/chrome
+          (sla_enabled). Unnumbered, sibling to Voicemail capture. Kiosk
+          tab-visibility wiring waits on the CD delta. */}
+      <SectionLabel num={null} title="SLA tracking" blurb="Whether the kiosk shows callback countdown timers on missed calls." />
+      <SlaTrackingCard
+        on={slaTrackingOn}
+        onToggle={imp.readOnly ? undefined : handleSlaToggle}
+      />
 
       {/* Voicemail capture — the upstream switch for Categories + the kiosk
           Voicemails tab (T-311). Unnumbered, sits just above Categories. */}
