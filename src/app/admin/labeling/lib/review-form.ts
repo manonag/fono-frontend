@@ -61,6 +61,74 @@ export function toggleSegmentSpeakerAt(
   )
 }
 
+// Split-segment tool (cf15b2f4). Sarvam diarization sometimes merges two
+// speakers into one segment; toggle/swap reassign whole segments and cannot
+// fix that. splitSegmentAtWord splits the segment at a word boundary: wordIdx
+// is the index of the first word of the SECOND piece (1 .. wordCount-1).
+//
+// Timing: no word-level timestamps exist, so the boundary time is interpolated
+// proportionally by character count of the two pieces within the segment's
+// [start, end]. Good enough for karaoke; exactness is not required.
+//
+// Speaker defaults: the first piece keeps the original speaker; the second
+// piece defaults to the OTHER speaker (the reason to split is a speaker
+// change). Both remain individually togglable afterwards.
+export function splitSegmentAtWord(
+  segments: VerifiedSegment[],
+  segIdx: number,
+  wordIdx: number,
+): VerifiedSegment[] {
+  const seg = segments[segIdx]
+  if (!seg) return segments
+  const words = seg.transcript.split(/\s+/).filter(Boolean)
+  // Only interior boundaries are valid; nothing to split at the ends.
+  if (wordIdx <= 0 || wordIdx >= words.length) return segments
+
+  const leftText = words.slice(0, wordIdx).join(' ')
+  const rightText = words.slice(wordIdx).join(' ')
+  const total = leftText.length + rightText.length
+  const span = seg.end_time_seconds - seg.start_time_seconds
+  const splitTime =
+    total > 0
+      ? seg.start_time_seconds + (span * leftText.length) / total
+      : seg.start_time_seconds
+
+  const left: VerifiedSegment = {
+    speaker_id: seg.speaker_id,
+    transcript: leftText,
+    start_time_seconds: seg.start_time_seconds,
+    end_time_seconds: splitTime,
+  }
+  const right: VerifiedSegment = {
+    speaker_id: flipSpeakerId(seg.speaker_id),
+    transcript: rightText,
+    start_time_seconds: splitTime,
+    end_time_seconds: seg.end_time_seconds,
+  }
+  return [...segments.slice(0, segIdx), left, right, ...segments.slice(segIdx + 1)]
+}
+
+// Mis-split recovery: rejoin segment segIdx into the previous one. The merged
+// piece keeps the first piece's speaker and spans both time ranges. Chosen
+// over the doc-only "Release + re-claim resets the seed" option because it is
+// cheap and fixes a mis-split without discarding the rest of the labeler's
+// work.
+export function mergeSegmentsAt(
+  segments: VerifiedSegment[],
+  segIdx: number,
+): VerifiedSegment[] {
+  if (segIdx <= 0 || segIdx >= segments.length) return segments
+  const prev = segments[segIdx - 1]
+  const cur = segments[segIdx]
+  const merged: VerifiedSegment = {
+    speaker_id: prev.speaker_id,
+    transcript: `${prev.transcript} ${cur.transcript}`.trim(),
+    start_time_seconds: prev.start_time_seconds,
+    end_time_seconds: cur.end_time_seconds,
+  }
+  return [...segments.slice(0, segIdx - 1), merged, ...segments.slice(segIdx + 1)]
+}
+
 export function buildState(
   rec: RecordingDetail,
   isLabeler: boolean,

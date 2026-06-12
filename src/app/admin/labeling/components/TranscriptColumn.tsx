@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { speakerLabel } from '../lib/formatters'
 import type { SegmentDiffStatus } from '../lib/segment-diff'
 import { diffStatusToTailwindClass } from '../lib/segment-diff'
@@ -24,6 +24,12 @@ interface TranscriptColumnProps {
   onEditCommit?: () => void
   onEditCancel?: (index: number) => void
   onSpeakerToggle?: (index: number) => void
+  // Split-segment tool. onSplitSegment(index, wordIndex) splits the segment at
+  // a word boundary (wordIndex = first word of the second piece). When wired,
+  // each editable segment gets a Split affordance; onMergeWithPrevious(index)
+  // rejoins a segment into the one above it (mis-split recovery).
+  onSplitSegment?: (index: number, wordIndex: number) => void
+  onMergeWithPrevious?: (index: number) => void
 
   // Optional column header (rendered as a sticky h3 above the segment
   // list).
@@ -110,6 +116,8 @@ export function TranscriptColumn({
   onEditCommit,
   onEditCancel,
   onSpeakerToggle,
+  onSplitSegment,
+  onMergeWithPrevious,
   title,
   diffStatuses,
   alternativeMine,
@@ -118,6 +126,9 @@ export function TranscriptColumn({
   scrollContainerRef,
 }: TranscriptColumnProps) {
   const isEditable = mode === 'edit' || mode === 'suggesting'
+  // Index of the segment currently in split-mode (word-boundary picker), or
+  // null. Local UI state; the actual split mutates form state via the parent.
+  const [splittingIndex, setSplittingIndex] = useState<number | null>(null)
   const supportsAlternatives =
     mode === 'suggesting' && Boolean(onUseSegmentFromAlternative)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -206,6 +217,10 @@ export function TranscriptColumn({
         const isActive = idx === activeIdx
         const isEditing = isEditable && idx === editingIndex
         const toggleable = isToggleable(segment.speaker_id)
+        const isSplitting = splittingIndex === idx
+        const splitWords = isSplitting
+          ? segment.transcript.split(/\s+/).filter(Boolean)
+          : []
         const diffClass = diffStatuses?.[idx]
           ? diffStatusToTailwindClass(diffStatuses[idx])
           : ''
@@ -302,9 +317,57 @@ export function TranscriptColumn({
                   ) : null}
                 </div>
               ) : null}
+              {mode === 'edit' && onSplitSegment && !isEditing ? (
+                <div className="flex items-center gap-2 pl-1 text-[10px] leading-none">
+                  <button
+                    type="button"
+                    onClick={() => setSplittingIndex(isSplitting ? null : idx)}
+                    className="underline text-gray-600 hover:text-gray-900"
+                    title="Split this segment at a word boundary"
+                    aria-expanded={isSplitting}
+                  >
+                    {isSplitting ? 'Cancel split' : 'Split'}
+                  </button>
+                  {idx > 0 && onMergeWithPrevious ? (
+                    <button
+                      type="button"
+                      onClick={() => onMergeWithPrevious(idx)}
+                      className="underline text-gray-600 hover:text-gray-900"
+                      title="Rejoin this segment with the one above"
+                    >
+                      Merge ↑
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="flex-1 leading-relaxed min-w-0">
-              {isEditing && onEditChange && onEditCommit && onEditCancel ? (
+              {isSplitting && onSplitSegment ? (
+                <div className="flex flex-wrap items-center gap-y-1 text-ink">
+                  <span className="mr-1 text-[10px] text-brown italic">
+                    pick where the speaker changes:
+                  </span>
+                  {splitWords.map((w, wi) => (
+                    <span key={wi} className="flex items-center">
+                      {wi > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSplitSegment(idx, wi)
+                            setSplittingIndex(null)
+                          }}
+                          title={`Split here: "${w}" starts a new segment`}
+                          aria-label={`Split before ${w}`}
+                          className="mx-0.5 px-1 rounded text-terra font-bold hover:bg-terra hover:text-white"
+                        >
+                          ✂
+                        </button>
+                      ) : null}
+                      <span>{w}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : isEditing && onEditChange && onEditCommit && onEditCancel ? (
                 <textarea
                   ref={editInputRef}
                   value={segment.transcript}
