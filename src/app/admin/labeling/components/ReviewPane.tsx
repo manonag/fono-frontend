@@ -426,7 +426,6 @@ export function ReviewPane({
       </div>
       {isLabeler ? (
         <LabelerSaveControls
-          dirty={dirty}
           submitting={submitting}
           releasing={releasing}
           saveError={saveError}

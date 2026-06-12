@@ -22,9 +22,9 @@ describe('ownsClaim', () => {
 })
 
 describe('canLabelerSwap', () => {
-  const base = { claimedByUserId: 'u1', currentUserId: 'u1', dirty: false, busy: false }
+  const base = { claimedByUserId: 'u1', currentUserId: 'u1', busy: false }
 
-  it('enabled when claimed-by-me, clean, not busy', () => {
+  it('enabled when claimed-by-me, not busy', () => {
     expect(canLabelerSwap(base)).toBe(true)
   })
   it('disabled when unclaimed', () => {
@@ -32,9 +32,6 @@ describe('canLabelerSwap', () => {
   })
   it('disabled when claimed by another user', () => {
     expect(canLabelerSwap({ ...base, claimedByUserId: 'u2' })).toBe(false)
-  })
-  it('disabled while there are unsaved edits (would be lost on refetch)', () => {
-    expect(canLabelerSwap({ ...base, dirty: true })).toBe(false)
   })
   it('disabled while another action is in flight', () => {
     expect(canLabelerSwap({ ...base, busy: true })).toBe(false)

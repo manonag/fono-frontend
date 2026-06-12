@@ -2,12 +2,11 @@
 
 // Phase C.3 Sprint 1 labeler editor controls. Replaces the owner SaveControls
 // status dropdown entirely: a labeler can only submit to in_review or release
-// the claim. Swap all speakers is a mid-edit owned-claim operation and is
-// disabled while the form has unsaved edits (a server swap would refetch and
-// drop them). No status dropdown, no demote actions.
+// the claim. Swap all speakers is a client-side flip of the form working layer
+// (safe while dirty); it gates on claim ownership only. No status dropdown, no
+// demote actions.
 
 interface LabelerSaveControlsProps {
-  dirty: boolean
   submitting: boolean
   releasing: boolean
   saveError: string | null
@@ -23,7 +22,6 @@ interface LabelerSaveControlsProps {
 }
 
 export function LabelerSaveControls({
-  dirty,
   submitting,
   releasing,
   saveError,
@@ -42,14 +40,17 @@ export function LabelerSaveControls({
           <button
             type="button"
             onClick={onSwapAllSpeakers}
-            disabled={busy || dirty || !ownsClaim}
+            // Labeler swap-all is a client-side flip of the form working layer
+            // (same layer as split/toggle edits), so it is safe on a dirty
+            // form; dirty no longer blocks it. Only claim ownership and an
+            // in-flight action gate it. (Owner swap keeps its server path and
+            // dirty guard in SaveControls.)
+            disabled={busy || !ownsClaim}
             className="text-xs text-brown hover:text-ink underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
             title={
               !ownsClaim
                 ? 'Pick this recording up to your queue before swapping speakers'
-                : dirty
-                  ? 'Save or submit pending edits before swap-all'
-                  : 'Flips S1 and S2 across the ENTIRE recording. Use only when the whole recording is reversed.'
+                : 'Flips S1 and S2 across the ENTIRE recording. Use only when the whole recording is reversed.'
             }
           >
             {swapping ? 'Swapping...' : 'Swap all speakers'}

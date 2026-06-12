@@ -97,18 +97,15 @@ function prodFreshClaimedRow(): RecordingDetail {
 }
 
 describe('buildState dirty-on-open (prod payload)', () => {
-  it('labeler: fresh claimed row is NOT dirty on open, so swap is enabled', () => {
+  it('labeler: fresh claimed row is NOT dirty on open, and swap is enabled', () => {
     const rec = prodFreshClaimedRow()
     const { form, initial } = buildState(rec, true)
-    const diff = computeDiff(initial, form)
-    expect(diff).toEqual({}) // clean on open
+    expect(computeDiff(initial, form)).toEqual({}) // clean on open
 
-    const dirty = Object.keys(diff).length > 0
     expect(
       canLabelerSwap({
         claimedByUserId: rec.claimed_by_user_id,
         currentUserId: ME,
-        dirty,
         busy: false,
       }),
     ).toBe(true)
@@ -122,37 +119,40 @@ describe('buildState dirty-on-open (prod payload)', () => {
     expect(diff.status).toBe('in_review')
   })
 
-  it('labeler: a real segment edit re-dirties and disables swap', () => {
+  it('labeler: swap-all is ENABLED on a dirty owned row and flips the current (edited/split) segments', () => {
     const rec = prodFreshClaimedRow()
-    const { form, initial } = buildState(rec, true)
-    const edited = {
-      ...form,
-      verified_segments: form.verified_segments.map((s, i) =>
-        i === 0 ? { ...s, transcript: 'HELLO (edited)' } : s,
-      ),
-    }
-    const diff = computeDiff(initial, edited)
-    expect(diff.verified_segments).toBeDefined()
-    const dirty = Object.keys(diff).length > 0
+    const { initial } = buildState(rec, true)
+    // The labeler split a segment into pieces and edited it: the current
+    // working layer differs from the opened state (dirty).
+    const current = [
+      { speaker_id: 'speaker_0', transcript: 'Hi Thecha', start_time_seconds: 0, end_time_seconds: 1 },
+      { speaker_id: 'speaker_0', transcript: 'is it Vidya', start_time_seconds: 1, end_time_seconds: 2 },
+    ]
+    expect(
+      Object.keys(computeDiff(initial, { ...buildState(rec, true).form, verified_segments: current })).length,
+    ).toBeGreaterThan(0) // dirty
+
+    // Swap is enabled despite dirty (client-side flip, no refetch).
     expect(
       canLabelerSwap({
         claimedByUserId: rec.claimed_by_user_id,
         currentUserId: ME,
-        dirty,
         busy: false,
       }),
-    ).toBe(false)
+    ).toBe(true)
+
+    // And it flips the CURRENT segments, including the split pieces.
+    const swapped = swapAllSegmentSpeakers(current)
+    expect(swapped.map((s) => s.speaker_id)).toEqual(['speaker_1', 'speaker_1'])
+    expect(swapped.map((s) => s.transcript)).toEqual(['Hi Thecha', 'is it Vidya'])
   })
 
   it('labeler: swap stays disabled when the row is claimed by someone else', () => {
     const rec = { ...prodFreshClaimedRow(), claimed_by_user_id: 'someone-else' }
-    const { form, initial } = buildState(rec, true)
-    const dirty = Object.keys(computeDiff(initial, form)).length > 0
     expect(
       canLabelerSwap({
         claimedByUserId: rec.claimed_by_user_id,
         currentUserId: ME,
-        dirty,
         busy: false,
       }),
     ).toBe(false)
