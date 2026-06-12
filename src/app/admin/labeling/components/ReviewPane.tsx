@@ -4,20 +4,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
 import { TranscriptColumn } from './TranscriptColumn'
 import { VerifiedEditor } from './VerifiedEditor'
-import { type TagPanelValue } from './TagPanel'
 import { CollapsibleTagPanel } from './CollapsibleTagPanel'
 import { SaveControls } from './SaveControls'
 import { LabelerSaveControls } from './LabelerSaveControls'
 import { SuggestionsResolvePane } from './SuggestionsResolvePane'
 import { ownsClaim as computeOwnsClaim } from '../lib/claim-ownership'
+import {
+  buildState,
+  computeDiff,
+  type FormState,
+  type InitialSnapshot,
+} from '../lib/review-form'
 import { ConfirmModal } from '@/components/confirm-modal'
 import { formatDateTime, formatMmSs } from '../lib/formatters'
-import type {
-  PatchPayload,
-  RecordingDetail,
-  VerifiedSegment,
-} from '../lib/types'
-import type { Status } from '../lib/enums'
+import type { PatchPayload, RecordingDetail } from '../lib/types'
 
 interface ReviewPaneProps {
   recording: RecordingDetail | null
@@ -47,163 +47,6 @@ interface ReviewPaneProps {
   // Current user id, to gate owned-claim actions (swap) on the loaded
   // recording's claimed_by_user_id.
   currentUserId: string | null
-}
-
-interface FormState {
-  verified_segments: VerifiedSegment[]
-  status: Status
-  tags: TagPanelValue
-}
-
-interface InitialSnapshot {
-  verified_segments: VerifiedSegment[]
-  status: Status
-  tags: TagPanelValue
-}
-
-function cloneSegment(s: VerifiedSegment): VerifiedSegment {
-  return {
-    speaker_id: s.speaker_id,
-    transcript: s.transcript,
-    start_time_seconds: s.start_time_seconds,
-    end_time_seconds: s.end_time_seconds,
-  }
-}
-
-// Sarvam emits `speaker_id` as bare digit strings ("0", "1") in
-// diarized_transcript. Rest of the UI (isToggleable, toggleSegmentSpeaker,
-// styling) keys off the `speaker_<n>` form, so normalize at this boundary.
-function normalizeSpeakerId(rawId: string): string {
-  return /^\d+$/.test(rawId) ? `speaker_${rawId}` : rawId
-}
-
-function buildState(rec: RecordingDetail, isLabeler: boolean): {
-  form: FormState
-  initial: InitialSnapshot
-} {
-  const serverSegments = rec.verified_segments ?? []
-  let displayedSegments: VerifiedSegment[]
-  if (serverSegments.length > 0) {
-    displayedSegments = serverSegments.map((s) => ({
-      ...cloneSegment(s),
-      speaker_id: normalizeSpeakerId(s.speaker_id),
-    }))
-  } else {
-    const dia = rec.machine.diarization?.entries ?? []
-    displayedSegments = dia.map((e) => ({
-      speaker_id: normalizeSpeakerId(e.speaker_id),
-      transcript: e.transcript,
-      start_time_seconds: e.start_time_seconds,
-      end_time_seconds: e.end_time_seconds,
-    }))
-  }
-
-  const tags: TagPanelValue = {
-    language_profile_tag: rec.language_profile_tag,
-    call_type_tag: rec.call_type_tag,
-    audio_quality_tag: rec.audio_quality_tag,
-    error_tags: [...rec.error_tags],
-    contains_menu_items: rec.contains_menu_items,
-    contains_prices: rec.contains_prices,
-    contains_phone_numbers: rec.contains_phone_numbers,
-    contains_names: rec.contains_names,
-    is_holdout: rec.is_holdout,
-    reviewer_notes: rec.reviewer_notes ?? '',
-  }
-
-  // Default the dropdown to the row's current status. For auto_labeled
-  // rows specifically, pre-select 'in_review' instead of the persisted
-  // 'auto_labeled' so:
-  //   1. The default Save promotes the row one step (signals "labeler is
-  //      done, ready for owner review") in one click.
-  //   2. initial.status keeps the persisted 'auto_labeled' value, so
-  //      computeDiff sees status as changed and the Save button enables
-  //      on open even before the labeler edits content.
-  //   3. The visible dropdown matches what the backend actually persists
-  //      for labeler saves. save_review's labeler branch strips status
-  //      from the payload and forces row.status='in_review' regardless,
-  //      so showing 'in_review' eliminates the cosmetic verified-vs-
-  //      in_review mismatch that the previous default produced.
-  // For every other status (in_review, suggestions_pending, verified,
-  // gold), the dropdown reflects rec.status as-is.
-  //
-  // Labelers have no status dropdown (Submit always forces in_review and
-  // releases the claim), so the auto_labeled -> in_review pre-promotion would
-  // only make the form falsely dirty on open, which in turn disabled Swap all
-  // speakers on a freshly-claimed row (Sprint 1 escape). For labelers keep
-  // status == rec.status so a just-opened owned row is clean and swap is
-  // available.
-  const defaultFormStatus: Status =
-    !isLabeler && rec.status === 'auto_labeled' ? 'in_review' : rec.status
-
-  return {
-    form: { verified_segments: displayedSegments, status: defaultFormStatus, tags },
-    initial: {
-      // Initial mirrors the displayed (normalized) form so computeDiff
-      // doesn't see "0" vs "speaker_0" as a spurious change.
-      verified_segments: serverSegments.map((s) => ({
-        ...cloneSegment(s),
-        speaker_id: normalizeSpeakerId(s.speaker_id),
-      })),
-      status: rec.status,
-      tags: { ...tags, error_tags: [...tags.error_tags] },
-    },
-  }
-}
-
-function arraysEqualUnordered<T>(a: T[], b: T[]): boolean {
-  if (a.length !== b.length) return false
-  const sa = new Set(a)
-  for (const item of b) if (!sa.has(item)) return false
-  return true
-}
-
-function segmentsEqual(a: VerifiedSegment[], b: VerifiedSegment[]): boolean {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (
-      a[i].speaker_id !== b[i].speaker_id ||
-      a[i].transcript !== b[i].transcript ||
-      a[i].start_time_seconds !== b[i].start_time_seconds ||
-      a[i].end_time_seconds !== b[i].end_time_seconds
-    ) {
-      return false
-    }
-  }
-  return true
-}
-
-function computeDiff(initial: InitialSnapshot, current: FormState): PatchPayload {
-  const diff: PatchPayload = {}
-  if (!segmentsEqual(initial.verified_segments, current.verified_segments)) {
-    diff.verified_segments = current.verified_segments
-  }
-  if (initial.status !== current.status) diff.status = current.status
-  const it = initial.tags
-  const ct = current.tags
-  if (it.language_profile_tag !== ct.language_profile_tag) {
-    diff.language_profile_tag = ct.language_profile_tag
-  }
-  if (it.call_type_tag !== ct.call_type_tag) diff.call_type_tag = ct.call_type_tag
-  if (it.audio_quality_tag !== ct.audio_quality_tag) {
-    diff.audio_quality_tag = ct.audio_quality_tag
-  }
-  if (!arraysEqualUnordered(it.error_tags, ct.error_tags)) {
-    diff.error_tags = ct.error_tags
-  }
-  if (it.contains_menu_items !== ct.contains_menu_items) {
-    diff.contains_menu_items = ct.contains_menu_items
-  }
-  if (it.contains_prices !== ct.contains_prices) diff.contains_prices = ct.contains_prices
-  if (it.contains_phone_numbers !== ct.contains_phone_numbers) {
-    diff.contains_phone_numbers = ct.contains_phone_numbers
-  }
-  if (it.contains_names !== ct.contains_names) diff.contains_names = ct.contains_names
-  if (it.is_holdout !== ct.is_holdout) diff.is_holdout = ct.is_holdout
-  if ((it.reviewer_notes || '') !== (ct.reviewer_notes || '')) {
-    diff.reviewer_notes = ct.reviewer_notes
-  }
-  return diff
 }
 
 export function ReviewPane({
