@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildState, computeDiff } from '@/app/admin/labeling/lib/review-form'
+import {
+  buildState,
+  computeDiff,
+  swapAllSegmentSpeakers,
+  toggleSegmentSpeakerAt,
+} from '@/app/admin/labeling/lib/review-form'
 import { canLabelerSwap } from '@/app/admin/labeling/lib/claim-ownership'
-import type { RecordingDetail } from '@/app/admin/labeling/lib/types'
+import type { PatchPayload, RecordingDetail } from '@/app/admin/labeling/lib/types'
 
 // Sprint 1 escape, second pass. Swap all speakers was disabled on a recording
 // the labeler holds the claim on, even after the backend served
@@ -151,5 +156,56 @@ describe('buildState dirty-on-open (prod payload)', () => {
         busy: false,
       }),
     ).toBe(false)
+  })
+})
+
+// Hotfix 3: client-side speaker flips operate on the seeded form layer so they
+// take effect on a fresh row (empty server verified_segments), where the old
+// server swap was a silent no-op.
+describe('client-side speaker flips on the seeded form (prod payload)', () => {
+  it('swap-all flips every seeded segment and dirties the form', () => {
+    const rec = prodFreshClaimedRow()
+    const { form, initial } = buildState(rec, true)
+    // Seeded from diarization "0"/"1" -> speaker_0 / speaker_1.
+    expect(form.verified_segments.map((s) => s.speaker_id)).toEqual([
+      'speaker_0',
+      'speaker_1',
+    ])
+
+    const swapped = swapAllSegmentSpeakers(form.verified_segments)
+    expect(swapped.map((s) => s.speaker_id)).toEqual(['speaker_1', 'speaker_0'])
+    // transcripts/timings untouched
+    expect(swapped.map((s) => s.transcript)).toEqual(['hello', 'world'])
+
+    // Flipping the form layer makes computeDiff report a segment change.
+    const diff = computeDiff(initial, { ...form, verified_segments: swapped })
+    expect(diff.verified_segments).toBeDefined()
+  })
+
+  it('per-segment toggle flips exactly one segment', () => {
+    const rec = prodFreshClaimedRow()
+    const { form } = buildState(rec, true)
+    const toggled = toggleSegmentSpeakerAt(form.verified_segments, 0)
+    expect(toggled.map((s) => s.speaker_id)).toEqual(['speaker_1', 'speaker_1'])
+    // index 1 untouched
+    expect(toggled[1]).toEqual(form.verified_segments[1])
+  })
+
+  it('Submit persists the flipped speakers (doSubmit payload shape)', () => {
+    const rec = prodFreshClaimedRow()
+    const { form, initial } = buildState(rec, true)
+    const swappedForm = {
+      ...form,
+      verified_segments: swapAllSegmentSpeakers(form.verified_segments),
+    }
+    // Mirrors ReviewPane.doSubmit: always include verified_segments.
+    const payload: PatchPayload = {
+      ...computeDiff(initial, swappedForm),
+      verified_segments: swappedForm.verified_segments,
+    }
+    expect(payload.verified_segments?.map((s) => s.speaker_id)).toEqual([
+      'speaker_1',
+      'speaker_0',
+    ])
   })
 })

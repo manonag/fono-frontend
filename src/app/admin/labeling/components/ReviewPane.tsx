@@ -12,6 +12,8 @@ import { ownsClaim as computeOwnsClaim } from '../lib/claim-ownership'
 import {
   buildState,
   computeDiff,
+  swapAllSegmentSpeakers,
+  toggleSegmentSpeakerAt,
   type FormState,
   type InitialSnapshot,
 } from '../lib/review-form'
@@ -127,16 +129,23 @@ export function ReviewPane({
   }, [])
 
   const toggleSegmentSpeaker = useCallback((idx: number) => {
-    setForm((f) => {
-      if (!f) return f
-      const next = f.verified_segments.map((s, i) => {
-        if (i !== idx) return s
-        if (s.speaker_id === 'speaker_0') return { ...s, speaker_id: 'speaker_1' }
-        if (s.speaker_id === 'speaker_1') return { ...s, speaker_id: 'speaker_0' }
-        return s
-      })
-      return { ...f, verified_segments: next }
-    })
+    setForm((f) =>
+      f
+        ? { ...f, verified_segments: toggleSegmentSpeakerAt(f.verified_segments, idx) }
+        : f,
+    )
+  }, [])
+
+  // Client-side Swap all speakers: flip every S1<->S2 segment in the form
+  // (the effective working layer), marking the form dirty. Submit/Save then
+  // persists. Replaces the server swap on a fresh row, which flips the empty
+  // server verified_segments and is a silent no-op.
+  const swapAllFormSpeakers = useCallback(() => {
+    setForm((f) =>
+      f
+        ? { ...f, verified_segments: swapAllSegmentSpeakers(f.verified_segments) }
+        : f,
+    )
   }, [])
 
   const handleEditStart = useCallback(
@@ -461,16 +470,25 @@ export function ReviewPane({
         onCancel={() => setShowSwapConfirm(false)}
         onConfirm={() => {
           setShowSwapConfirm(false)
-          setSwapping(true)
-          setSaveError(null)
-          void onSwapSpeakers().then((result) => {
-            setSwapping(false)
-            if (result.ok) {
-              setToast('Speakers swapped')
-            } else {
-              setSaveError(result.error ?? 'Swap failed')
-            }
-          })
+          if (isLabeler) {
+            // Client-side flip on the form working layer; Submit persists.
+            // Instant, reversible, and correct on fresh (empty-server) rows.
+            swapAllFormSpeakers()
+            setToast('Speakers swapped')
+          } else {
+            // Owner: keep the server swap (persists immediately on the
+            // already-saved verified_segments and refetches).
+            setSwapping(true)
+            setSaveError(null)
+            void onSwapSpeakers().then((result) => {
+              setSwapping(false)
+              if (result.ok) {
+                setToast('Speakers swapped')
+              } else {
+                setSaveError(result.error ?? 'Swap failed')
+              }
+            })
+          }
         }}
       />
       {toast && (
