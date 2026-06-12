@@ -14,6 +14,7 @@ import { DateFilterBar } from '@/components/date-filter'
 import { resolveFilterWindow } from '@/lib/analytics-filter'
 import { ChartTooltip, type ChartTooltipState } from '@/components/chart-tooltip'
 import { formatDuration } from '@/lib/utils'
+import { formatInTimeZone } from 'date-fns-tz'
 import {
   HARDCODED_BUSINESS_HOURS,
   bucketHours,
@@ -44,21 +45,39 @@ export default function AnalyticsPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      // Scope the fetch to the selected window server-side, and lift the old
+      // page<5 (newest-500) cap that silently truncated the oldest calls for
+      // any tenant with >500 calls (Thecha undercount, Jun 12 audit). The
+      // window is resolved with the current tenantTimezone; when the tenant's
+      // real TZ arrives from peak-hours below it lands in the dep array and
+      // this refetches with the corrected boundaries. Durable server-side
+      // aggregation is tracked separately as T-320.
+      const win = resolveFilterWindow(dateFilter, customRange, tenantTimezone)
+      const dateFrom = win.startDate.toISOString()
+      const dateTo = win.endDate.toISOString()
       const allCalls: CallRecord[] = []
       let page = 1
       let hasMore = true
       while (hasMore) {
         const fetcher = isAll
-          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100 }, token)
-          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100 }, token)
+          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100, dateFrom, dateTo }, token)
+          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100, dateFrom, dateTo }, token)
         const result = await fetcher
         allCalls.push(...result.calls)
-        hasMore = result.calls.length === 100 && page < 5
+        // Safety ceiling only (5000 in-window calls); date scoping above is
+        // what actually bounds the volume now, not the page count.
+        hasMore = result.calls.length === 100 && page < 50
         page++
       }
       const tid = isAll ? allTenantIds[0] : tenantId
+      // Scope the summary to the same window as the charts so Total Duration
+      // and the missed count reflect the selected range, not a fixed 30-day
+      // rolling lookback. The backend still defaults to 30 days when no window
+      // is passed, so the dashboard/kiosk badges (separate call sites) are
+      // unchanged.
+      const summaryWindow = { dateFrom, dateTo }
       const [summaryData, peakData] = await Promise.all([
-        isAll ? fetchCombinedSummary(allTenantIds, undefined, token) : fetchDashboardSummary(tenantId, undefined, token),
+        isAll ? fetchCombinedSummary(allTenantIds, summaryWindow, token) : fetchDashboardSummary(tenantId, summaryWindow, token),
         fetchPeakHours(tid, 30, token).catch(() => null),
       ])
       setSummary(summaryData)
@@ -72,7 +91,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false)
     }
-  }, [tenantId, isAll, allTenantIds, token])
+  }, [tenantId, isAll, allTenantIds, token, dateFilter, customRange, tenantTimezone])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -95,25 +114,27 @@ export default function AnalyticsPage() {
   }, [calls, resolvedWindow])
 
   // Heatmap: 7 days x (working hours + 1 collapsed Closed bucket).
-  // We still bucket by browser-local hour today (same as the prior 24-col
-  // version); the tenant-TZ correction is tracked separately. After raw
-  // bucketing each row is passed through bucketHours so closed hours
-  // collapse into a single right-edge cell.
+  // Day-of-week and hour are bucketed in the tenant's timezone so a
+  // restaurant's evening rush lands on the right local day and hour
+  // regardless of the viewer's browser TZ. After raw bucketing each row is
+  // passed through bucketHours so closed hours collapse into a single
+  // right-edge cell.
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
     filteredCalls.forEach(call => {
       const d = new Date(call.created_at)
-      const day = d.getDay() // 0=Sun
-      const hour = d.getHours()
-      // Convert: Sun(0)->6, Mon(1)->0, ..., Sat(6)->5
-      const row = day === 0 ? 6 : day - 1
-      grid[row][hour]++
+      // ISO day-of-week in tenant TZ: 1=Mon .. 7=Sun -> row 0=Mon .. 6=Sun.
+      const isoDay = parseInt(formatInTimeZone(d, tenantTimezone, 'i'), 10)
+      const hour = parseInt(formatInTimeZone(d, tenantTimezone, 'H'), 10)
+      const row = Number.isFinite(isoDay) ? isoDay - 1 : (d.getDay() === 0 ? 6 : d.getDay() - 1)
+      const h = Number.isFinite(hour) ? hour : d.getHours()
+      grid[row][h]++
     })
     const rows = grid.map(r => bucketHours(r, HARDCODED_BUSINESS_HOURS))
     const workingHourLabels = bucketHours(Array(24).fill(0), HARDCODED_BUSINESS_HOURS)
       .workingHours.map(w => w.hour)
     return { rows, workingHourLabels }
-  }, [filteredCalls])
+  }, [filteredCalls, tenantTimezone])
 
   const heatmapMax = useMemo(() => {
     let m = 1
@@ -138,21 +159,23 @@ export default function AnalyticsPage() {
   }, [filteredCalls])
 
   // Daily trend: bucket calls into the resolved window's day list.
-  // Carries the Date object through so the X-axis label formatter renders
-  // tenant-local dates (parsing "YYYY-MM-DD" via new Date() yields UTC
-  // midnight, which prints as the previous day in negative-offset TZs).
+  // Both the bucket keys and each call are keyed by their tenant-TZ calendar
+  // day (yyyy-MM-dd). The previous code keyed calls by their UTC date
+  // (new Date(created_at).toISOString()), which pushed any evening call past
+  // the UTC midnight boundary onto the next day's bar in negative-offset TZs.
   const dailyTrend = useMemo(() => {
     const buckets: { date: Date; total: number; missed: number }[] = resolvedWindow.daysInRange.map(d => ({
       date: new Date(d),
       total: 0,
       missed: 0,
     }))
+    const dayKey = (d: Date) => formatInTimeZone(d, tenantTimezone, 'yyyy-MM-dd')
     const keyToBucket = new Map<string, { date: Date; total: number; missed: number }>()
     buckets.forEach(b => {
-      keyToBucket.set(b.date.toISOString().split('T')[0], b)
+      keyToBucket.set(dayKey(b.date), b)
     })
     filteredCalls.forEach(call => {
-      const key = new Date(call.created_at).toISOString().split('T')[0]
+      const key = dayKey(new Date(call.created_at))
       const entry = keyToBucket.get(key)
       if (entry) {
         entry.total++
@@ -160,7 +183,7 @@ export default function AnalyticsPage() {
       }
     })
     return buckets
-  }, [filteredCalls, resolvedWindow])
+  }, [filteredCalls, resolvedWindow, tenantTimezone])
 
   // Peak hours: bucket calls into 24 hours using the tenant timezone, then
   // collapse closed hours into a single right-edge bucket via the shared
