@@ -14,6 +14,7 @@ import { DateFilterBar } from '@/components/date-filter'
 import { resolveFilterWindow } from '@/lib/analytics-filter'
 import { ChartTooltip, type ChartTooltipState } from '@/components/chart-tooltip'
 import { formatDuration } from '@/lib/utils'
+import { formatInTimeZone } from 'date-fns-tz'
 import {
   HARDCODED_BUSINESS_HOURS,
   bucketHours,
@@ -107,25 +108,27 @@ export default function AnalyticsPage() {
   }, [calls, resolvedWindow])
 
   // Heatmap: 7 days x (working hours + 1 collapsed Closed bucket).
-  // We still bucket by browser-local hour today (same as the prior 24-col
-  // version); the tenant-TZ correction is tracked separately. After raw
-  // bucketing each row is passed through bucketHours so closed hours
-  // collapse into a single right-edge cell.
+  // Day-of-week and hour are bucketed in the tenant's timezone so a
+  // restaurant's evening rush lands on the right local day and hour
+  // regardless of the viewer's browser TZ. After raw bucketing each row is
+  // passed through bucketHours so closed hours collapse into a single
+  // right-edge cell.
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
     filteredCalls.forEach(call => {
       const d = new Date(call.created_at)
-      const day = d.getDay() // 0=Sun
-      const hour = d.getHours()
-      // Convert: Sun(0)->6, Mon(1)->0, ..., Sat(6)->5
-      const row = day === 0 ? 6 : day - 1
-      grid[row][hour]++
+      // ISO day-of-week in tenant TZ: 1=Mon .. 7=Sun -> row 0=Mon .. 6=Sun.
+      const isoDay = parseInt(formatInTimeZone(d, tenantTimezone, 'i'), 10)
+      const hour = parseInt(formatInTimeZone(d, tenantTimezone, 'H'), 10)
+      const row = Number.isFinite(isoDay) ? isoDay - 1 : (d.getDay() === 0 ? 6 : d.getDay() - 1)
+      const h = Number.isFinite(hour) ? hour : d.getHours()
+      grid[row][h]++
     })
     const rows = grid.map(r => bucketHours(r, HARDCODED_BUSINESS_HOURS))
     const workingHourLabels = bucketHours(Array(24).fill(0), HARDCODED_BUSINESS_HOURS)
       .workingHours.map(w => w.hour)
     return { rows, workingHourLabels }
-  }, [filteredCalls])
+  }, [filteredCalls, tenantTimezone])
 
   const heatmapMax = useMemo(() => {
     let m = 1
@@ -150,21 +153,23 @@ export default function AnalyticsPage() {
   }, [filteredCalls])
 
   // Daily trend: bucket calls into the resolved window's day list.
-  // Carries the Date object through so the X-axis label formatter renders
-  // tenant-local dates (parsing "YYYY-MM-DD" via new Date() yields UTC
-  // midnight, which prints as the previous day in negative-offset TZs).
+  // Both the bucket keys and each call are keyed by their tenant-TZ calendar
+  // day (yyyy-MM-dd). The previous code keyed calls by their UTC date
+  // (new Date(created_at).toISOString()), which pushed any evening call past
+  // the UTC midnight boundary onto the next day's bar in negative-offset TZs.
   const dailyTrend = useMemo(() => {
     const buckets: { date: Date; total: number; missed: number }[] = resolvedWindow.daysInRange.map(d => ({
       date: new Date(d),
       total: 0,
       missed: 0,
     }))
+    const dayKey = (d: Date) => formatInTimeZone(d, tenantTimezone, 'yyyy-MM-dd')
     const keyToBucket = new Map<string, { date: Date; total: number; missed: number }>()
     buckets.forEach(b => {
-      keyToBucket.set(b.date.toISOString().split('T')[0], b)
+      keyToBucket.set(dayKey(b.date), b)
     })
     filteredCalls.forEach(call => {
-      const key = new Date(call.created_at).toISOString().split('T')[0]
+      const key = dayKey(new Date(call.created_at))
       const entry = keyToBucket.get(key)
       if (entry) {
         entry.total++
@@ -172,7 +177,7 @@ export default function AnalyticsPage() {
       }
     })
     return buckets
-  }, [filteredCalls, resolvedWindow])
+  }, [filteredCalls, resolvedWindow, tenantTimezone])
 
   // Peak hours: bucket calls into 24 hours using the tenant timezone, then
   // collapse closed hours into a single right-edge bucket via the shared
