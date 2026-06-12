@@ -45,16 +45,28 @@ export default function AnalyticsPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      // Scope the fetch to the selected window server-side, and lift the old
+      // page<5 (newest-500) cap that silently truncated the oldest calls for
+      // any tenant with >500 calls (Thecha undercount, Jun 12 audit). The
+      // window is resolved with the current tenantTimezone; when the tenant's
+      // real TZ arrives from peak-hours below it lands in the dep array and
+      // this refetches with the corrected boundaries. Durable server-side
+      // aggregation is tracked separately as T-320.
+      const win = resolveFilterWindow(dateFilter, customRange, tenantTimezone)
+      const dateFrom = win.startDate.toISOString()
+      const dateTo = win.endDate.toISOString()
       const allCalls: CallRecord[] = []
       let page = 1
       let hasMore = true
       while (hasMore) {
         const fetcher = isAll
-          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100 }, token)
-          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100 }, token)
+          ? fetchCombinedCallLog(allTenantIds, { status: 'all', page, perPage: 100, dateFrom, dateTo }, token)
+          : fetchCallLog(tenantId, { status: 'all', page, perPage: 100, dateFrom, dateTo }, token)
         const result = await fetcher
         allCalls.push(...result.calls)
-        hasMore = result.calls.length === 100 && page < 5
+        // Safety ceiling only (5000 in-window calls); date scoping above is
+        // what actually bounds the volume now, not the page count.
+        hasMore = result.calls.length === 100 && page < 50
         page++
       }
       const tid = isAll ? allTenantIds[0] : tenantId
@@ -79,7 +91,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false)
     }
-  }, [tenantId, isAll, allTenantIds, token])
+  }, [tenantId, isAll, allTenantIds, token, dateFilter, customRange, tenantTimezone])
 
   useEffect(() => { loadData() }, [loadData])
 
