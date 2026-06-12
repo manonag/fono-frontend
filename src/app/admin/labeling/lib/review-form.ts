@@ -35,6 +35,32 @@ export function normalizeSpeakerId(rawId: string): string {
   return /^\d+$/.test(rawId) ? `speaker_${rawId}` : rawId
 }
 
+// Speaker flips operate on the CLIENT form-state segments (the effective,
+// possibly diarization-seeded working layer), not the server endpoint. On a
+// fresh row the server verified_segments is empty, so a server-side swap is a
+// silent no-op; flipping the form layer and letting Submit/Save persist is the
+// correct, instant-feedback behaviour and matches the per-segment toggle.
+export function flipSpeakerId(speakerId: string): string {
+  if (speakerId === 'speaker_0') return 'speaker_1'
+  if (speakerId === 'speaker_1') return 'speaker_0'
+  return speakerId
+}
+
+export function swapAllSegmentSpeakers(
+  segments: VerifiedSegment[],
+): VerifiedSegment[] {
+  return segments.map((s) => ({ ...s, speaker_id: flipSpeakerId(s.speaker_id) }))
+}
+
+export function toggleSegmentSpeakerAt(
+  segments: VerifiedSegment[],
+  idx: number,
+): VerifiedSegment[] {
+  return segments.map((s, i) =>
+    i === idx ? { ...s, speaker_id: flipSpeakerId(s.speaker_id) } : s,
+  )
+}
+
 export function buildState(
   rec: RecordingDetail,
   isLabeler: boolean,
