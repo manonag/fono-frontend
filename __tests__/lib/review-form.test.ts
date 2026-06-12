@@ -209,3 +209,24 @@ describe('client-side speaker flips on the seeded form (prod payload)', () => {
     ])
   })
 })
+
+// C3S2 Save progress: saved verified_segments must survive release/reclaim by
+// seeding the form on reopen INSTEAD of machine diarization.
+describe('buildState seeding from saved segments', () => {
+  it('seeds the form from saved server segments, not diarization, when present', () => {
+    const rec = prodFreshClaimedRow()
+    // The labeler saved progress: the row now has non-empty verified_segments
+    // that differ from the machine diarization seed.
+    rec.verified_segments = [
+      { speaker_id: 'speaker_1', transcript: 'saved edit', start_time_seconds: 0, end_time_seconds: 2 },
+    ]
+    const { form, initial } = buildState(rec, true)
+    expect(form.verified_segments).toHaveLength(1)
+    expect(form.verified_segments[0].transcript).toBe('saved edit')
+    expect(form.verified_segments[0].speaker_id).toBe('speaker_1')
+    // NOT the diarization seed ("hello" / "world").
+    expect(form.verified_segments.map((s) => s.transcript)).not.toContain('hello')
+    // Clean on open (initial mirrors the saved seed for labelers).
+    expect(computeDiff(initial, form)).toEqual({})
+  })
+})
