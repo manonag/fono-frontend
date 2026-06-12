@@ -12,6 +12,8 @@ import { ownsClaim as computeOwnsClaim } from '../lib/claim-ownership'
 import {
   buildState,
   computeDiff,
+  mergeSegmentsAt,
+  splitSegmentAtWord,
   swapAllSegmentSpeakers,
   toggleSegmentSpeakerAt,
   type FormState,
@@ -144,6 +146,25 @@ export function ReviewPane({
     setForm((f) =>
       f
         ? { ...f, verified_segments: swapAllSegmentSpeakers(f.verified_segments) }
+        : f,
+    )
+  }, [])
+
+  // Split-segment tool: split the segment at a word boundary (second piece
+  // defaults to the other speaker); merge rejoins a piece into the one above.
+  // Both mutate the form working layer and mark it dirty; Submit/Save persists.
+  const handleSplitSegment = useCallback((idx: number, wordIdx: number) => {
+    setForm((f) =>
+      f
+        ? { ...f, verified_segments: splitSegmentAtWord(f.verified_segments, idx, wordIdx) }
+        : f,
+    )
+  }, [])
+
+  const handleMergeWithPrevious = useCallback((idx: number) => {
+    setForm((f) =>
+      f
+        ? { ...f, verified_segments: mergeSegmentsAt(f.verified_segments, idx) }
         : f,
     )
   }, [])
@@ -390,6 +411,8 @@ export function ReviewPane({
             onEditCommit={handleEditCommit}
             onEditCancel={handleEditCancel}
             onSpeakerToggle={toggleSegmentSpeaker}
+            onSplitSegment={handleSplitSegment}
+            onMergeWithPrevious={handleMergeWithPrevious}
           />
         </section>
         <hr className="border-ink/10" />
