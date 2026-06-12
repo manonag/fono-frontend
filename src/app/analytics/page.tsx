@@ -58,8 +58,14 @@ export default function AnalyticsPage() {
         page++
       }
       const tid = isAll ? allTenantIds[0] : tenantId
+      // Scope the summary to the same window as the charts so Total Duration
+      // and the missed count reflect the selected range, not a fixed 30-day
+      // rolling lookback. The backend still defaults to 30 days when no window
+      // is passed, so the dashboard/kiosk badges (separate call sites) are
+      // unchanged.
+      const summaryWindow = { dateFrom, dateTo }
       const [summaryData, peakData] = await Promise.all([
-        isAll ? fetchCombinedSummary(allTenantIds, undefined, token) : fetchDashboardSummary(tenantId, undefined, token),
+        isAll ? fetchCombinedSummary(allTenantIds, summaryWindow, token) : fetchDashboardSummary(tenantId, summaryWindow, token),
         fetchPeakHours(tid, 30, token).catch(() => null),
       ])
       setSummary(summaryData)
