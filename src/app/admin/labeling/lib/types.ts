@@ -148,6 +148,9 @@ export interface PatchPayload {
   // 'reject' (legacy, retained in API for backwards compat) flips back to
   // auto_labeled; 'send_back' flips to suggestions_pending with optional
   // owner_segments persisted as the owner's edited suggestion overlay.
+  // C3S2 labeler action. 'save_progress' persists edits while keeping the
+  // claim + status; omit it for the existing Submit-for-review behaviour.
+  action?: 'save_progress'
   review_action?: 'approve' | 'reject' | 'send_back'
   reviewer_notes_for_labeler?: string | null
   // Send-back-with-edits payload. Owner's edited segments when the

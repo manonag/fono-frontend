@@ -16,17 +16,13 @@ export function ownsClaim(
 }
 
 // Whether a labeler may run Swap all speakers right now: they must own the
-// claim, not be mid-action, and have no unsaved edits (a server swap refetches
-// and would drop them).
+// claim and not be mid-action. Labeler swap is a client-side flip of the form
+// working layer (it does NOT refetch), so it is safe while the form is dirty;
+// dirty no longer gates it.
 export function canLabelerSwap(opts: {
   claimedByUserId: string | null | undefined
   currentUserId: string | null | undefined
-  dirty: boolean
   busy: boolean
 }): boolean {
-  return (
-    ownsClaim(opts.claimedByUserId, opts.currentUserId) &&
-    !opts.dirty &&
-    !opts.busy
-  )
+  return ownsClaim(opts.claimedByUserId, opts.currentUserId) && !opts.busy
 }

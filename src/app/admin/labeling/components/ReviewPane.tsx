@@ -229,6 +229,27 @@ export function ReviewPane({
     }
   }, [form, onSave])
 
+  // Labeler Save progress. Persists edits via the save_progress action while
+  // keeping the claim and status; the page refetches the recording in place
+  // (no advance), which rebuilds the form clean from the now-saved segments.
+  const doSaveProgress = useCallback(async () => {
+    if (!form || !initialRef.current) return
+    const payload: PatchPayload = {
+      ...computeDiff(initialRef.current, form),
+      verified_segments: form.verified_segments,
+      action: 'save_progress',
+    }
+    setSaving(true)
+    setSaveError(null)
+    const result = await onSave(payload, { advanceAfter: false })
+    setSaving(false)
+    if (result.ok) {
+      setToast('Progress saved')
+    } else {
+      setSaveError(result.error ?? 'Save failed')
+    }
+  }, [form, onSave])
+
   // Labeler Release back to queue. Clears the claim; the page refetches and
   // moves on. Independent of form dirty state (edits stay on the recording).
   const doRelease = useCallback(async () => {
@@ -427,10 +448,12 @@ export function ReviewPane({
       {isLabeler ? (
         <LabelerSaveControls
           dirty={dirty}
+          saving={saving}
           submitting={submitting}
           releasing={releasing}
           saveError={saveError}
           hasNext={hasNext}
+          onSave={() => void doSaveProgress()}
           onSubmit={() => void doSubmit()}
           onRelease={() => void doRelease()}
           swapping={swapping}
