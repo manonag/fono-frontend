@@ -232,7 +232,11 @@ export async function fetchChartData(
       token,
     )
     allCalls.push(...result.calls)
-    hasMore = result.calls.length === perPage && page < 5
+    // Safety ceiling only. The dateFrom/dateTo filter above bounds the
+    // volume; the previous page<5 (newest-500) cap silently dropped the
+    // oldest in-window calls for busy tenants, undercounting the dashboard
+    // mini-charts the same way the analytics page was undercounting.
+    hasMore = result.calls.length === perPage && page < 50
     page++
   }
 
