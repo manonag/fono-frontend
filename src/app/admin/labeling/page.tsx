@@ -26,6 +26,7 @@ import {
   swapAllSpeakers,
 } from './lib/api'
 import { friendlyClaimError } from './lib/errors'
+import { appendUniqueQueueItems } from './lib/queue-paging'
 import type {
   ActiveLabeler,
   LabelerView,
@@ -41,6 +42,8 @@ import type {
 type AuthState = 'loading' | 'allowed' | 'denied' | 'unauthenticated'
 
 const MIN_VIEWPORT_PX = 1280
+// C3S2 Part 2: queue page size for load-more pagination (both roles).
+const QUEUE_PAGE_SIZE = 50
 
 function useMinViewport(min: number): boolean {
   const [ok, setOk] = useState(true)
@@ -72,6 +75,10 @@ export default function LabelingPage() {
   const [queueTotal, setQueueTotal] = useState(0)
   const [queueLoading, setQueueLoading] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  // C3S2 Part 2: owner-only tenant scope for the (cross-tenant) status tabs.
+  // null = All tenants. Labeler views ignore this.
+  const [tenantFilter, setTenantFilter] = useState<string | null>(null)
   const [pickingUpId, setPickingUpId] = useState<string | null>(null)
   // Page-level toast for claim actions (pick up / release) that originate in
   // the queue, not the editor. Friendly copy routed off the structured error.
@@ -105,14 +112,26 @@ export default function LabelingPage() {
   // (pending | mine), owners by status filter. Single source of truth so
   // save / pick up / release / demote all refetch the same scope.
   const fetchScopedQueue = useCallback(
-    (tkn: string): Promise<QueueResponse> =>
+    (tkn: string, offset = 0): Promise<QueueResponse> =>
       fetchQueue(
         tkn,
         isLabeler
-          ? { filter: 'all', sort: 'duration_desc', limit: 100, view: labelerView }
-          : { filter, sort: 'duration_desc', limit: 100 },
+          ? {
+              filter: 'all',
+              sort: 'duration_desc',
+              limit: QUEUE_PAGE_SIZE,
+              offset,
+              view: labelerView,
+            }
+          : {
+              filter,
+              sort: 'duration_desc',
+              limit: QUEUE_PAGE_SIZE,
+              offset,
+              tenantId: tenantFilter,
+            },
       ),
-    [isLabeler, labelerView, filter],
+    [isLabeler, labelerView, filter, tenantFilter],
   )
 
   useEffect(() => {
@@ -201,6 +220,23 @@ export default function LabelingPage() {
     [token, fetchScopedQueue, isLabeler, labelerView],
   )
 
+  // C3S2 Part 2: load the next page and append, scoped to the active tab.
+  // Offset is the current loaded count; appendUniqueQueueItems drops any
+  // overlap so a shifted page never duplicates rows.
+  const loadMore = useCallback(async () => {
+    if (!token) return
+    setLoadingMore(true)
+    try {
+      const res = await fetchScopedQueue(token, queue.length)
+      setQueue((prev) => appendUniqueQueueItems(prev, res.items))
+      setQueueTotal(res.total)
+    } catch {
+      // Best-effort; keep what is already loaded.
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [token, fetchScopedQueue, queue.length])
+
   const loadStats = useCallback(async () => {
     if (!token) return
     setStatsRefreshing(true)
@@ -253,6 +289,16 @@ export default function LabelingPage() {
 
   const handleFilterChange = useCallback((next: QueueFilter) => {
     setFilter(next)
+    initialAutoSelectDone.current = false
+    setQueueComplete(false)
+  }, [])
+
+  // C3S2 Part 2 owner tenant scope. Changing it refetches page 1 via
+  // fetchScopedQueue; clear the selection (it may belong to another tenant).
+  const handleTenantChange = useCallback((next: string | null) => {
+    setTenantFilter(next)
+    setSelectedId(null)
+    setRecording(null)
     initialAutoSelectDone.current = false
     setQueueComplete(false)
   }, [])
@@ -635,6 +681,14 @@ export default function LabelingPage() {
                 pickingUpId={pickingUpId}
                 onReassign={setReassignId}
                 onForceRelease={setForceReleaseId}
+                onLoadMore={loadMore}
+                loadingMore={loadingMore}
+                tenants={(stats?.by_tenant ?? []).map((t) => ({
+                  id: t.tenant_id,
+                  name: t.tenant_name,
+                }))}
+                tenantFilter={tenantFilter}
+                onTenantChange={handleTenantChange}
               />
             }
             right={

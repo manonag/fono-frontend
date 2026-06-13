@@ -35,6 +35,12 @@ interface QueuePaneProps {
   // these just signal which row the owner chose to act on.
   onReassign: (recordingId: string) => void
   onForceRelease: (recordingId: string) => void
+  // C3S2 Part 2 pagination + owner tenant scope.
+  onLoadMore: () => void
+  loadingMore: boolean
+  tenants: Array<{ id: string; name: string }>
+  tenantFilter: string | null
+  onTenantChange: (tenantId: string | null) => void
 }
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
@@ -85,9 +91,15 @@ export function QueuePane({
   pickingUpId,
   onReassign,
   onForceRelease,
+  onLoadMore,
+  loadingMore,
+  tenants,
+  tenantFilter,
+  onTenantChange,
 }: QueuePaneProps) {
   const isLabeler = role === 'labeler'
   const labelerPending = isLabeler && view === 'pending'
+  const canLoadMore = items.length < total
   const selectedRowRef = useRef<HTMLButtonElement | null>(null)
   // T-2d16e333: id of the row whose overflow menu is open (null = none).
   // Click-elsewhere on the document closes the menu.
@@ -157,6 +169,24 @@ export function QueuePane({
                 )
               })}
         </div>
+        {!isLabeler && tenants.length > 0 ? (
+          <div className="mt-2">
+            <label className="text-[11px] text-brown mr-1">Tenant:</label>
+            <select
+              value={tenantFilter ?? ''}
+              onChange={(e) => onTenantChange(e.target.value || null)}
+              className="text-xs bg-white border border-ink/20 rounded px-1.5 py-0.5 focus:outline-none focus:border-terra max-w-[60%]"
+              title="Scope the queue to one tenant (the status tabs are cross-tenant by default)"
+            >
+              <option value="">All tenants</option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
         {error && (
@@ -390,6 +420,20 @@ export function QueuePane({
             )
           })}
         </ul>
+        {!loading && canLoadMore ? (
+          <div className="p-3">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="w-full px-3 py-2 rounded text-xs font-semibold bg-ink/5 text-ink hover:bg-ink/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingMore
+                ? 'Loading…'
+                : `Load more (${items.length} of ${total})`}
+            </button>
+          </div>
+        ) : null}
       </div>
     </aside>
   )
