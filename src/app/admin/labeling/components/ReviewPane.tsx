@@ -413,6 +413,38 @@ export function ReviewPane({
             <span className="text-ink/60">Sarvam lang</span>{' '}
             {recording.machine.language_code ?? '—'}
           </span>
+          {/* T-199 C.3: labeler attribution chip. Owner-only — the backend
+              nulls these fields on labeler fetches, and we additionally gate
+              the render so labeler views stay unchanged. */}
+          {!isLabeler && (
+            <span>
+              {recording.labeled_by ? (
+                <>
+                  <span className="text-ink/60">Labeled by</span>{' '}
+                  {recording.labeled_by.name ??
+                    recording.labeled_by.email ??
+                    'Unknown'}
+                </>
+              ) : recording.claimed_by ? (
+                <>
+                  <span className="text-ink/60">Claimed by</span>{' '}
+                  {recording.claimed_by.name ??
+                    recording.claimed_by.email ??
+                    'Unknown'}{' '}
+                  <span className="text-ink/60">(in progress)</span>
+                </>
+              ) : (
+                <span className="text-ink/60">Unclaimed</span>
+              )}
+              {recording.reviewed_by && (
+                <>
+                  {' · '}
+                  <span className="text-ink/60">Reviewed by</span>{' '}
+                  {recording.reviewed_by.name ?? 'Unknown'}
+                </>
+              )}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">

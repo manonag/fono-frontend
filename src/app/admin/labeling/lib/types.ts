@@ -118,6 +118,12 @@ export interface RecordingDetail {
   lock_expires_at: string | null
   labeler_user_id: string | null
   reviewed_by_user_id: string | null
+  // T-199 C.3: resolved labeler attribution for the owner detail panel.
+  // Owner-only — these are null on labeler-scoped fetches (no cross-labeler
+  // leak), and individually null when the underlying FK is unset.
+  labeled_by: { name: string | null; email: string | null } | null
+  claimed_by: { name: string | null; email: string | null } | null
+  reviewed_by: { name: string | null } | null
   // Phase C.3 Sprint 1 claim fields (read-only). The editor gates owned-claim
   // actions (Swap all speakers, segment ops) on claimed_by_user_id === me.
   claimed_by_user_id: string | null
