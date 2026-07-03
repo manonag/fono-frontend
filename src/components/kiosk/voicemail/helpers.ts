@@ -113,7 +113,9 @@ export function normalizeStatus(s: Status): Status {
 export const TAB_LABELS: Record<Status, string> = {
   new: 'New',
   resolved: 'Resolved',
-  hidden: 'Ignore', // T-418: legacy 'hidden' rows show under Ignore
+  // 'hidden' keeps its today label for the OFF path (byte-identical). The
+  // punch surface never renders the 'hidden' tab - it uses 'ignore'.
+  hidden: 'Hidden',
   ignore: 'Ignore',
   spam: 'Spam',
 }

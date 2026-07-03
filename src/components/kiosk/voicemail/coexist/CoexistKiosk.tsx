@@ -131,6 +131,9 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
     if (!punchOn) return
     const ids = voicemails.filter((v) => v.status === 'new').map((v) => v.id)
     if (!seededArrival.current) {
+      // Seed on the first NON-empty load so existing voicemails never flash;
+      // a genuinely empty kiosk seeds on its first arrival (correctly a flash).
+      if (voicemails.length === 0) return
       seededArrival.current = true
       seenNewIds.current = new Set(ids)
       return
