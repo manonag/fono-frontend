@@ -472,3 +472,40 @@ export async function requestVoicemailCallback(
   })
   if (!res.ok) throw new Error(`requestVoicemailCallback failed: ${res.status}`)
 }
+
+/**
+ * T-418: mark a voicemail as spam and block its caller. The backend sets the
+ * status + blocklist row atomically and records the prior status for undo.
+ * Throws on failure so the caller rolls back its optimistic update.
+ */
+export async function markVoicemailSpam(id: string, token?: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/spam`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`markVoicemailSpam failed: ${res.status}`)
+}
+
+/**
+ * T-418: undo a spam mark — restores the exact prior status and unblocks the
+ * caller. Used by the 6s undo toast.
+ */
+export async function undoVoicemailSpam(id: string, token?: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/undo-spam`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`undoVoicemailSpam failed: ${res.status}`)
+}
+
+/**
+ * T-418: unblock a spam voicemail's caller (Spam tab) — returns the voicemail
+ * to New and removes the block.
+ */
+export async function unblockVoicemail(id: string, token?: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/voicemails/${id}/unblock`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(`unblockVoicemail failed: ${res.status}`)
+}

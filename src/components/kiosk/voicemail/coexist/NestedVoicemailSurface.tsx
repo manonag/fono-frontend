@@ -40,6 +40,12 @@ interface NestedVoicemailSurfaceProps {
   onReclassify: (id: string, key: IntentKey) => void
   readOnly?: boolean
   onCall?: (id: string) => void
+  // T-418 punch surface (threaded to the cards). Off = undefined/false.
+  punch?: boolean
+  onSpamRequest?: (vm: Voicemail) => void
+  onUnblockRequest?: (vm: Voicemail) => void
+  justArrivedIds?: string[]
+  onSeen?: (id: string) => void
 }
 
 export function NestedVoicemailSurface({
@@ -53,11 +59,28 @@ export function NestedVoicemailSurface({
   onReclassify,
   readOnly = false,
   onCall,
+  punch = false,
+  onSpamRequest,
+  onUnblockRequest,
+  justArrivedIds,
+  onSeen,
 }: NestedVoicemailSurfaceProps) {
+  // Punch surface: old 'hidden' rows display under Ignore (back-compat alias).
+  // Off path: the list is untouched.
+  const vms = useMemo(
+    () =>
+      punch
+        ? voicemails.map((v) =>
+            v.status === 'hidden' ? { ...v, status: 'ignore' as Status } : v,
+          )
+        : voicemails,
+    [voicemails, punch],
+  )
+
   // Spine category tabs: "All" + one per tenant category, each counted within
   // the active status tab (matches the standalone KioskPage computation).
   const categoryOptions = useMemo<BinderOption<CategoryFilter>[]>(() => {
-    const inTab = voicemails.filter((v) => v.status === tab)
+    const inTab = vms.filter((v) => v.status === tab)
     const surfaced = new Set(categories.map((c) => c.key))
     return [
       { value: 'all', label: 'All', count: inTab.length },
@@ -67,7 +90,7 @@ export function NestedVoicemailSurface({
         count: inTab.filter((v) => bucketKey(v.intent_category_key, surfaced) === c.key).length,
       })),
     ]
-  }, [voicemails, tab, categories])
+  }, [vms, tab, categories])
 
   return (
     <div
@@ -89,12 +112,17 @@ export function NestedVoicemailSurface({
         <VoicemailList
           tab={tab}
           category={category}
-          voicemails={voicemails}
+          voicemails={vms}
           categories={categories}
           onStatusChange={onStatusChange}
           onReclassify={onReclassify}
           readOnly={readOnly}
           onCall={onCall}
+          punch={punch}
+          onSpamRequest={onSpamRequest}
+          onUnblockRequest={onUnblockRequest}
+          justArrivedIds={justArrivedIds}
+          onSeen={onSeen}
         />
       </main>
     </div>

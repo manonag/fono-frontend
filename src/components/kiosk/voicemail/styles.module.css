@@ -71,6 +71,15 @@
   --rcp-repeat-bg: rgba(212, 101, 44, 0.1);
   --rcp-repeat-fg: #c84e20;
 
+  /* --- T-418 punch tokens (light). Unused unless the punch surface renders
+     (spam_blocklist_enabled), so their presence is inert when the flag is
+     off. --- */
+  --p-resolved: #35648b;
+  --p-resolved-tint: rgba(53, 100, 139, 0.12);
+  --p-spam: #a83226;
+  --p-spam-tint: rgba(168, 50, 38, 0.1);
+  --p-ignore: #b0a090;
+
   /* --- card shadows (light) --- */
   --rcp-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.04), 0 2px 8px rgba(94, 35, 10, 0.06),
     0 14px 30px rgba(94, 35, 10, 0.05);
@@ -140,6 +149,13 @@
   --rcp-popover-border: rgba(255, 255, 255, 0.1);
   --rcp-repeat-bg: rgba(212, 101, 44, 0.2);
   --rcp-repeat-fg: #e89570;
+
+  /* --- T-418 punch tokens (dark) --- */
+  --p-resolved: #7fa8c9;
+  --p-resolved-tint: rgba(127, 168, 201, 0.16);
+  --p-spam: #e06b5a;
+  --p-spam-tint: rgba(224, 107, 90, 0.14);
+  --p-ignore: #b0a090;
 
   /* --- card shadows (dark) --- */
   --rcp-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.45);

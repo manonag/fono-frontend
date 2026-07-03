@@ -24,13 +24,16 @@ import { useImpersonation } from '@/lib/impersonation'
 import { useRestaurant } from '@/lib/restaurant-context'
 import {
   fetchVoicemails,
+  markVoicemailSpam,
   patchVoicemailIntent,
   patchVoicemailStatus,
   requestVoicemailCallback,
+  undoVoicemailSpam,
+  unblockVoicemail,
 } from '@/lib/api'
 import type { KioskCall } from '@/app/kiosk/components/call-card'
 import { deduplicateByCaller, sortMissedCalls } from '@/app/kiosk/components/call-sort'
-import { formatClock, STATUSES, TAB_LABELS, tabCount } from '../helpers'
+import { formatClock, PUNCH_STATUSES, STATUSES, TAB_LABELS, tabCount } from '../helpers'
 import { IconMoon, IconSun } from '../icons'
 import { Toast } from '../Toast'
 import type {
@@ -42,8 +45,11 @@ import type {
 } from '../types'
 import { CallConfirmModal } from './CallConfirmModal'
 import { NestedVoicemailSurface } from './NestedVoicemailSurface'
+import { ConfirmSheet, Legend, UndoToast } from './PunchExtras'
+import type { PunchConfirm, PunchToast } from './PunchExtras'
 import { SlaCallList } from './SlaCallList'
 import styles from './coexist.module.css'
+import punch from '../punch.module.css'
 
 const POLL_INTERVAL_MS = 30000
 const FADE_MS = 130
@@ -99,6 +105,123 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
 
   const showToast = useCallback((message: string) => setToast(message), [])
   const dismissToast = useCallback(() => setToast(null), [])
+
+  // ── T-418 punch surface (gated on the single spam_blocklist_enabled flag).
+  // Every punch branch below is inert when off, so the flag-off surface is
+  // byte-identical to today. ─────────────────────────────────────────────
+  const punchOn = tenant.spam_blocklist_enabled === true
+  const [confirm, setConfirm] = useState<PunchConfirm>(null)
+  const [spamToast, setSpamToast] = useState<PunchToast>(null)
+  const [legendOpen, setLegendOpen] = useState(false)
+  const [justArrivedIds, setJustArrivedIds] = useState<string[]>([])
+  const [badgeFlash, setBadgeFlash] = useState(false)
+  const spamToastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const seenNewIds = useRef<Set<string>>(new Set())
+  const seededArrival = useRef(false)
+
+  const markSeen = useCallback(
+    (id: string) => setJustArrivedIds((ids) => ids.filter((i) => i !== id)),
+    [],
+  )
+
+  // Arrival detection (item 3): the first load seeds the seen-set without a
+  // flash; later polls mark genuinely new 'new' voicemails as just-arrived
+  // (card ring + New-tab badge pulse), clearing after 45s.
+  useEffect(() => {
+    if (!punchOn) return
+    const ids = voicemails.filter((v) => v.status === 'new').map((v) => v.id)
+    if (!seededArrival.current) {
+      // Seed on the first NON-empty load so existing voicemails never flash;
+      // a genuinely empty kiosk seeds on its first arrival (correctly a flash).
+      if (voicemails.length === 0) return
+      seededArrival.current = true
+      seenNewIds.current = new Set(ids)
+      return
+    }
+    const fresh = ids.filter((id) => !seenNewIds.current.has(id))
+    if (fresh.length === 0) return
+    fresh.forEach((id) => seenNewIds.current.add(id))
+    setJustArrivedIds((prev) => [...prev, ...fresh])
+    setBadgeFlash(true)
+    const badgeTimer = setTimeout(() => setBadgeFlash(false), 6500)
+    const clearTimers = fresh.map((id) => setTimeout(() => markSeen(id), 45000))
+    return () => {
+      clearTimeout(badgeTimer)
+      clearTimers.forEach(clearTimeout)
+    }
+  }, [voicemails, punchOn, markSeen])
+
+  const requestSpam = useCallback((vm: Voicemail) => setConfirm({ kind: 'spam', vm }), [])
+  const requestUnblock = useCallback((vm: Voicemail) => setConfirm({ kind: 'unblock', vm }), [])
+
+  // Spam commit: optimistic status+block, 6s undo toast; roll back + toast on
+  // API failure. undo restores the exact prior status and unblocks.
+  const commitSpam = useCallback(async () => {
+    if (!confirm || confirm.kind !== 'spam') return
+    const vm = confirm.vm
+    const prevStatus = vm.status
+    setConfirm(null)
+    markSeen(vm.id)
+    const snapshot = voicemails
+    setVoicemails((vs) =>
+      vs.map((v) =>
+        v.id === vm.id
+          ? { ...v, status: 'spam' as Status, blocked: true, spam_at: Date.now(), spam_by: 'You' }
+          : v,
+      ),
+    )
+    clearTimeout(spamToastTimer.current)
+    setSpamToast({ key: Date.now(), phone: vm.caller_phone, vmId: vm.id, prevStatus })
+    spamToastTimer.current = setTimeout(() => setSpamToast(null), 6000)
+    try {
+      await markVoicemailSpam(vm.id, token)
+    } catch {
+      setVoicemails(snapshot)
+      setSpamToast(null)
+      showToast('Could not mark spam. Reverted.')
+    }
+  }, [confirm, voicemails, token, markSeen, showToast])
+
+  const undoSpam = useCallback(async () => {
+    if (!spamToast) return
+    clearTimeout(spamToastTimer.current)
+    const { vmId, prevStatus } = spamToast
+    const snapshot = voicemails
+    setVoicemails((vs) =>
+      vs.map((v) =>
+        v.id === vmId
+          ? { ...v, status: prevStatus as Status, blocked: false, spam_at: undefined, spam_by: undefined }
+          : v,
+      ),
+    )
+    setSpamToast(null)
+    try {
+      await undoVoicemailSpam(vmId, token)
+    } catch {
+      setVoicemails(snapshot)
+      showToast('Could not undo. Reverted.')
+    }
+  }, [spamToast, voicemails, token, showToast])
+
+  const commitUnblock = useCallback(async () => {
+    if (!confirm || confirm.kind !== 'unblock') return
+    const vm = confirm.vm
+    setConfirm(null)
+    const snapshot = voicemails
+    setVoicemails((vs) =>
+      vs.map((v) =>
+        v.id === vm.id
+          ? { ...v, status: 'new' as Status, blocked: false, spam_at: undefined, spam_by: undefined }
+          : v,
+      ),
+    )
+    try {
+      await unblockVoicemail(vm.id, token)
+    } catch {
+      setVoicemails(snapshot)
+      showToast('Could not unblock. Reverted.')
+    }
+  }, [confirm, voicemails, token, showToast])
 
   // ── data load + poll ──────────────────────────────────────────────────
   const fetchTab = useCallback(
@@ -191,8 +314,13 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
   )
   const vmNewCount = useMemo(() => tabCount(voicemails, 'new'), [voicemails])
   const statusOptions = useMemo(
-    () => STATUSES.map((s) => ({ value: s, label: TAB_LABELS[s], count: tabCount(voicemails, s) })),
-    [voicemails],
+    () =>
+      (punchOn ? PUNCH_STATUSES : STATUSES).map((s) => ({
+        value: s,
+        label: TAB_LABELS[s],
+        count: tabCount(voicemails, s),
+      })),
+    [voicemails, punchOn],
   )
 
   const syncSeconds = syncAt !== null && now > 0 ? Math.max(0, Math.floor((now - syncAt) / 1000)) : null
@@ -426,17 +554,48 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
                 anchors the bar where the live tabs used to be. */}
             <span className={styles.surfaceLabel}>Voicemails</span>
             <span className={styles.tabDivider} aria-hidden="true" />
-            {statusOptions.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                className={`${styles.tab} ${styles.tabVm}`}
-                data-active={vmStatus === o.value ? 'true' : undefined}
-                onClick={() => setVmStatus(o.value)}
-              >
-                {o.label} <span className={styles.tabCnt}>{String(o.count).padStart(2, '0')}</span>
-              </button>
-            ))}
+            {statusOptions.map((o) => {
+              const active = vmStatus === o.value
+              // Punch per-status accent (item 5): terra / blue / neutral / brick.
+              const accent =
+                o.value === 'new'
+                  ? 'var(--rcp-terra)'
+                  : o.value === 'resolved'
+                    ? 'var(--p-resolved)'
+                    : o.value === 'spam'
+                      ? 'var(--p-spam)'
+                      : 'var(--p-ignore)'
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={`${styles.tab} ${styles.tabVm}`}
+                  data-active={active ? 'true' : undefined}
+                  onClick={() => setVmStatus(o.value)}
+                  {...(punchOn
+                    ? { 'data-el': 'status-tab', 'data-status-tab': o.value }
+                    : {})}
+                  style={punchOn && active ? { borderBottomColor: accent } : undefined}
+                >
+                  {o.label}{' '}
+                  <span
+                    className={
+                      punchOn && badgeFlash && o.value === 'new'
+                        ? `${styles.tabCnt} ${punch.badgeFlash}`
+                        : styles.tabCnt
+                    }
+                    style={
+                      punchOn && active
+                        ? { background: accent, color: o.value === 'ignore' ? '#1e0e00' : '#fff' }
+                        : undefined
+                    }
+                  >
+                    {String(o.count).padStart(2, '0')}
+                  </span>
+                </button>
+              )
+            })}
+            {punchOn ? <Legend open={legendOpen} setOpen={setLegendOpen} /> : null}
           </>
         )}
       </nav>
@@ -469,6 +628,11 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
             onReclassify={onReclassify}
             readOnly={readOnly}
             onCall={readOnly ? undefined : handleVmCall}
+            punch={punchOn}
+            onSpamRequest={punchOn && !readOnly ? requestSpam : undefined}
+            onUnblockRequest={punchOn && !readOnly ? requestUnblock : undefined}
+            justArrivedIds={punchOn ? justArrivedIds : undefined}
+            onSeen={punchOn ? markSeen : undefined}
           />
         ) : (
           <div className={styles.liveBody}>
@@ -505,6 +669,19 @@ export function CoexistKiosk({ tenant }: { tenant: Tenant }) {
       ) : null}
 
       {toast ? <Toast message={toast} onDismiss={dismissToast} /> : null}
+
+      {/* ── T-418 punch overlays (spam/unblock confirm + undo toast) ── */}
+      {punchOn ? (
+        <>
+          <ConfirmSheet
+            confirm={confirm}
+            tenantName={tenant.name}
+            onConfirm={confirm?.kind === 'spam' ? commitSpam : commitUnblock}
+            onCancel={() => setConfirm(null)}
+          />
+          <UndoToast toast={spamToast} onUndo={undoSpam} />
+        </>
+      ) : null}
     </div>
   )
 }

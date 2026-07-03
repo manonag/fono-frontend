@@ -121,6 +121,17 @@ export function IconReturn(p: IconProps) {
   )
 }
 
+// T-418 Spam / block glyph (circle + diagonal slash). Ported from the CD
+// punch bundle (IconBlock). Used by the Spam action, undo toast, and dialogs.
+export function IconBlock(p: IconProps) {
+  return (
+    <Icon {...p} sw={p.sw ?? 2}>
+      <circle cx="12" cy="12" r="9" />
+      <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+    </Icon>
+  )
+}
+
 export function IconSwap(p: IconProps) {
   return (
     <Icon {...p}>

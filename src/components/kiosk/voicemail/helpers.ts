@@ -34,6 +34,15 @@ export function formatClock(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+// T-418 item 6 - when-chip beside the phone number. Same calendar day -> time
+// only ("4:20 PM"); otherwise "Jun 28, 4:20 PM". Mirrors the CD formatWhen.
+export function formatWhen(ts: number, nowMs: number): string {
+  const d = new Date(ts)
+  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  if (d.toDateString() === new Date(nowMs).toDateString()) return t
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${t}`
+}
+
 export function formatExact(ts: number): string {
   return new Date(ts).toLocaleString('en-US', {
     month: 'short',
@@ -91,14 +100,29 @@ export function isProcessing(vm: Voicemail): boolean {
 
 export const STATUSES: Status[] = ['new', 'resolved', 'hidden']
 
+// T-418 punch surface tabs (New / Resolved / Ignore / Spam), gated on the
+// tenant's spam_blocklist_enabled. The legacy STATUSES above drives the
+// pre-punch rendering so nothing changes when the flag is off.
+export const PUNCH_STATUSES: Status[] = ['new', 'resolved', 'ignore', 'spam']
+
+// Old 'hidden' rows bucket under the Ignore tab (back-compat alias).
+export function normalizeStatus(s: Status): Status {
+  return s === 'hidden' ? 'ignore' : s
+}
+
 export const TAB_LABELS: Record<Status, string> = {
   new: 'New',
   resolved: 'Resolved',
+  // 'hidden' keeps its today label for the OFF path (byte-identical). The
+  // punch surface never renders the 'hidden' tab - it uses 'ignore'.
   hidden: 'Hidden',
+  ignore: 'Ignore',
+  spam: 'Spam',
 }
 
 export function tabCount(voicemails: Voicemail[], status: Status): number {
-  return voicemails.filter((v) => v.status === status).length
+  // Count 'hidden' rows under 'ignore' so the alias is invisible to the UI.
+  return voicemails.filter((v) => normalizeStatus(v.status) === normalizeStatus(status)).length
 }
 
 export function tabCounts(voicemails: Voicemail[]): TabCounts {
@@ -106,6 +130,8 @@ export function tabCounts(voicemails: Voicemail[]): TabCounts {
     new: tabCount(voicemails, 'new'),
     resolved: tabCount(voicemails, 'resolved'),
     hidden: tabCount(voicemails, 'hidden'),
+    ignore: tabCount(voicemails, 'ignore'),
+    spam: tabCount(voicemails, 'spam'),
   }
 }
 
