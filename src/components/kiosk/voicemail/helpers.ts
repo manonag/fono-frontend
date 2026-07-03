@@ -91,14 +91,27 @@ export function isProcessing(vm: Voicemail): boolean {
 
 export const STATUSES: Status[] = ['new', 'resolved', 'hidden']
 
+// T-418 punch surface tabs (New / Resolved / Ignore / Spam), gated on the
+// tenant's spam_blocklist_enabled. The legacy STATUSES above drives the
+// pre-punch rendering so nothing changes when the flag is off.
+export const PUNCH_STATUSES: Status[] = ['new', 'resolved', 'ignore', 'spam']
+
+// Old 'hidden' rows bucket under the Ignore tab (back-compat alias).
+export function normalizeStatus(s: Status): Status {
+  return s === 'hidden' ? 'ignore' : s
+}
+
 export const TAB_LABELS: Record<Status, string> = {
   new: 'New',
   resolved: 'Resolved',
-  hidden: 'Hidden',
+  hidden: 'Ignore', // T-418: legacy 'hidden' rows show under Ignore
+  ignore: 'Ignore',
+  spam: 'Spam',
 }
 
 export function tabCount(voicemails: Voicemail[], status: Status): number {
-  return voicemails.filter((v) => v.status === status).length
+  // Count 'hidden' rows under 'ignore' so the alias is invisible to the UI.
+  return voicemails.filter((v) => normalizeStatus(v.status) === normalizeStatus(status)).length
 }
 
 export function tabCounts(voicemails: Voicemail[]): TabCounts {
@@ -106,6 +119,8 @@ export function tabCounts(voicemails: Voicemail[]): TabCounts {
     new: tabCount(voicemails, 'new'),
     resolved: tabCount(voicemails, 'resolved'),
     hidden: tabCount(voicemails, 'hidden'),
+    ignore: tabCount(voicemails, 'ignore'),
+    spam: tabCount(voicemails, 'spam'),
   }
 }
 

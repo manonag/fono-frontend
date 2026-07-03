@@ -18,7 +18,9 @@ export type IntentKey =
   | 'catering'
   | 'banquet_hall'
   | 'others'
-export type Status = 'new' | 'resolved' | 'hidden'
+// T-418: 'ignore' supersedes 'hidden' (kept as a back-compat alias for old
+// rows and external readers); 'spam' is the blocklist status.
+export type Status = 'new' | 'resolved' | 'hidden' | 'ignore' | 'spam'
 
 export interface Category {
   key: IntentKey
@@ -61,6 +63,10 @@ export interface Tenant {
   // coerces an absent field to true so a missing value never flips a tenant
   // into voicemail-led mode (the PR #28 type-without-mapping lesson).
   sla_enabled: boolean
+  // T-418 single gate: when true the kiosk shows the spam/punch surface AND
+  // the backend enforces the inbound blocklist. Default/absent = false; UI and
+  // enforcement flip together as one unit.
+  spam_blocklist_enabled?: boolean
   categories: Category[]
 }
 
@@ -84,6 +90,12 @@ export interface Voicemail {
   resolved_by?: string
   hidden_at?: number
   hidden_reason?: string
+  // T-418: ignore (supersedes hidden) + spam/blocklist surface fields.
+  ignored_at?: number
+  ignore_reason?: string
+  blocked?: boolean
+  spam_at?: number
+  spam_by?: string
 }
 
 // KioskPage
@@ -124,4 +136,6 @@ export interface TabCounts {
   new: number
   resolved: number
   hidden: number
+  ignore: number
+  spam: number
 }

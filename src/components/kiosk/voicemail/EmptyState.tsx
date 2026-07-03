@@ -11,6 +11,11 @@ interface EmptyStateProps {
   tab: Status
 }
 
+const IGNORE_COPY = {
+  title: 'No ignored voicemails.',
+  line: 'Anything you ignore stays here in case you change your mind.',
+}
+
 const COPY: Record<Status, { title: string; line: string }> = {
   new: {
     title: 'All clear.',
@@ -20,9 +25,12 @@ const COPY: Record<Status, { title: string; line: string }> = {
     title: 'Nothing resolved yet today.',
     line: 'Tickets you finish will land here for the record.',
   },
-  hidden: {
-    title: 'No hidden voicemails.',
-    line: 'Anything you hide stays here in case you change your mind.',
+  // T-418: 'hidden' renamed to Ignore (hidden kept as a back-compat alias).
+  ignore: IGNORE_COPY,
+  hidden: IGNORE_COPY,
+  spam: {
+    title: 'No spam.',
+    line: 'Voicemails you mark as spam land here, with their numbers blocked.',
   },
 }
 
