@@ -34,6 +34,15 @@ export function formatClock(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+// T-418 item 6 - when-chip beside the phone number. Same calendar day -> time
+// only ("4:20 PM"); otherwise "Jun 28, 4:20 PM". Mirrors the CD formatWhen.
+export function formatWhen(ts: number, nowMs: number): string {
+  const d = new Date(ts)
+  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  if (d.toDateString() === new Date(nowMs).toDateString()) return t
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${t}`
+}
+
 export function formatExact(ts: number): string {
   return new Date(ts).toLocaleString('en-US', {
     month: 'short',

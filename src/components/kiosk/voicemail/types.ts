@@ -119,6 +119,15 @@ export interface VoicemailCardProps {
   // modal + POSTs. When omitted (standalone kiosk), the card falls back to its
   // tel: dialer stand-in.
   onCall?: (id: string) => void
+  // T-418 punch surface (gated on tenant.spam_blocklist_enabled). When false
+  // (default) the card renders byte-identical to today; when true it renders
+  // the punch action row, when-chip, ignore/spam states, arrival + high-value
+  // treatment.
+  punch?: boolean
+  onSpamRequest?: (vm: Voicemail) => void
+  onUnblockRequest?: (vm: Voicemail) => void
+  justArrived?: boolean
+  onSeen?: (id: string) => void
 }
 
 // ---------------------------------------------------------------------------

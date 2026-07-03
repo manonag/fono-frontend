@@ -1,0 +1,730 @@
+/* T-418 punch-list styles (isolated, matching CD's punch.css principle).
+ *
+ * Applied ONLY when the punch surface renders (tenant.spam_blocklist_enabled).
+ * Values are ported verbatim from the CD bundle's punch.css; CD token names
+ * are mapped onto the real receipt tokens (--rcp-*) defined on styles.module
+ * .root, plus the new --p-* tokens added there. Fonts use the app CSS vars
+ * (--font-jetbrains-mono / --font-jakarta) that the rcp-* Tailwind utilities
+ * resolve to.
+ *
+ * Nothing here changes the flag-off surface: these classes are only attached
+ * to elements the punch branches render.
+ */
+
+/* ─── When-chip beside the number (item 6) ─────────────────────────────── */
+.phoneRow {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.phoneRow .dur {
+  margin-left: auto;
+}
+.when {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--rcp-brown);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─── Header icon action row (items 1a, 4, 5) ──────────────────────────── */
+.thActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.hib {
+  position: relative;
+  appearance: none;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px dashed var(--rcp-rule);
+  background: transparent;
+  color: var(--rcp-cocoa);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.hib:hover {
+  border-style: solid;
+}
+.hibCall {
+  color: var(--rcp-terra-warm);
+  border-color: rgba(212, 101, 44, 0.4);
+}
+.hibCall:hover {
+  background: rgba(212, 101, 44, 0.1);
+  border-color: var(--rcp-terra-warm);
+}
+.hibResolve {
+  color: var(--p-resolved);
+  border-color: var(--p-resolved);
+}
+.hibResolve:hover {
+  background: var(--p-resolved-tint);
+}
+.hibIgnore {
+  color: var(--rcp-brown);
+}
+.hibIgnore:hover {
+  border-color: var(--rcp-brown);
+  background: rgba(0, 0, 0, 0.03);
+}
+.hibSpam {
+  color: var(--p-spam);
+  border-color: transparent;
+}
+.hibSpam:hover {
+  background: var(--p-spam-tint);
+  border-color: var(--p-spam);
+  border-style: dashed;
+}
+.hibChev {
+  color: var(--rcp-brown);
+  border-color: transparent;
+}
+.hibChev:hover {
+  border-color: var(--rcp-rule);
+  background: rgba(0, 0, 0, 0.03);
+}
+:global([data-theme='dark']) .hibIgnore:hover,
+:global([data-theme='dark']) .hibChev:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.hibDivider {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 8px 3px;
+  border-left: 1px dashed var(--rcp-rule);
+}
+/* Hover label - mono chit below the icon */
+.hib::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--rcp-ink);
+  color: var(--rcp-cream);
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+:global([data-theme='dark']) .hib::after {
+  background: var(--rcp-cream);
+  color: #1e0e00;
+}
+.hib:hover::after,
+.hib:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── State stamp rows (resolved / ignore / spam) ──────────────────────── */
+.stateRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px dashed var(--rcp-rule);
+  min-height: 58px;
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.stateResolved {
+  color: var(--p-resolved);
+}
+.stateIgnore {
+  color: var(--rcp-brown);
+}
+.stateSpam {
+  color: var(--p-spam);
+}
+.blockedBadge {
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: var(--p-spam-tint);
+  border: 1px dashed var(--p-spam);
+}
+.actGhost {
+  appearance: none;
+  cursor: pointer;
+  height: 46px;
+  padding: 0 14px;
+  margin-left: auto;
+  border-radius: 6px;
+  border: 1px dashed var(--rcp-rule);
+  background: transparent;
+  color: var(--rcp-brown);
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.actGhost:hover {
+  border-style: solid;
+  border-color: var(--rcp-brown);
+  color: var(--rcp-ink);
+}
+:global([data-theme='dark']) .actGhost:hover {
+  color: var(--rcp-cream);
+}
+
+/* ─── Blocked-state card visual (item 1e) ──────────────────────────────── */
+.blocked {
+  filter: saturate(0.55);
+}
+.blocked:hover {
+  transform: none;
+}
+.blockedPhone {
+  color: var(--rcp-brown);
+  text-decoration: line-through;
+  text-decoration-color: var(--p-spam);
+  text-decoration-thickness: 2px;
+}
+
+/* ─── Arrival treatment (item 3) ───────────────────────────────────────── */
+.arrive {
+  position: relative;
+  box-shadow: 0 0 0 3px rgba(224, 96, 42, 0.5), 0 2px 8px rgba(94, 35, 10, 0.06),
+    0 14px 30px rgba(94, 35, 10, 0.05);
+  animation: punchArrive 1.2s ease-out 5;
+}
+@keyframes punchArrive {
+  0% {
+    box-shadow: 0 0 0 3px rgba(224, 96, 42, 0.65), 0 0 0 0 rgba(224, 96, 42, 0.45),
+      0 14px 30px rgba(94, 35, 10, 0.05);
+  }
+  70% {
+    box-shadow: 0 0 0 3px rgba(224, 96, 42, 0.5), 0 0 0 18px rgba(224, 96, 42, 0),
+      0 14px 30px rgba(94, 35, 10, 0.05);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(224, 96, 42, 0.5), 0 0 0 0 rgba(224, 96, 42, 0),
+      0 14px 30px rgba(94, 35, 10, 0.05);
+  }
+}
+.newflag {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  z-index: 3;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: var(--rcp-terra);
+  color: #fff;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(224, 96, 42, 0.4);
+}
+
+/* ─── New-tab badge flash (item 3) ─────────────────────────────────────── */
+.badgeFlash {
+  animation: punchBadge 1.2s ease-in-out 5;
+}
+@keyframes punchBadge {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(224, 96, 42, 0.5);
+  }
+  35% {
+    transform: scale(1.25);
+    box-shadow: 0 0 0 6px rgba(224, 96, 42, 0);
+  }
+}
+
+/* ─── Tab per-status accents (item 5) ──────────────────────────────────── */
+.tabResolvedActive {
+  border-bottom-color: var(--p-resolved) !important;
+}
+.tabResolvedActive .cnt {
+  background: var(--p-resolved);
+  color: #fff;
+}
+.tabIgnoreActive {
+  border-bottom-color: var(--p-ignore) !important;
+}
+.tabIgnoreActive .cnt {
+  background: var(--p-ignore);
+  color: #1e0e00;
+}
+.tabSpamActive {
+  border-bottom-color: var(--p-spam) !important;
+}
+.tabSpamActive .cnt {
+  background: var(--p-spam);
+  color: #fff;
+}
+
+/* ─── Status legend (item 7) ───────────────────────────────────────────── */
+.legendWrap {
+  position: relative;
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+}
+.legendBtn {
+  appearance: none;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(253, 240, 232, 0.3);
+  background: transparent;
+  color: rgba(253, 240, 232, 0.6);
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.legendBtn:hover,
+.legendBtnOpen {
+  color: var(--rcp-cream);
+  border-color: rgba(253, 240, 232, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+}
+.legend {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -4px;
+  z-index: 40;
+  width: 268px;
+  background: var(--rcp-paper);
+  color: var(--rcp-ink);
+  border: 1px solid var(--rcp-paper-edge);
+  border-radius: 8px;
+  box-shadow: 0 6px 14px rgba(94, 35, 10, 0.14), 0 20px 44px rgba(94, 35, 10, 0.16);
+  padding: 10px 12px 12px;
+}
+:global([data-theme='dark']) .legend {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5), 0 24px 52px rgba(0, 0, 0, 0.4);
+}
+.legend::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 12px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: var(--rcp-paper);
+  border-left: 1px solid var(--rcp-paper-edge);
+  border-top: 1px solid var(--rcp-paper-edge);
+}
+.legendHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rcp-brown);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--rcp-rule);
+}
+.legendClose {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  margin: -6px -6px -6px 0;
+  border-radius: 5px;
+  color: var(--rcp-brown);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.legendClose:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--rcp-ink);
+}
+.legendRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  align-self: center;
+}
+.legendDotNew {
+  background: var(--rcp-terra);
+}
+.legendDotResolved {
+  background: var(--p-resolved);
+}
+.legendDotIgnore {
+  background: var(--p-ignore);
+}
+.legendDotSpam {
+  background: var(--p-spam);
+}
+.legendWord {
+  font-weight: 700;
+  color: var(--rcp-ink);
+  min-width: 68px;
+}
+.legendDef {
+  color: var(--rcp-brown);
+}
+
+/* ─── Confirm dialog (items 1b, 1d) ────────────────────────────────────── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(30, 14, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+:global([data-theme='dark']) .overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+.dialog {
+  width: min(440px, 100%);
+  background: var(--rcp-paper);
+  border: 1px solid var(--rcp-paper-edge);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(94, 35, 10, 0.2), 0 32px 72px rgba(94, 35, 10, 0.24);
+  padding: 22px 22px 18px;
+  text-align: left;
+}
+:global([data-theme='dark']) .dialog {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55), 0 36px 80px rgba(0, 0, 0, 0.45);
+}
+.dialogGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.dialogGlyphSpam {
+  color: var(--p-spam);
+  background: var(--p-spam-tint);
+  border: 1px dashed var(--p-spam);
+}
+.dialogGlyphUnblock {
+  color: var(--p-resolved);
+  background: var(--p-resolved-tint);
+  border: 1px dashed var(--p-resolved);
+}
+.dialogTitle {
+  margin: 0 0 8px;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--rcp-ink);
+  line-height: 1.3;
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
+}
+.dialogBody {
+  margin: 0 0 20px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--rcp-cocoa);
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
+}
+.dialogActions {
+  display: flex;
+  gap: 10px;
+}
+.dbtn {
+  appearance: none;
+  cursor: pointer;
+  height: 52px;
+  border-radius: 7px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+}
+.dbtnCancel {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--rcp-cocoa);
+  border: 1px solid var(--rcp-rule);
+}
+.dbtnCancel:hover {
+  border-color: var(--rcp-brown);
+  color: var(--rcp-ink);
+}
+:global([data-theme='dark']) .dbtnCancel:hover {
+  color: var(--rcp-cream);
+}
+.dbtnDanger {
+  flex: 1 1 auto;
+  background: var(--p-spam);
+  color: #fff;
+  border: 1px solid var(--p-spam);
+}
+.dbtnDanger:hover {
+  filter: brightness(0.92);
+}
+.dbtnPrimary {
+  flex: 1 1 auto;
+  background: var(--p-resolved);
+  color: #fff;
+  border: 1px solid var(--p-resolved);
+}
+.dbtnPrimary:hover {
+  filter: brightness(0.92);
+}
+
+/* ─── Undo toast (item 1c) ─────────────────────────────────────────────── */
+.toast {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 12px 14px 14px;
+  border-radius: 8px;
+  background: var(--rcp-ink);
+  color: var(--rcp-cream);
+  box-shadow: 0 8px 20px rgba(30, 14, 0, 0.35), 0 24px 48px rgba(30, 14, 0, 0.25);
+  overflow: hidden;
+  animation: punchToastIn 0.22s ease-out;
+}
+:global([data-theme='dark']) .toast {
+  background: #0e1117;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--rcp-cream);
+}
+.toast > svg {
+  color: #e89570;
+  flex: 0 0 auto;
+}
+@keyframes punchToastIn {
+  from {
+    transform: translate(-50%, 12px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+.toastMsg {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toastUndo {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid rgba(253, 240, 232, 0.35);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--rcp-cream);
+  height: 36px;
+  padding: 0 14px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+.toastUndo:hover {
+  background: rgba(253, 240, 232, 0.12);
+  border-color: rgba(253, 240, 232, 0.6);
+}
+.toastTimer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--rcp-terra);
+  transform-origin: left center;
+  animation: punchToastDrain 6s linear forwards;
+}
+@keyframes punchToastDrain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* ─── High-value category treatment (item 8, Mano's phase-1 / phase-2) ─── */
+/* Phase 1 (first ~60s): CD's breathing halo at their per-category intensities.
+   Phase 2 (persistent): static ring + the running-light border (SVG below). */
+.hvChip {
+  border-radius: 5px;
+  /* Steady emphasized state after the single mount pulse (item 8). */
+  box-shadow: 0 1px 6px var(--hv-glow), 0 0 0 3px var(--hv-glow);
+  animation: punchHvPulse 0.9s ease-out 1;
+}
+@keyframes punchHvPulse {
+  0% {
+    box-shadow: 0 1px 6px var(--hv-glow), 0 0 0 0 var(--hv-glow);
+  }
+  60% {
+    box-shadow: 0 1px 6px var(--hv-glow), 0 0 0 14px transparent;
+  }
+  100% {
+    box-shadow: 0 1px 6px var(--hv-glow), 0 0 0 3px var(--hv-glow);
+  }
+}
+.hvPhase1 {
+  animation: punchHvGlow 5s ease-in-out infinite;
+}
+@keyframes punchHvGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--hv-glow-soft), 0 0 10px var(--hv-glow-soft),
+      0 2px 8px rgba(94, 35, 10, 0.06), 0 14px 30px rgba(94, 35, 10, 0.05);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--hv-glow), 0 0 34px var(--hv-glow),
+      0 2px 8px rgba(94, 35, 10, 0.06), 0 14px 30px rgba(94, 35, 10, 0.05);
+  }
+}
+/* Phase 2: settle to a static 2px category ring. */
+.hvPhase2 {
+  box-shadow: 0 0 0 2px var(--hv-glow), 0 2px 8px rgba(94, 35, 10, 0.06),
+    0 14px 30px rgba(94, 35, 10, 0.05);
+}
+/* Per-category intensities (CD ratios; Order deliberately fainter). Set on the
+   card via data-c. --hv-ring is the solid ring/border color. */
+.hv[data-c='order'] {
+  --hv-glow: rgba(212, 101, 44, 0.24);
+  --hv-glow-soft: rgba(212, 101, 44, 0.09);
+  --hv-ring: rgba(212, 101, 44, 0.35);
+}
+.hv[data-c='catering'] {
+  --hv-glow: rgba(123, 156, 104, 0.62);
+  --hv-glow-soft: rgba(123, 156, 104, 0.24);
+  --hv-ring: #7b9c68;
+}
+.hv[data-c='banquet_hall'] {
+  --hv-glow: rgba(74, 109, 134, 0.62);
+  --hv-glow-soft: rgba(74, 109, 134, 0.24);
+  --hv-ring: #4a6d86;
+}
+
+/* Running-light border (phase 2): an SVG rect stroke chases the perimeter via
+   stroke-dashoffset. GPU-cheap (transform/opacity-free stroke animation), no
+   layout repaints. ~5s/lap, ~18% bright segment with soft falloff. */
+.runlightSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+.runlightRect {
+  /* Inset 1px via CSS geometry (Chrome/kiosk supports SVG geometry props) so
+     the 2px stroke sits fully inside the card's overflow:hidden bounds. */
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: 11px;
+  fill: none;
+  stroke: var(--hv-ring);
+  stroke-width: 2;
+  /* dasharray: one bright segment (~18% of the 100-unit pathLength) + gap.
+     stroke-dashoffset animates the segment around the perimeter. */
+  stroke-dasharray: 18 82;
+  filter: drop-shadow(0 0 3px var(--hv-glow));
+  animation: punchRunlight 5s linear infinite;
+}
+@keyframes punchRunlight {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Reduced motion: no traveling light, no breathing; static ring only. */
+@media (prefers-reduced-motion: reduce) {
+  .arrive,
+  .badgeFlash,
+  .hvChip,
+  .hvPhase1 {
+    animation: none;
+  }
+  .runlightRect {
+    animation: none;
+    stroke-dasharray: none;
+    filter: none;
+  }
+}
