@@ -34,6 +34,12 @@ interface VoicemailListProps {
   onReclassify: (id: string, key: IntentKey) => void
   readOnly?: boolean
   onCall?: (id: string) => void
+  // T-418 punch surface (passed to each card). Off = undefined/false.
+  punch?: boolean
+  onSpamRequest?: (vm: Voicemail) => void
+  onUnblockRequest?: (vm: Voicemail) => void
+  justArrivedIds?: string[]
+  onSeen?: (id: string) => void
 }
 
 export function VoicemailList({
@@ -45,6 +51,11 @@ export function VoicemailList({
   onReclassify,
   readOnly = false,
   onCall,
+  punch = false,
+  onSpamRequest,
+  onUnblockRequest,
+  justArrivedIds,
+  onSeen,
 }: VoicemailListProps) {
   const list = filterAndSort(voicemails, { status: tab, category, sort: 'newest' }, categories)
 
@@ -65,6 +76,11 @@ export function VoicemailList({
             onReclassify={onReclassify}
             readOnly={readOnly}
             onCall={onCall}
+            punch={punch}
+            onSpamRequest={onSpamRequest}
+            onUnblockRequest={onUnblockRequest}
+            justArrived={justArrivedIds?.includes(vm.id) ?? false}
+            onSeen={onSeen}
           />
         ))
       )}
