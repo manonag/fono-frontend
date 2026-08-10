@@ -104,6 +104,9 @@ export async function fetchQueue(
     // When set, the backend ignores status and scopes by claim. Owners omit
     // it and keep the status-filter behaviour.
     view?: LabelerView
+    // C3S2 Part 2: owner-only tenant scope. The All tab is cross-tenant by
+    // default; pass a tenant id to scope it. Labeler views ignore this.
+    tenantId?: string | null
   },
   signal?: AbortSignal,
 ): Promise<QueueResponse> {
@@ -113,6 +116,7 @@ export async function fetchQueue(
   } else if (opts.filter !== 'all') {
     params.set('status', opts.filter)
   }
+  if (opts.tenantId) params.set('tenant_id', opts.tenantId)
   params.set('sort', opts.sort)
   params.set('limit', String(opts.limit ?? 100))
   params.set('offset', String(opts.offset ?? 0))
